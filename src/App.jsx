@@ -98,7 +98,7 @@ const mf=f=>({id:f.id,userId:f.user_id,userName:f.user_name,setor:f.setor,tipo:f
 const mfb=fb=>({id:fb.id,fromId:fb.from_id,fromName:fb.from_name,fromRole:fb.from_role,toId:fb.to_id,toName:fb.to_name,toRole:fb.to_role,tipo:fb.tipo,texto:fb.texto,sigiloso:fb.sigiloso,createdAt:fb.created_at});
 const mch=m=>({id:m.id,fromId:m.from_id,fromName:m.from_name,toId:m.to_id,toName:m.to_name,texto:m.texto,lido:m.lido,createdAt:m.created_at});
 const mav=a=>({id:a.id,avaliadoId:a.avaliado_id,avaliadoName:a.avaliado_name,avaliadorId:a.avaliador_id,avaliadorName:a.avaliador_name,periodo:a.periodo,status:a.status,notas:{qualidade:a.nota_qualidade,produtividade:a.nota_produtividade,trabalhoEquipe:a.nota_trabalho_equipe,pontualidade:a.nota_pontualidade,iniciativa:a.nota_iniciativa},comentario:a.comentario,createdAt:a.created_at});
-const mc=c=>({id:c.id,name:c.name,role:c.role,vaga:"#"+(c.vaga_id||""),email:c.email||"",phone:c.phone||"",score:c.score||0,tech:c.tech||0,behavior:c.behavior||0,status:c.status||"pendente",salarioPret:c.salario_pret||"",pcd:c.pcd,resumo:c.resumo||"",habilidades:c.habilidades||[],emailEnviado:c.email_enviado,noBanco:c.no_banco_talentos});
+const mc=c=>({id:c.id,name:c.name,role:c.role,vaga:"#"+(c.vaga_id||""),email:c.email||"",phone:c.phone||"",score:c.score||0,tech:c.tech||0,behavior:c.behavior||0,status:c.status||"pendente",salarioPret:c.salario_pret||"",pcd:c.pcd,resumo:c.resumo||"",habilidades:c.habilidades||[],emailEnviado:c.email_enviado,noBanco:c.no_banco_talentos,experienciaAnos:c.experiencia_anos??null,formacao:c.formacao||"",certificacoes:c.certificacoes||[],areaSugerida:c.area_sugerida||"",vagaSugeridaConfianca:c.vaga_sugerida_confianca||""});
 const mv=v=>({id:v.id,title:v.title,area:v.area,local:v.local,tipo:v.tipo,desc:v.descricao,salario:v.salario||"",requisitos:v.requisitos||"",prazoEncerramento:v.prazo_encerramento,ativa:v.ativa,movimentacaoId:v.movimentacao_id});
 const mtal=t=>({id:t.id,cId:t.candidato_id,name:t.name,email:t.email||"",phone:t.phone||"",role:t.role||"",vagaId:t.vaga_id||"",score:t.score||0,habs:t.habilidades||[],resumo:t.resumo||"",motivo:t.motivo_arquivo||"",tags:t.tags||[],createdAt:t.created_at});
 const mcom=c=>({id:c.id,titulo:c.titulo,corpo:c.corpo,autorId:c.autor_id,autorName:c.autor_name,tipo:c.tipo,setores:c.setores||[],fixado:c.fixado,createdAt:c.created_at});
@@ -1417,7 +1417,10 @@ function Recrutamento({user,candidates,setCandidates,talentos,setTalentos,vagas,
                 <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:10,marginBottom:12,fontSize:12,color:C.txm}}>
                   <span>📧 {c.email||"—"}</span><span>📱 {c.phone||"—"}</span>
                   <span>💰 {c.salarioPret||"—"}</span><span>♿ PcD: {c.pcd?"Sim":"Não"}</span>
+                  {c.experienciaAnos!=null&&<span>⏱ {c.experienciaAnos} anos de experiência</span>}
+                  {c.formacao&&<span>🎓 {c.formacao}</span>}
                 </div>
+                {c.certificacoes?.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:10}}>{c.certificacoes.map(cert=><Chip key={cert} label={"📜 "+cert} color={C.blu}/>)}</div>}
                 {c.resumo&&<div style={{fontSize:12,color:C.txm,marginBottom:12,lineHeight:1.5}}>{c.resumo}</div>}
                 {c.habilidades?.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:14}}>{c.habilidades.map(h=><Chip key={h} label={h} color={C.acc}/>)}</div>}
                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -3016,7 +3019,7 @@ function Movimentacoes({user,users,movs,setMovs,setUsers,vagas,setVagas}){
   const[saving,setSaving]=useState(false);
 
   // Etapa 1 — Líder só justifica a necessidade (admissão) ou pede a saída (demissão)
-  const[formAdmLider,setFormAdmLider]=useState({setor:"producao",gestorId:"",motivo:""});
+  const[formAdmLider,setFormAdmLider]=useState({setor:"producao",gestorId:"",motivo:"",cargo:"",salario:"",perfilBuscado:""});
   const[formDemLider,setFormDemLider]=useState({userId:"",gestorId:"",motivo:""});
 
   // Etapa 2 — Gestor detalha (preenchido dentro do modal de decisão)
@@ -3045,7 +3048,7 @@ function Movimentacoes({user,users,movs,setMovs,setUsers,vagas,setVagas}){
 
   // ── Etapa 1 (Líder): abrir pedido de admissão — só setor + gestor + justificativa ──
   const abrirAdmissaoLider=async()=>{
-    if(!formAdmLider.gestorId||!formAdmLider.motivo.trim())return;
+    if(!formAdmLider.gestorId||!formAdmLider.motivo.trim()||!formAdmLider.cargo.trim()||!formAdmLider.salario.trim())return;
     setSaving(true);
     const sb=getSB();
     const{data}=await sb.from("movimentacoes").insert([{
@@ -3053,8 +3056,10 @@ function Movimentacoes({user,users,movs,setMovs,setUsers,vagas,setVagas}){
       solicitante_id:user.id,solicitante_name:user.name,
       setor:formAdmLider.setor,lider_id:user.id,gestor_id:parseInt(formAdmLider.gestorId),
       motivo:formAdmLider.motivo.trim(),
+      cargo:formAdmLider.cargo.trim(),salario:formAdmLider.salario.trim(),
+      requisitos:formAdmLider.perfilBuscado.trim(),
     }]).select().single();
-    if(data){setMovs(p=>[mmv(data),...p]);setModalNova(null);setFormAdmLider({setor:"producao",gestorId:"",motivo:""});}
+    if(data){setMovs(p=>[mmv(data),...p]);setModalNova(null);setFormAdmLider({setor:"producao",gestorId:can(user.role,"gestor")?String(user.id):"",motivo:"",cargo:"",salario:"",perfilBuscado:""});}
     setSaving(false);
   };
 
@@ -3157,7 +3162,7 @@ function Movimentacoes({user,users,movs,setMovs,setUsers,vagas,setVagas}){
           <div style={{fontSize:13,color:C.txm,marginTop:2}}>Líder solicita → Gestor detalha → RH decide e efetiva</div>
         </div>
         <div style={{display:"flex",gap:8}}>
-          {can(user.role,"lider")&&<Btn v="success" onClick={()=>setModalNova("admissao")}>+ Pedir admissão</Btn>}
+          {can(user.role,"lider")&&<Btn v="success" onClick={()=>{setFormAdmLider(f=>({...f,gestorId:can(user.role,"gestor")?String(user.id):f.gestorId}));setModalNova("admissao");}}>+ Pedir admissão</Btn>}
           {can(user.role,"lider")&&<Btn v="danger" onClick={()=>setModalNova("demissao")}>+ Pedir demissão</Btn>}
         </div>
       </div>
@@ -3230,15 +3235,24 @@ function Movimentacoes({user,users,movs,setMovs,setUsers,vagas,setVagas}){
       </div>
 
       {/* MODAL: Líder pede Admissão — só justificativa, sem cargo/salário */}
-      <Modal open={modalNova==="admissao"} onClose={()=>setModalNova(null)} title="Pedir Admissão" width={480}>
+      <Modal open={modalNova==="admissao"} onClose={()=>setModalNova(null)} title="Pedir Admissão" width={640}>
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          <div style={{background:C.accBg,borderRadius:9,padding:"10px 14px",fontSize:12,color:C.accLt}}>📋 Você só precisa justificar a necessidade. Cargo, salário e requisitos serão definidos pelo gestor na próxima etapa.</div>
-          <Sel label="Setor com a necessidade *" value={formAdmLider.setor} onChange={e=>setFormAdmLider({...formAdmLider,setor:e.target.value})} options={Object.entries(SL).filter(([k])=>!["producao_b","producao_c","ti","vulcanizacao","corte"].includes(k)).map(([k,v])=>({value:k,label:v}))}/>
-          <Sel label="Gestor responsável *" value={formAdmLider.gestorId} onChange={e=>setFormAdmLider({...formAdmLider,gestorId:e.target.value})} options={[{value:"",label:"Selecione..."},...gestores.map(u=>({value:u.id,label:u.name}))]}/>
-          <Tex label="Justificativa da necessidade *" value={formAdmLider.motivo} onChange={e=>setFormAdmLider({...formAdmLider,motivo:e.target.value})} rows={4} placeholder="Por que essa contratação é necessária? Qual a urgência?"/>
+          <div style={{background:C.accBg,borderRadius:9,padding:"10px 14px",fontSize:12,color:C.accLt}}>📋 O gestor poderá revisar e ajustar esses dados na próxima etapa, antes de seguir para o RH.</div>
+          <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:12}}>
+            <Sel label="Setor com a necessidade *" value={formAdmLider.setor} onChange={e=>setFormAdmLider({...formAdmLider,setor:e.target.value})} options={Object.entries(SL).filter(([k])=>!["producao_b","producao_c","ti","vulcanizacao","corte"].includes(k)).map(([k,v])=>({value:k,label:v}))}/>
+            <Sel label="Gestor responsável *" value={formAdmLider.gestorId} onChange={e=>setFormAdmLider({...formAdmLider,gestorId:e.target.value})} options={[{value:"",label:"Selecione..."},...gestores.map(u=>({value:u.id,label:u.name}))]}/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:12}}>
+            <Inp label="Qual cargo? *" value={formAdmLider.cargo} onChange={e=>setFormAdmLider({...formAdmLider,cargo:e.target.value})} placeholder="Ex: Operador de Produção II"/>
+            <Inp label="Qual salário da vaga? *" value={formAdmLider.salario} onChange={e=>setFormAdmLider({...formAdmLider,salario:e.target.value})} placeholder="Ex: R$ 2.800,00"/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:12}}>
+            <Tex label="O que você busca no colaborador? *" value={formAdmLider.perfilBuscado} onChange={e=>setFormAdmLider({...formAdmLider,perfilBuscado:e.target.value})} rows={3} placeholder="Perfil, experiência, habilidades e requisitos desejados..."/>
+            <Tex label="Justificativa da necessidade *" value={formAdmLider.motivo} onChange={e=>setFormAdmLider({...formAdmLider,motivo:e.target.value})} rows={3} placeholder="Por que essa contratação é necessária? Qual a urgência?"/>
+          </div>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
             <Btn v="outline" onClick={()=>setModalNova(null)}>Cancelar</Btn>
-            <Btn onClick={abrirAdmissaoLider} disabled={!formAdmLider.gestorId||!formAdmLider.motivo.trim()||saving}>{saving?<Spin size={14} color="#fff"/>:null} Enviar ao gestor</Btn>
+            <Btn onClick={abrirAdmissaoLider} disabled={!formAdmLider.gestorId||!formAdmLider.motivo.trim()||!formAdmLider.cargo.trim()||!formAdmLider.salario.trim()||saving}>{saving?<Spin size={14} color="#fff"/>:null} Enviar ao gestor</Btn>
           </div>
         </div>
       </Modal>
@@ -4036,61 +4050,103 @@ function Contratacao(props){
 
 // UPLOAD CVs
 function UploadCVs({vagas,setCandidates,criarTarefaAuto}){
-  const[uploads,setUploads]=useState([]);const[vagaSel,setVagaSel]=useState(vagas[0]?.id||"");const fileRef=useRef();
+  const[uploads,setUploads]=useState([]);const[vagaSel,setVagaSel]=useState("auto");const fileRef=useRef();
+
   const processar=async up=>{
     const id=up.id;const upd=p=>setUploads(prev=>prev.map(u=>u.id===id?{...u,...p}:u));
     upd({status:"extraindo",progress:20});
     const txt=await extractPDF(up.file)||"CV: "+up.file.name;
-    upd({progress:50,status:"analisando"});
-    const v=vagas.find(x=>x.id===up.vaga);
-    try{
-      const prompt=`Atue como um Recrutador Sênior muito criterioso da Kalenborn.
-Vaga: ${v?.title||""} (${v?.desc||""}).
+    upd({progress:45,status:"analisando"});
+
+    const modoAuto=up.vaga==="auto";
+    const listaVagas=vagas.map(v=>`- id:"${v.id}" | ${v.title} (${v.area||""}) — ${(v.desc||"").substring(0,200)}`).join("\n");
+
+    const prompt=`Atue como um Recrutador Sênior muito criterioso da Kalenborn.
+${modoAuto
+  ? `Nenhuma vaga foi pré-selecionada. Analise o currículo abaixo e escolha, dentre as vagas ativas listadas, a que MAIS combina com o perfil do candidato. Se nenhuma vaga combinar bem (aderência fraca), retorne "vaga_id_sugerida": null e "area_sugerida" com a área mais provável do candidato (ex: Produção, Engenharia, Expedição, Comercial, etc.) mesmo sem vaga aberta — ele poderá ir para o Banco de Talentos.
+
+Vagas ativas:
+${listaVagas || "(nenhuma vaga ativa no momento)"}`
+  : `Vaga: ${vagas.find(x=>x.id===up.vaga)?.title||""} (${vagas.find(x=>x.id===up.vaga)?.desc||""}).`
+}
 
 Faça uma triagem rigorosa. Avalie a aderência técnica, estabilidade nas empresas anteriores e clareza. Seja rigoroso no score (0 a 100).
+Extraia também dados estruturados do currículo: anos de experiência total (número, estimado se necessário), formação principal (curso + instituição, texto curto) e certificações relevantes (lista curta).
+
 CV:
 ${txt.substring(0,6000)}
 
 Retorne APENAS um JSON válido, sem markdown:
-{"score":0,"tech":0,"behavior":0,"resumo":"Resumo crítico (prós e contras)","pontosFort":["..."],"pontosAtencao":["..."],"decisao":"aprovado|revisao|rejeitado"}`;
+{"score":0,"tech":0,"behavior":0,"resumo":"Resumo crítico (prós e contras)","pontosFort":["..."],"pontosAtencao":["..."],"decisao":"aprovado|revisao|rejeitado","experienciaAnos":0,"formacao":"","certificacoes":["..."],"vaga_id_sugerida":${modoAuto ? "null ou o id de uma das vagas listadas" : `"${up.vaga}"`},"area_sugerida":"","confianca_sugestao":"alta|media|baixa"}`;
+
+    try{
       const resp=await gpt([{role:"user",content:prompt}]);
-      let a={score:50,tech:50,behavior:50,resumo:"Análise não pôde ser completada.",pontosFort:[],pontosAtencao:[],decisao:"pendente"};
+      let a={score:50,tech:50,behavior:50,resumo:"Análise não pôde ser completada.",pontosFort:[],pontosAtencao:[],decisao:"pendente",experienciaAnos:null,formacao:"",certificacoes:[],vaga_id_sugerida:modoAuto?null:up.vaga,area_sugerida:"",confianca_sugestao:"baixa"};
       try{
         const match = resp.match(/\{[\s\S]*\}/);
-        if(match) { a = JSON.parse(match[0]); }
+        if(match) { a = {...a, ...JSON.parse(match[0])}; }
       }catch{}
-      upd({status:"concluido",progress:100,resultado:a});
+
+      const vagaFinalId = modoAuto ? (a.vaga_id_sugerida || null) : up.vaga;
+      const v = vagas.find(x=>x.id===vagaFinalId);
+      upd({status:"concluido",progress:100,resultado:a,vagaDetectada:v||null});
+
       const sb=getSB();if(!sb)return;
-      const{data}=await sb.from("candidatos").insert([{name:up.file.name.replace(".pdf","").replace(/_/g," "),role:v?.title||"",vaga_id:v?.id||"",score:a.score||0,tech:a.tech||0,behavior:a.behavior||0,status:a.decisao||"pendente",resumo:a.resumo,habilidades:a.pontosFort||[],pcd:false,salario_pret:"A definir"}]).select().single();
+      const{data}=await sb.from("candidatos").insert([{
+        name:up.file.name.replace(".pdf","").replace(/_/g," "),
+        role:v?.title||a.area_sugerida||"A definir",
+        vaga_id:vagaFinalId||"",
+        score:a.score||0,tech:a.tech||0,behavior:a.behavior||0,status:a.decisao||"pendente",
+        resumo:a.resumo,habilidades:a.pontosFort||[],pcd:false,salario_pret:"A definir",
+        experiencia_anos:a.experienciaAnos??null,formacao:a.formacao||"",
+        certificacoes:a.certificacoes||[],area_sugerida:a.area_sugerida||"",
+        vaga_sugerida_confianca:modoAuto?(a.confianca_sugestao||"baixa"):null,
+        no_banco_talentos:modoAuto&&!vagaFinalId,
+      }]).select().single();
+
       if(data){
         setCandidates(p=>[...p,mc(data)]);
-        if(criarTarefaAuto) criarTarefaAuto(`Decidir: ${data.name}`, `Vaga: ${v?.title}\nPontuação IA: ${a.score}\nResumo: ${a.resumo}`, a.score>=70?"baixa":a.score>=40?"media":"alta", ["recrutamento"], "candidatos", data.id);
+        if(criarTarefaAuto) criarTarefaAuto(`Decidir: ${data.name}`, `${v?"Vaga: "+v.title:"Sem vaga ativa compatível · Área sugerida: "+(a.area_sugerida||"—")}\nPontuação IA: ${a.score}\nResumo: ${a.resumo}`, a.score>=70?"baixa":a.score>=40?"media":"alta", ["recrutamento"], "candidatos", data.id);
       }
     }catch(e){upd({status:"erro",progress:100,erro:"Erro na análise IA."});}
   };
-  
-  const addFiles=files=>{const novos=Array.from(files).map(f=>({id:Date.now()+Math.random(),file:f,vaga:vagaSel,status:"aguardando",progress:0,resultado:null}));setUploads(p=>[...p,...novos]);novos.forEach(processar);};
+
+  const addFiles=files=>{const novos=Array.from(files).map(f=>({id:Date.now()+Math.random(),file:f,vaga:vagaSel,status:"aguardando",progress:0,resultado:null,vagaDetectada:null}));setUploads(p=>[...p,...novos]);novos.forEach(processar);};
   const sCfg={aguardando:{l:"Aguardando",c:C.txd},extraindo:{l:"Extraindo PDF",c:C.blu},analisando:{l:"Analisando IA",c:C.acc},concluido:{l:"Concluído",c:C.grn},erro:{l:"Erro",c:C.red}};
-  
+
   return(
     <div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:20}}>
-      <div><div style={{fontSize:22,fontWeight:800,letterSpacing:"-.02em"}}>Upload de Currículos</div><div style={{fontSize:13,color:C.txm,marginTop:2}}>Análise automática via GPT-4o</div></div>
+      <div><div style={{fontSize:22,fontWeight:800,letterSpacing:"-.02em"}}>Upload de Currículos</div><div style={{fontSize:13,color:C.txm,marginTop:2}}>Análise automática via GPT-4o · detecta a vaga/área ideal sozinha, se preferir</div></div>
       <Card>
-        <div style={{marginBottom:14}}><Sel label="Vaga" value={vagaSel} onChange={e=>setVagaSel(e.target.value)} options={vagas.map(v=>({value:v.id,label:"#"+v.id+" — "+v.title}))}/></div>
+        <div style={{marginBottom:14}}><Sel label="Vaga" value={vagaSel} onChange={e=>setVagaSel(e.target.value)} options={[{value:"auto",label:"🤖 Detectar automaticamente"},...vagas.map(v=>({value:v.id,label:"#"+v.id+" — "+v.title}))]}/></div>
+        {vagaSel==="auto"&&<div style={{background:C.accBg,borderRadius:9,padding:"10px 14px",fontSize:12,color:C.accLt,marginBottom:14}}>🤖 A IA vai ler cada currículo e escolher sozinha a vaga ativa que mais combina — ou sugerir a área, caso nenhuma vaga aberta seja compatível (o candidato vai direto pro Banco de Talentos).</div>}
         <div onClick={()=>fileRef.current?.click()} onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=C.acc;}} onDragLeave={e=>e.currentTarget.style.borderColor=C.bdr} onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor=C.bdr;addFiles(e.dataTransfer.files);}} style={{border:"2px dashed "+C.bdr,borderRadius:12,padding:36,textAlign:"center",cursor:"pointer",transition:"all .2s"}} onMouseEnter={e=>e.currentTarget.style.borderColor=C.acc} onMouseLeave={e=>e.currentTarget.style.borderColor=C.bdr}>
           <input ref={fileRef} type="file" accept=".pdf" multiple style={{display:"none"}} onChange={e=>addFiles(e.target.files)}/>
           <div style={{fontSize:32,marginBottom:8}}>⇧</div><div style={{fontWeight:600,marginBottom:4}}>Arraste PDFs ou clique</div><div style={{fontSize:12,color:C.txd}}>Múltiplos arquivos · Análise em background</div>
         </div>
       </Card>
-      {uploads.map(u=>{const cfg=sCfg[u.status]||sCfg.aguardando;const v=vagas.find(x=>x.id===u.vaga);return(
+      {uploads.map(u=>{const cfg=sCfg[u.status]||sCfg.aguardando;const vagaMostrar=u.vaga==="auto"?u.vagaDetectada:vagas.find(x=>x.id===u.vaga);return(
         <Card key={u.id}>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
-            <div><div style={{fontWeight:600,fontSize:13}}>{u.file.name}</div><div style={{fontSize:11,color:C.txd}}>{v?.title} · {(u.file.size/1024).toFixed(0)}KB</div></div>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
+            <div>
+              <div style={{fontWeight:600,fontSize:13}}>{u.file.name}</div>
+              <div style={{fontSize:11,color:C.txd}}>
+                {u.vaga==="auto"
+                  ? (u.status==="concluido" ? (vagaMostrar?"🤖 Detectada: "+vagaMostrar.title:"🤖 Sem vaga compatível · Banco de Talentos"+(u.resultado?.area_sugerida?" · Área: "+u.resultado.area_sugerida:"")) : "🤖 Detectando vaga/área...")
+                  : (vagaMostrar?.title||"")
+                } · {(u.file.size/1024).toFixed(0)}KB
+              </div>
+            </div>
             <div style={{display:"flex",alignItems:"center",gap:8}}>{u.status!=="concluido"&&u.status!=="erro"&&<Spin size={14} color={cfg.c}/>}<Chip label={cfg.l} color={cfg.c} dot/></div>
           </div>
           <div style={{height:3,background:C.s3,borderRadius:3,overflow:"hidden",marginBottom:u.resultado?12:0}}><div style={{height:"100%",width:u.progress+"%",borderRadius:3,background:u.status==="erro"?C.red:C.acc,transition:"width .4s ease"}}/></div>
           {u.resultado&&<div className="fadeIn" style={{display:"flex",flexDirection:"column",gap:8}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{fontSize:12,color:C.txm}}>{u.resultado.resumo}</div><span style={{fontSize:22,fontWeight:700,color:u.resultado.score>=80?C.grn:u.resultado.score>=60?C.amb:C.red,fontFamily:"'JetBrains Mono',monospace"}}>{u.resultado.score}</span></div>
+            <div style={{display:"flex",gap:12,flexWrap:"wrap",fontSize:11,color:C.txm}}>
+              {u.resultado.experienciaAnos!=null&&<span>⏱ {u.resultado.experienciaAnos} anos de experiência</span>}
+              {u.resultado.formacao&&<span>🎓 {u.resultado.formacao}</span>}
+            </div>
+            {u.resultado.certificacoes?.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{u.resultado.certificacoes.map(c=><Chip key={c} label={"📜 "+c} color={C.blu}/>)}</div>}
             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{u.resultado.pontosFort?.map(p=><Chip key={p} label={p} color={C.grn}/>)}{u.resultado.pontosAtencao?.map(p=><Chip key={p} label={p} color={C.amb}/>)}</div>
           </div>}
           {u.erro&&<div style={{fontSize:12,color:C.red}}>{u.erro}</div>}
@@ -4125,28 +4181,29 @@ function CareerPortal({vagas,onBack,onSubmit,criarTarefaAuto}){
   const submit=async()=>{
     setLoading(true);
     try{
-      let cv="";if(cvFile){setStepMsg("Extraindo currículo...");cv=await extractPDF(cvFile)||"";}
-      setStepMsg("Analisando perfil com IA...");
+      let cv="";if(cvFile){setStepMsg("Processando currículo...");cv=await extractPDF(cvFile)||"";}
+      setStepMsg("Analisando seu perfil...");
       const prompt=`Atue como um Recrutador Sênior muito criterioso da Kalenborn.
 Vaga: ${vaga.title} (${vaga.desc}).
 
 Faça uma triagem rigorosa. Avalie a aderência técnica, clareza nas respostas e expectativas. Seja rigoroso na nota (0 a 100).
+Extraia também dados estruturados do currículo: anos de experiência total (número, estimado se necessário), formação principal (curso + instituição, texto curto) e certificações relevantes (lista curta).
 CV: ${cv||"Não enviado"}
 
 Respostas do Candidato:
 ${ans.map((a,i)=>(i+1)+": "+a).join("\n")}
 
 Retorne APENAS um JSON válido, sem markdown:
-{"score":0,"tech":0,"behavior":0,"status":"pendente","pontosFort":["..."],"pontosAtencao":["..."],"resumo":"Resumo crítico (prós e contras)"}`;
+{"score":0,"tech":0,"behavior":0,"status":"pendente","pontosFort":["..."],"pontosAtencao":["..."],"resumo":"Resumo crítico (prós e contras)","experienciaAnos":0,"formacao":"","certificacoes":["..."]}`;
       const resp=await gpt([{role:"user",content:prompt}]);
-      let a={score:50,tech:50,behavior:50,status:"pendente",pontosFort:[],resumo:"Análise concluída."};
+      let a={score:50,tech:50,behavior:50,status:"pendente",pontosFort:[],resumo:"Análise concluída.",experienciaAnos:null,formacao:"",certificacoes:[]};
       try{
         const match = resp.match(/\{[\s\S]*\}/);
-        if(match) { a = JSON.parse(match[0]); }
+        if(match) { a = {...a, ...JSON.parse(match[0])}; }
       }catch{}
       const sb=getSB();
       if(sb){
-        const{data}=await sb.from("candidatos").insert([{name:form.name,role:vaga.title,vaga_id:vaga.id,email:form.email,phone:form.phone,salario_pret:form.salarioPret,pcd:form.pcd,score:a.score||0,tech:a.tech||0,behavior:a.behavior||0,status:a.status||"pendente",resumo:a.resumo,habilidades:a.pontosFort||[]}]).select().single();
+        const{data}=await sb.from("candidatos").insert([{name:form.name,role:vaga.title,vaga_id:vaga.id,email:form.email,phone:form.phone,salario_pret:form.salarioPret,pcd:form.pcd,score:a.score||0,tech:a.tech||0,behavior:a.behavior||0,status:a.status||"pendente",resumo:a.resumo,habilidades:a.pontosFort||[],experiencia_anos:a.experienciaAnos??null,formacao:a.formacao||"",certificacoes:a.certificacoes||[]}]).select().single();
         if(data){
           onSubmit(mc(data));
           if(criarTarefaAuto) criarTarefaAuto(`Decidir: ${form.name}`, `Vaga: ${vaga.title}\nPontuação IA: ${a.score}\nResumo: ${a.resumo}`, a.score>=70?"baixa":a.score>=40?"media":"alta", ["recrutamento"], "candidatos", data.id);
@@ -4195,7 +4252,7 @@ Retorne APENAS um JSON válido, sem markdown:
           </div>}
           {step===3&&<div className="fadeIn">
             <div style={{fontSize:17,fontWeight:700,marginBottom:4}}>Formulário</div>
-            <div style={{fontSize:12,color:C.txm,marginBottom:16}}>Respostas analisadas por IA</div>
+            <div style={{fontSize:12,color:C.txm,marginBottom:16}}>Suas respostas serão consideradas na avaliação da candidatura</div>
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
               {qs.map((q,i)=><div key={i}><label style={{fontSize:12,fontWeight:600,display:"block",marginBottom:5}}>{i+1}. {q}</label><textarea value={ans[i]} onChange={e=>{const a=[...ans];a[i]=e.target.value;setAns(a);}} rows={2} placeholder="Sua resposta..." style={{width:"100%",background:C.s2,border:"1px solid "+(ans[i].length>10?C.acc+"55":C.bdr),borderRadius:9,padding:"9px 13px",fontSize:13,color:C.txt,resize:"vertical"}}/></div>)}
             </div>
