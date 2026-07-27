@@ -209,8 +209,8 @@ button{cursor:pointer;font-family:'Inter',sans-serif;}
 
 const NAV=[
   {group:"Visão geral",items:[
-    {id:"dashboard",icon:"⬡",label:"Dashboard",min:"colaborador"},
-    {id:"analytics",icon:"◉",label:"People Analytics",min:"gestor"},
+    {id:"dashboard",icon:"⬡",label:"Painel",min:"colaborador"},
+    {id:"analytics",icon:"◉",label:"Análise de Pessoas",min:"gestor"},
   ]},
   {group:"Pessoas",items:[
     {id:"colaboradores",icon:"⊞",label:"Colaboradores",min:"gestor"},
@@ -233,8 +233,8 @@ const NAV=[
   ]},
   {group:"Minha conta",items:[
     {id:"perfil",icon:"◎",label:"Meu Perfil",min:"colaborador"},
-    {id:"planner",icon:"⬛",label:"Planner",min:"lider"},
-    {id:"config",icon:"⚙",label:"Config",min:"rh"},
+    {id:"planner",icon:"⬛",label:"Planejamento",min:"lider"},
+    {id:"config",icon:"⚙",label:"Configurações",min:"rh"},
   ]},
 ];
 
@@ -429,7 +429,7 @@ function Dashboard({user,users,ferias,tarefas,comunicados,exames,candidates,setP
 
           <Card style={{padding: "24px", display: "flex", flexDirection: "column"}}>
             <div style={{fontSize:14,fontWeight:700,marginBottom:20,color:C.txt,display:"flex",alignItems:"center",gap:8}}>
-              {can(user.role, "rh") ? <><span style={{color:C.blu, fontSize: 16}}>🎯</span> Funil de Candidatos</> : <><span style={{color:C.acc, fontSize: 16}}>⬛</span> Progresso do Planner</>}
+              {can(user.role, "rh") ? <><span style={{color:C.blu, fontSize: 16}}>🎯</span> Funil de Candidatos</> : <><span style={{color:C.acc, fontSize: 16}}>⬛</span> Progresso do Planejamento</>}
             </div>
             <div style={{flex: 1, minHeight: 220, display: "flex", alignItems: "center"}}>
               {(can(user.role, "rh") ? chartCandidatos : chartTarefas).length === 0 ? (
@@ -574,10 +574,10 @@ function Planner({user,users,ferias,tarefas,setTarefas,setPage}){
   return(
     <div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:20}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
-        <div><div style={{fontSize:22,fontWeight:800,letterSpacing:"-.02em"}}>Planner</div><div style={{fontSize:13,color:C.txm,marginTop:2}}>Agrupado por tipo de demanda · clique no card para abrir o registro original</div></div>
+        <div><div style={{fontSize:22,fontWeight:800,letterSpacing:"-.02em"}}>Planejamento</div><div style={{fontSize:13,color:C.txm,marginTop:2}}>Agrupado por tipo de demanda · clique no card para abrir o registro original</div></div>
         <div style={{display:"flex",gap:8}}>
           <div style={{display:"flex",background:C.s2,borderRadius:10,padding:3,border:"1px solid "+C.bdr}}>
-            {["kanban","ferias"].map(t=><button key={t} onClick={()=>setTab(t)} style={{padding:"6px 14px",borderRadius:8,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",background:tab===t?C.acc:"transparent",color:tab===t?"#fff":C.txm,transition:"all .2s"}}>{t==="kanban"?"⬛ Kanban":"✈ Férias"}</button>)}
+            {["kanban","ferias"].map(t=><button key={t} onClick={()=>setTab(t)} style={{padding:"6px 14px",borderRadius:8,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",background:tab===t?C.acc:"transparent",color:tab===t?"#fff":C.txm,transition:"all .2s"}}>{t==="kanban"?"⬛ Quadro":"✈ Férias"}</button>)}
           </div>
           {can(user.role,"lider")&&tab==="kanban"&&<Btn onClick={()=>{setEditId(null);setForm({titulo:"",desc:"",prio:"media",respId:"",setor:"",venc:"",tags:""});setModal(true);}}>+ Tarefa</Btn>}
         </div>
@@ -865,7 +865,7 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto}){
               )}
               {isRH&&statusDisponiveis.length>1&&(
                 <select value={filtroStatus} onChange={e=>setFiltroStatus(e.target.value)} style={{background:C.bgCard,border:"1px solid "+C.bdr,borderRadius:9,padding:"9px 13px",color:C.txt,fontSize:13}}>
-                  <option value="todos">Todos os status</option>
+                  <option value="todos">Todas as situações</option>
                   {statusDisponiveis.map(s=><option key={s} value={s}>{STATUS_L[s]||s}</option>)}
                 </select>
               )}
@@ -1316,7 +1316,7 @@ function BancoTalentos({user,talentos,setTalentos,candidates,setCandidates,showT
               <Av name={t.name} size={40} color={C.pur}/>
               <div style={{flex:1}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
-                  <div><div style={{fontWeight:700,fontSize:14}}>{t.name}</div><div style={{fontSize:12,color:C.txm}}>{t.role} · Score: <span style={{color:t.score>=80?C.grn:t.score>=60?C.amb:C.red,fontWeight:700}}>{t.score}</span></div></div>
+                  <div><div style={{fontWeight:700,fontSize:14}}>{t.name}</div><div style={{fontSize:12,color:C.txm}}>{t.role} · Pontuação: <span style={{color:t.score>=80?C.grn:t.score>=60?C.amb:C.red,fontWeight:700}}>{t.score}</span></div></div>
                   <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{t.habs.slice(0,3).map(h=><Chip key={h} label={h} color={C.pur}/>)}{t.habs.length>3&&<Chip label={"+"+(t.habs.length-3)} color={C.txm}/>}</div>
                 </div>
               </div>
@@ -1338,7 +1338,7 @@ function BancoTalentos({user,talentos,setTalentos,candidates,setCandidates,showT
           </Card>
         ))}
       </div>
-      <Modal open={!!emailModal} onClose={()=>setEmailModal(null)} title={"Email — "+(emailModal?.name||"")} width={600}>
+      <Modal open={!!emailModal} onClose={()=>setEmailModal(null)} title={"E-mail — "+(emailModal?.name||"")} width={600}>
         {genLoad?<div style={{display:"flex",justifyContent:"center",padding:36}}><Spin/></div>
         :<div style={{display:"flex",flexDirection:"column",gap:14}}>
           <Tex value={emailTxt} onChange={e=>setEmailTxt(e.target.value)} rows={10}/>
@@ -1389,7 +1389,7 @@ function Recrutamento({user,candidates,setCandidates,talentos,setTalentos,vagas,
       </div>
       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
         <select value={fVaga} onChange={e=>setFVaga(e.target.value)} style={{background:C.bgCard,border:"1px solid "+C.bdr,borderRadius:9,padding:"8px 13px",color:C.txt,fontSize:12}}><option value="todos">Todas as Vagas</option>{vagas.map(v=><option key={v.id} value={v.id}>#{v.id} — {v.title}</option>)}</select>
-        <select value={fStatus} onChange={e=>setFStatus(e.target.value)} style={{background:C.bgCard,border:"1px solid "+C.bdr,borderRadius:9,padding:"8px 13px",color:C.txt,fontSize:12}}><option value="todos">Todos os Status</option>{Object.entries(COLS).map(([k,v])=><option key={k} value={k}>{v.l}</option>)}</select>
+        <select value={fStatus} onChange={e=>setFStatus(e.target.value)} style={{background:C.bgCard,border:"1px solid "+C.bdr,borderRadius:9,padding:"8px 13px",color:C.txt,fontSize:12}}><option value="todos">Todas as Situações</option>{Object.entries(COLS).map(([k,v])=><option key={k} value={k}>{v.l}</option>)}</select>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
         {filtrado.sort((a,b)=>b.score-a.score).map(c=>{
@@ -1400,7 +1400,7 @@ function Recrutamento({user,candidates,setCandidates,talentos,setTalentos,vagas,
               <div style={{flex:1}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
                   <div>
-                    <div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:8}}>{c.name}{c.emailEnviado&&<Chip label="✉ Email" color={C.grn}/>}{c.noBanco&&<Chip label="♦ Banco" color={C.pur}/>}</div>
+                    <div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:8}}>{c.name}{c.emailEnviado&&<Chip label="✉ E-mail" color={C.grn}/>}{c.noBanco&&<Chip label="♦ Banco" color={C.pur}/>}</div>
                     <div style={{fontSize:12,color:C.txm}}>{c.role} · {c.vaga}</div>
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:24,fontWeight:700,color:c.score>=80?C.grn:c.score>=60?C.amb:C.red,fontFamily:"'JetBrains Mono',monospace"}}>{c.score}</span><Chip label={cfg.l} color={cfg.c} dot/></div>
@@ -1431,7 +1431,7 @@ function Recrutamento({user,candidates,setCandidates,talentos,setTalentos,vagas,
         })}
         {filtrado.length===0&&<Card><div style={{color:C.txd,textAlign:"center",padding:18}}>Nenhum candidato.</div></Card>}
       </div>
-      <Modal open={!!emailModal} onClose={()=>setEmailModal(null)} title={"Email — "+(emailModal?.name||"")} width={600}>
+      <Modal open={!!emailModal} onClose={()=>setEmailModal(null)} title={"E-mail — "+(emailModal?.name||"")} width={600}>
         {genLoad?<div style={{display:"flex",justifyContent:"center",padding:36}}><Spin/></div>
         :<div style={{display:"flex",flexDirection:"column",gap:14}}>
           <Tex value={emailTxt} onChange={e=>setEmailTxt(e.target.value)} rows={10}/>
@@ -2099,7 +2099,7 @@ function PeopleAnalytics({user,users,ferias,candidates,avaliacoes,exames,tarefas
     {id:"headcount",label:"Headcount Total",value:users.length,sub:totalColabs+" colaboradores",color:C.acc,trend:"+2",trendUp:true,icon:"◉"},
     {id:"turnover",label:"Turnover (período)",value:taxaTurnoverAno+"%",sub:turnoverAcum+" saídas",color:turnoverAcum>3?C.red:C.grn,trend:turnoverAcum>3?"↑":"↓",trendUp:false,icon:"↻"},
     {id:"tth",label:"Time-to-Hire Médio",value:tthMedio+"d",sub:"dias até aprovação",color:tthMedio>30?C.amb:C.grn,trend:tthMedio>30?"↑":"↓",trendUp:false,icon:"⏱"},
-    {id:"nps",label:"Score Médio Avals.",value:radarData.length>0?parseFloat((radarData.reduce((a,b)=>a+b.valor,0)/radarData.length).toFixed(1)):"-",sub:"de 5.0 possíveis",color:C.pur,trend:"+0.2",trendUp:true,icon:"★"},
+    {id:"nps",label:"Pontuação Média Aval.",value:radarData.length>0?parseFloat((radarData.reduce((a,b)=>a+b.valor,0)/radarData.length).toFixed(1)):"-",sub:"de 5.0 possíveis",color:C.pur,trend:"+0.2",trendUp:true,icon:"★"},
     {id:"candidatos",label:"Candidatos Ativos",value:candidates.filter(c=>c.status!=="rejeitado").length,sub:"no pipeline",color:C.blu,trend:"+"+candidates.filter(c=>{const d=new Date(c.createdAt||"");return(hoje-d)<(30*86400000);}).length+" este mês",trendUp:true,icon:"⊕"},
     {id:"ferias_aprov",label:"Férias Aprovadas",value:ferias.filter(f=>f.status==="aprovado").length,sub:"no período",color:C.grn,trend:ferias.filter(f=>f.status==="pendente_rh"||f.status==="pendente_gestor"||f.status==="pendente_lider").length+" pendentes",trendUp:null,icon:"✈"},
   ];
@@ -2142,7 +2142,7 @@ function PeopleAnalytics({user,users,ferias,candidates,avaliacoes,exames,tarefas
       {/* ── HEADER ── */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",flexWrap:"wrap",gap:12}}>
         <div>
-          <div style={{fontSize:22,fontWeight:800,letterSpacing:"-.02em"}}>◉ People Analytics</div>
+          <div style={{fontSize:22,fontWeight:800,letterSpacing:"-.02em"}}>◉ Análise de Pessoas</div>
           <div style={{fontSize:13,color:C.txm,marginTop:2}}>Visão executiva de pessoas · Kalenborn International</div>
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
@@ -2362,7 +2362,7 @@ function PeopleAnalytics({user,users,ferias,candidates,avaliacoes,exames,tarefas
 
         <Card style={{padding:24}}>
           <div style={{marginBottom:20}}>
-            <div style={{fontSize:14,fontWeight:700}}>Score Médio por Vaga</div>
+            <div style={{fontSize:14,fontWeight:700}}>Pontuação Média por Vaga</div>
             <div style={{fontSize:11,color:C.txd,marginTop:2}}>Qualidade dos candidatos por posição</div>
           </div>
           {vagasComScore.length===0?(
@@ -2375,7 +2375,7 @@ function PeopleAnalytics({user,users,ferias,candidates,avaliacoes,exames,tarefas
                 <YAxis type="category" dataKey="vaga" stroke={C.txm} fontSize={10} tickLine={false} axisLine={false} width={40}/>
                 <Tooltip content={<CustomTip/>}/>
                 <ReferenceLine x={70} stroke={C.grn} strokeDasharray="4 4" label={{value:"70 meta",position:"top",fontSize:9,fill:C.grn}}/>
-                <Bar dataKey="score" name="Score IA" radius={[0,6,6,0]} maxBarSize={24}>
+                <Bar dataKey="score" name="Pontuação IA" radius={[0,6,6,0]} maxBarSize={24}>
                   {vagasComScore.map((entry,i)=>(
                     <Cell key={i} fill={entry.score>=80?C.grn:entry.score>=60?C.amb:C.red}/>
                   ))}
@@ -2412,7 +2412,7 @@ function PeopleAnalytics({user,users,ferias,candidates,avaliacoes,exames,tarefas
       <Card style={{padding:24}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
           <div>
-            <div style={{fontSize:14,fontWeight:700}}>Ranking de Desempenho</div>
+            <div style={{fontSize:14,fontWeight:700}}>Classificação de Desempenho</div>
             <div style={{fontSize:11,color:C.txd,marginTop:2}}>Top colaboradores por média de avaliações</div>
           </div>
         </div>
@@ -3499,8 +3499,8 @@ function PesquisaClima({user,users,pulses,setPulses,nps,setNps}){
   const npsGroup = s => s>=9?"Promotor":s>=7?"Neutro":"Detrator";
   const npsColor = s => s>=9?C.grn:s>=7?C.amb:C.red;
 
-  const TABS_RH = [{id:"home",l:"Início"},{id:"pulse",l:"Pulse Semanal"},{id:"enps",l:"eNPS"},{id:"denuncia",l:"Canal Anônimo"},{id:"resultados",l:"Resultados"}];
-  const TABS_COL = [{id:"home",l:"Início"},{id:"pulse",l:"Pulse Semanal"},{id:"enps",l:"eNPS"},{id:"denuncia",l:"Canal Anônimo"}];
+  const TABS_RH = [{id:"home",l:"Início"},{id:"pulse",l:"Termômetro Semanal"},{id:"enps",l:"Satisfação"},{id:"denuncia",l:"Canal Anônimo"},{id:"resultados",l:"Resultados"}];
+  const TABS_COL = [{id:"home",l:"Início"},{id:"pulse",l:"Termômetro Semanal"},{id:"enps",l:"Satisfação"},{id:"denuncia",l:"Canal Anônimo"}];
   const TABS = can(user.role,"gestor") ? TABS_RH : TABS_COL;
 
   const denTipos=[
@@ -3518,7 +3518,7 @@ function PesquisaClima({user,users,pulses,setPulses,nps,setNps}){
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",flexWrap:"wrap",gap:12}}>
         <div>
           <div style={{fontSize:22,fontWeight:800,letterSpacing:"-.02em"}}>❤ Pesquisa de Clima</div>
-          <div style={{fontSize:13,color:C.txm,marginTop:2}}>Respostas anônimas · {pulses.length} pulses · {nps.length} avaliações eNPS</div>
+          <div style={{fontSize:13,color:C.txm,marginTop:2}}>Respostas anônimas · {pulses.length} registros · {nps.length} avaliações de satisfação</div>
         </div>
         <div style={{background:C.grnBg,border:"1px solid "+C.grn+"30",borderRadius:9,padding:"6px 14px",display:"flex",alignItems:"center",gap:6,fontSize:12}}>
           <span style={{color:C.grn,fontWeight:700}}>🔒 100% Anônimo</span>
@@ -3547,10 +3547,10 @@ function PesquisaClima({user,users,pulses,setPulses,nps,setNps}){
           {/* KPIs */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12}}>
             {[
-              {l:"Pulse Médio",v:mediaGlobalPulse!==null?mediaGlobalPulse+"/ 10":"—",c:mediaGlobalPulse>=7?C.grn:mediaGlobalPulse>=5?C.amb:C.red,sub:pulses.length+" respostas"},
-              {l:"eNPS Trimestral",v:eNPS!==null?eNPS:"—",c:eNPSColor,sub:eNPSLabel},
-              {l:"Participação Pulse",v:pulses.length>0?Math.round((new Set(pulses.map(p=>p.user_id)).size/Math.max(users.length,1))*100)+"%":"—",c:C.acc,sub:"este mês"},
-              {l:"Responderam eNPS",v:npsTriAtual.length,c:C.pur,sub:"neste trimestre"},
+              {l:"Termômetro Médio",v:mediaGlobalPulse!==null?mediaGlobalPulse+"/ 10":"—",c:mediaGlobalPulse>=7?C.grn:mediaGlobalPulse>=5?C.amb:C.red,sub:pulses.length+" respostas"},
+              {l:"Satisfação Trimestral",v:eNPS!==null?eNPS:"—",c:eNPSColor,sub:eNPSLabel},
+              {l:"Participação no Termômetro",v:pulses.length>0?Math.round((new Set(pulses.map(p=>p.user_id)).size/Math.max(users.length,1))*100)+"%":"—",c:C.acc,sub:"este mês"},
+              {l:"Responderam a Pesquisa",v:npsTriAtual.length,c:C.pur,sub:"neste trimestre"},
             ].map((k,i)=>(
               <div key={i} style={{background:C.bgCard,border:"1px solid "+C.bdr,borderTop:"3px solid "+k.c,borderRadius:16,padding:"18px 20px"}}>
                 <div style={{fontSize:11,color:C.txm,fontWeight:700,letterSpacing:".05em",textTransform:"uppercase",marginBottom:8}}>{k.l}</div>
@@ -3565,7 +3565,7 @@ function PesquisaClima({user,users,pulses,setPulses,nps,setNps}){
             <div style={{background:jaRespondeuPulse?C.grnBg:C.acc+"08",border:"1px solid "+(jaRespondeuPulse?C.grn+"30":C.acc+"30"),borderRadius:16,padding:24,display:"flex",flexDirection:"column",gap:12}}>
               <div style={{fontSize:32}}>{jaRespondeuPulse?"✅":"💬"}</div>
               <div style={{fontSize:15,fontWeight:700,color:jaRespondeuPulse?C.grn:C.txt}}>
-                {jaRespondeuPulse?"Pulse respondido esta semana!":"Pulse da Semana"}
+                {jaRespondeuPulse?"Termômetro respondido esta semana!":"Termômetro da Semana"}
               </div>
               <div style={{fontSize:13,color:C.txm,lineHeight:1.5}}>
                 {jaRespondeuPulse
@@ -3578,7 +3578,7 @@ function PesquisaClima({user,users,pulses,setPulses,nps,setNps}){
             <div style={{background:jaRespondeuNps?C.grnBg:C.pur+"08",border:"1px solid "+(jaRespondeuNps?C.grn+"30":C.pur+"30"),borderRadius:16,padding:24,display:"flex",flexDirection:"column",gap:12}}>
               <div style={{fontSize:32}}>{jaRespondeuNps?"✅":"⭐"}</div>
               <div style={{fontSize:15,fontWeight:700,color:jaRespondeuNps?C.grn:C.txt}}>
-                {jaRespondeuNps?"eNPS respondido!":"eNPS — "+trimAtual}
+                {jaRespondeuNps?"Satisfação respondida!":"Satisfação — "+trimAtual}
               </div>
               <div style={{fontSize:13,color:C.txm,lineHeight:1.5}}>
                 {jaRespondeuNps
@@ -3711,14 +3711,14 @@ function PesquisaClima({user,users,pulses,setPulses,nps,setNps}){
           {jaRespondeuNps?(
             <Card style={{textAlign:"center",padding:40}}>
               <div style={{fontSize:48,marginBottom:12}}>⭐</div>
-              <div style={{fontSize:18,fontWeight:700,marginBottom:8}}>eNPS respondido para {trimAtual}!</div>
+              <div style={{fontSize:18,fontWeight:700,marginBottom:8}}>Satisfação respondida para {trimAtual}!</div>
               <div style={{fontSize:13,color:C.txm,marginBottom:20}}>Obrigado. Sua resposta anônima foi contabilizada neste trimestre.</div>
               {can(user.role,"gestor")&&<Btn v="outline" onClick={()=>setView("resultados")}>Ver resultados →</Btn>}
             </Card>
           ):(
             <Card style={{padding:32}}>
               <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
-                <div style={{fontSize:16,fontWeight:700}}>Employee Net Promoter Score</div>
+                <div style={{fontSize:16,fontWeight:700}}>Índice de Satisfação dos Colaboradores</div>
                 <Chip label={trimAtual} color={C.pur}/>
               </div>
               <div style={{fontSize:13,color:C.txm,marginBottom:28,display:"flex",alignItems:"center",gap:6}}>
@@ -3848,7 +3848,7 @@ function PesquisaClima({user,users,pulses,setPulses,nps,setNps}){
           <Card style={{padding:28}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:16,marginBottom:24}}>
               <div>
-                <div style={{fontSize:14,fontWeight:700,marginBottom:4}}>eNPS — {trimAtual}</div>
+                <div style={{fontSize:14,fontWeight:700,marginBottom:4}}>Satisfação — {trimAtual}</div>
                 <div style={{fontSize:11,color:C.txd}}>{npsTriAtual.length} respostas · anônimas</div>
               </div>
               <div style={{textAlign:"center"}}>
@@ -3905,7 +3905,7 @@ function PesquisaClima({user,users,pulses,setPulses,nps,setNps}){
 
           {/* Pulse ao longo do tempo */}
           <Card style={{padding:24}}>
-            <div style={{fontSize:14,fontWeight:700,marginBottom:6}}>Pulse de Clima — Evolução Semanal</div>
+            <div style={{fontSize:14,fontWeight:700,marginBottom:6}}>Termômetro de Clima — Evolução Semanal</div>
             <div style={{fontSize:11,color:C.txd,marginBottom:20}}>Média das notas semanais (escala 1–10)</div>
             {pulsesPorSemana.length===0?(
               <div style={{textAlign:"center",padding:"32px 0",color:C.txd,fontSize:13}}>Nenhum pulse registrado ainda.</div>
@@ -4064,7 +4064,7 @@ Retorne APENAS um JSON válido, sem markdown:
       const{data}=await sb.from("candidatos").insert([{name:up.file.name.replace(".pdf","").replace(/_/g," "),role:v?.title||"",vaga_id:v?.id||"",score:a.score||0,tech:a.tech||0,behavior:a.behavior||0,status:a.decisao||"pendente",resumo:a.resumo,habilidades:a.pontosFort||[],pcd:false,salario_pret:"A definir"}]).select().single();
       if(data){
         setCandidates(p=>[...p,mc(data)]);
-        if(criarTarefaAuto) criarTarefaAuto(`Decidir: ${data.name}`, `Vaga: ${v?.title}\nScore IA: ${a.score}\nResumo: ${a.resumo}`, a.score>=70?"baixa":a.score>=40?"media":"alta", ["recrutamento"], "candidatos", data.id);
+        if(criarTarefaAuto) criarTarefaAuto(`Decidir: ${data.name}`, `Vaga: ${v?.title}\nPontuação IA: ${a.score}\nResumo: ${a.resumo}`, a.score>=70?"baixa":a.score>=40?"media":"alta", ["recrutamento"], "candidatos", data.id);
       }
     }catch(e){upd({status:"erro",progress:100,erro:"Erro na análise IA."});}
   };
@@ -4149,7 +4149,7 @@ Retorne APENAS um JSON válido, sem markdown:
         const{data}=await sb.from("candidatos").insert([{name:form.name,role:vaga.title,vaga_id:vaga.id,email:form.email,phone:form.phone,salario_pret:form.salarioPret,pcd:form.pcd,score:a.score||0,tech:a.tech||0,behavior:a.behavior||0,status:a.status||"pendente",resumo:a.resumo,habilidades:a.pontosFort||[]}]).select().single();
         if(data){
           onSubmit(mc(data));
-          if(criarTarefaAuto) criarTarefaAuto(`Decidir: ${form.name}`, `Vaga: ${vaga.title}\nScore IA: ${a.score}\nResumo: ${a.resumo}`, a.score>=70?"baixa":a.score>=40?"media":"alta", ["recrutamento"], "candidatos", data.id);
+          if(criarTarefaAuto) criarTarefaAuto(`Decidir: ${form.name}`, `Vaga: ${vaga.title}\nPontuação IA: ${a.score}\nResumo: ${a.resumo}`, a.score>=70?"baixa":a.score>=40?"media":"alta", ["recrutamento"], "candidatos", data.id);
         }
       }
       setStep(5);
