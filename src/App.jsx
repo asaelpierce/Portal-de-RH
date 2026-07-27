@@ -200,7 +200,7 @@ input::placeholder,textarea::placeholder{color:#64748b!important;opacity:.8;}
 input:focus,textarea:focus,select:focus{border-color:#4f46e5!important;box-shadow:0 0 0 3px rgba(79,70,229,.15)!important;}
 button{cursor:pointer;font-family:'Inter',sans-serif;}
 @keyframes spin{to{transform:rotate(360deg)}}
-@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 .fadeUp{animation:fadeUp .3s cubic-bezier(.16,1,.3,1) both;}
 .fadeIn{animation:fadeIn .2s ease both;}
