@@ -1578,7 +1578,9 @@ function Feedbacks({user,users,feedbacks,setFeedbacks}){
 // AVALIAÇÕES
 function Avaliacoes({user,users,avaliacoes,setAvaliacoes}){
   const[tab,setTab]=useState("historico");const[modal,setModal]=useState(null);const[fn,setFn]=useState({qualidade:3,produtividade:3,trabalhoEquipe:3,pontualidade:3,iniciativa:3,comentario:""});const[saving,setSaving]=useState(false);
-  const periodo=new Date().getMonth()<6?"2026-S1":"2026-S2";
+  // Por quê: o ano estava fixo em 2026; em 2027 as avaliações continuariam gravadas como "2026-Sx".
+  // Regra do semestre mantida como estava: jan–jun = S1, jul–dez = S2.
+  const periodo=new Date().getFullYear()+"-S"+(new Date().getMonth()<6?1:2);
   const CRIT=[{k:"qualidade",l:"Qualidade",i:"◉"},{k:"produtividade",l:"Produtividade",i:"⚡"},{k:"trabalhoEquipe",l:"Trabalho em Equipe",i:"◈"},{k:"pontualidade",l:"Pontualidade",i:"◷"},{k:"iniciativa",l:"Iniciativa",i:"★"}];
   const getM=n=>(Object.values(n).filter(v=>typeof v==="number").reduce((a,b)=>a+b,0)/5).toFixed(1);
   const getC=n=>{const v=parseFloat(n);return v>=4.5?C.grn:v>=3.5?C.amb:v>=2.5?C.blu:C.red;};
@@ -4167,7 +4169,7 @@ function Config({user}){
 }
 
 // PORTAL DE CARREIRAS
-function CareerPortal({vagas,onBack,onSubmit,criarTarefaAuto}){
+function CareerPortal({vagas,carregando=false,onBack,onSubmit,criarTarefaAuto}){
   const[step,setStep]=useState(1);const[vaga,setVaga]=useState(null);const[form,setForm]=useState({name:"",email:"",phone:"",pcd:false,salarioPret:""});const[ans,setAns]=useState(["","","",""]);const[cvFile,setCvFile]=useState(null);const[loading,setLoading]=useState(false);const[stepMsg,setStepMsg]=useState("");const fileRef=useRef();
   const qs=["Descreva sua experiência mais relevante para esta vaga.","Quais são suas principais habilidades técnicas?","Por que você se interessa pela Kalenborn?","Qual sua pretensão salarial e disponibilidade de início?"];
   
@@ -4224,7 +4226,9 @@ Retorne APENAS um JSON válido, sem markdown:
           {step===1&&<div className="fadeIn">
             <div style={{fontSize:17,fontWeight:700,marginBottom:16}}>Vagas Disponíveis</div>
             <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:20}}>
-              {vagas.map(v=><button key={v.id} onClick={()=>setVaga(v)} style={{textAlign:"left",padding:"14px 16px",borderRadius:10,cursor:"pointer",border:"1px solid "+(vaga?.id===v.id?C.acc:C.bdr),background:vaga?.id===v.id?C.accBg:C.s2,transition:"all .15s"}}>
+              {carregando&&<div style={{display:"flex",alignItems:"center",gap:10,fontSize:13,color:C.txm,padding:"8px 2px"}}><Spin size={14}/> Carregando vagas…</div>}
+              {!carregando&&vagas.length===0&&<div style={{fontSize:13,color:C.txm,padding:"14px 16px",border:"1px dashed "+C.bdr,borderRadius:10}}>Nenhuma vaga aberta no momento. Volte em breve.</div>}
+              {!carregando&&vagas.map(v=><button key={v.id} onClick={()=>setVaga(v)} style={{textAlign:"left",padding:"14px 16px",borderRadius:10,cursor:"pointer",border:"1px solid "+(vaga?.id===v.id?C.acc:C.bdr),background:vaga?.id===v.id?C.accBg:C.s2,transition:"all .15s"}}>
                 <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontWeight:700}}>{v.title}</span><div style={{display:"flex",gap:6}}><Chip label={v.tipo} color={C.acc}/><Chip label={v.local} color={C.txm}/></div></div>
                 <div style={{fontSize:12,color:C.txm}}>{v.desc}</div>
               </button>)}
@@ -4282,7 +4286,7 @@ Retorne APENAS um JSON válido, sem markdown:
 // APP ROOT
 export default function App(){
   const[sbReady,setSbReady]=useState(false);const[user,setUser]=useState(null);const[page,setPage]=useState("dashboard");const[collapsed,setCollapsed]=useState(false);const[screen,setScreen]=useState("login");const[toast,setToast]=useState(null);const[loading,setLoading]=useState(false);
-  const[users,setUsers]=useState([]);const[ferias,setFerias]=useState([]);const[feedbacks,setFeedbacks]=useState([]);const[chat,setChat]=useState([]);const[avaliacoes,setAvaliacoes]=useState([]);const[candidates,setCandidates]=useState([]);const[vagas,setVagas]=useState([{id:"047",title:"Analista de RH",area:"RH",local:"BH/MG",tipo:"CLT",desc:"Processos de R&S e DP."},{id:"031",title:"Dev Backend",area:"TI",local:"Remoto",tipo:"CLT",desc:"APIs Node.js/Python."},{id:"012",title:"Operador de Corte",area:"Produção",local:"BH/MG",tipo:"CLT",desc:"Operação de máquinas de corte."},{id:"019",title:"Téc. Vulcanização",area:"Produção",local:"BH/MG",tipo:"CLT",desc:"Vulcanização de borracha."}]);
+  const[users,setUsers]=useState([]);const[ferias,setFerias]=useState([]);const[feedbacks,setFeedbacks]=useState([]);const[chat,setChat]=useState([]);const[avaliacoes,setAvaliacoes]=useState([]);const[candidates,setCandidates]=useState([]);const[vagas,setVagas]=useState([]);const[vagasCarregando,setVagasCarregando]=useState(false);
   const[talentos,setTalentos]=useState([]);const[comunicados,setComunicados]=useState([]);const[exames,setExames]=useState([]);const[tarefas,setTarefas]=useState([]);
   const[pulses,setPulses]=useState([]);const[nps,setNps]=useState([]);
   const[movs,setMovs]=useState([]);
@@ -4319,7 +4323,8 @@ export default function App(){
       if(cR.data)setChat(cR.data.map(mch));
       if(aR.data)setAvaliacoes(aR.data.map(mav));
       if(cadR.data)setCandidates(cadR.data.map(mc));
-      if(vR.data&&vR.data.length>0)setVagas(vR.data.map(mv));
+      // Por quê: antes, com zero vagas ativas, ficava a lista fixa de exemplo na tela.
+      if(vR.data)setVagas(vR.data.map(mv));
       if(tR.data)setTalentos(tR.data.map(mtal));
       if(comR.data)setComunicados(comR.data.map(mcom));
       if(exR.data)setExames(exR.data.map(mex));
@@ -4335,6 +4340,19 @@ export default function App(){
   };
   
   const handleLogin=async u=>{setUser(u);setPage("dashboard");await loadAll();};
+
+  // Portal de Vagas (candidato, sem login): busca as vagas ativas direto do banco.
+  // Por quê: o loadAll só roda depois do login do RH, então o candidato via sempre a lista fixa de
+  // exemplo do código, e não as vagas cadastradas. A tabela vagas é legível pelo anon (policy existente).
+  const abrirPortalVagas=async()=>{
+    setScreen("career");setVagasCarregando(true);
+    try{
+      const sb=await initSB();
+      const{data,error}=sb?await sb.from("vagas").select("*").eq("ativa",true):{data:null,error:true};
+      if(!error&&data)setVagas(data.map(mv));
+    }catch(e){console.error(e);}
+    setVagasCarregando(false);
+  };
   const handleLogout=()=>{setUser(null);setUsers([]);setFerias([]);setFeedbacks([]);setChat([]);setAvaliacoes([]);setCandidates([]);setTalentos([]);setComunicados([]);setExames([]);setTarefas([]);setPulses([]);setNps([]);setBenCatalogo([]);setBenUsuarios([]);setBenSolicits([]);setMovs([]);};
   
   // Automação para criar cards no Kanban Planner
@@ -4367,8 +4385,8 @@ export default function App(){
   const badges={chat:chatUnread,ferias:feriasPend,comunicados:comUnread};
   
   if(!sbReady)return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,flexDirection:"column",gap:16}}><style>{CSS}</style><Spin size={36}/><div style={{fontSize:14,color:C.txd}}>Conectando ao banco...</div></div>;
-  if(!user&&screen==="career")return<CareerPortal vagas={vagas} onBack={()=>setScreen("login")} onSubmit={c=>setCandidates(p=>[c,...p])} criarTarefaAuto={criarTarefaAuto}/>;
-  if(!user)return<Login onLogin={handleLogin} onPortal={()=>setScreen("career")}/>;
+  if(!user&&screen==="career")return<CareerPortal vagas={vagas} carregando={vagasCarregando} onBack={()=>setScreen("login")} onSubmit={c=>setCandidates(p=>[c,...p])} criarTarefaAuto={criarTarefaAuto}/>;
+  if(!user)return<Login onLogin={handleLogin} onPortal={abrirPortalVagas}/>;
   if(loading&&users.length===0)return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,flexDirection:"column",gap:16}}><style>{CSS}</style><Spin size={36}/><div style={{fontSize:14,color:C.txd}}>Carregando dados...</div></div>;
   
   const props={user,users,setUsers,ferias,setFerias,feedbacks,setFeedbacks,chat,setChat,avaliacoes,setAvaliacoes,candidates,setCandidates,vagas,setVagas,talentos,setTalentos,comunicados,setComunicados,exames,setExames,tarefas,setTarefas,criarTarefaAuto,pulses,setPulses,nps,setNps,benCatalogo,setBenCatalogo,benUsuarios,setBenUsuarios,benSolicits,setBenSolicits,movs,setMovs,showToast};
