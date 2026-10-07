@@ -243,12 +243,8 @@ const NAV_FLAT=NAV.flatMap(g=>g.items);
 // LOGIN
 function Login({onLogin,onPortal}){
   const[email,setEmail]=useState("");const[pass,setPass]=useState("");const[err,setErr]=useState("");const[loading,setLoading]=useState(false);
-  const quick=[
-    {l:"RH",e:"asael@kalenborn.com.br",p:"rh@2026",c:C.grn},
-    {l:"Gestor",e:"daniel@kalenborn.com.br",p:"123456",c:C.blu},
-    {l:"Líder",e:"gustavo@kalenborn.com.br",p:"123456",c:C.acc},
-    {l:"Colaborador",e:"ademar@kalenborn.com.br",p:"123456",c:C.txm}
-  ];
+  // Removido o "Acesso rápido": ele trazia e-mail e senha reais no bundle público — qualquer
+  // pessoa que abrisse a página entrava como RH. Para testes, use contas de teste em ambiente local.
   
   const doLogin=async(e,p)=>{
     setLoading(true);setErr("");
@@ -280,12 +276,6 @@ function Login({onLogin,onPortal}){
           </div>
           {err&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"9px 14px",color:C.red,fontSize:13,marginBottom:14}}>{err}</div>}
           <Btn sz="lg" onClick={()=>doLogin(email,pass)} disabled={loading} full>{loading?<Spin size={14} color="#fff"/>:null} Entrar</Btn>
-          <div style={{marginTop:18,borderTop:"1px solid "+C.bdr,paddingTop:16}}>
-            <div style={{fontSize:10,color:C.txd,marginBottom:10,textAlign:"center",letterSpacing:".06em",fontWeight:600}}>ACESSO RÁPIDO</div>
-            <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:7}}>
-              {quick.map(q=><button key={q.l} onClick={()=>doLogin(q.e,q.p)} style={{background:C.s2,border:"1px solid "+q.c+"20",borderRadius:9,padding:"8px 12px",color:q.c,fontSize:12,fontWeight:600,cursor:"pointer",transition:"all .15s"}} onMouseEnter={e=>e.currentTarget.style.background=q.c+"15"} onMouseLeave={e=>e.currentTarget.style.background=C.s2}>{q.l}</button>)}
-            </div>
-          </div>
         </div>
         <div style={{textAlign:"center",marginTop:14}}>
           <button onClick={onPortal} style={{background:"none",border:"none",color:C.accLt,cursor:"pointer",fontSize:12,textDecoration:"underline"}}>Candidato? Portal de Vagas →</button>
@@ -1721,7 +1711,8 @@ function Colaboradores({users,setUsers,currentUser}){
     setSaving(true);
     const sb=getSB();
     const payload={setor:formMov.setor,area:formMov.setor==="producao"?formMov.area:null};
-    const{data,error}=await sb.from("usuarios").update(payload).eq("id",modalMov.id).select().single();
+    // Por quê: pedir só as colunas usadas (ver comentário em Perfil.salvarEdicao).
+    const{data,error}=await sb.from("usuarios").update(payload).eq("id",modalMov.id).select("id,setor,area").single();
     if(data){
       setUsers(p=>p.map(u=>u.id===modalMov.id?{...u,setor:data.setor,area:data.area}:u));
       setModalMov(null);
@@ -1803,11 +1794,13 @@ function Perfil({user,setUsers,setPage}){
     if(!formEdit.name.trim()) return;
     setSavingEdit(true);
     const sb = getSB();
+    // Por quê: .select() sem colunas vira SELECT * e devolveria password/password_hash ao navegador;
+    // e, quando o anon perder leitura dessas colunas, SELECT * passa a dar "permission denied".
     const{data,error} = await sb.from("usuarios").update({
       name: formEdit.name.trim(),
       telefone: formEdit.telefone.trim(),
       foto_url: formEdit.fotoUrl.trim(),
-    }).eq("id", user.id).select().single();
+    }).eq("id", user.id).select("id,name,telefone,foto_url").single();
     if(data){
       setUsers(p=>p.map(u=>u.id===user.id?{...u,name:data.name,telefone:data.telefone,fotoUrl:data.foto_url}:u));
       setEditando(false);
