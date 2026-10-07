@@ -49,6 +49,22 @@ async function ai(msgs,sys="Assistente RH Kalenborn. Responda em português."){
   return d.ok?d.text:"";
 }
 
+// Lê o JSON da triagem devolvido pela IA. Devolve null se a resposta não for utilizável.
+// Por quê: antes, se a IA falhasse, o candidato entrava com nota 50/50/50 — número inventado
+// que parece uma avaliação real e se mistura com as notas verdadeiras.
+function lerAnaliseIA(resp){
+  try{
+    const m=(resp||"").match(/\{[\s\S]*\}/); if(!m) return null;
+    const a=JSON.parse(m[0]);
+    const nota=v=>(v===null||v===undefined||v==="")?null:(Number.isFinite(Number(v))?Math.max(0,Math.min(100,Math.round(Number(v)))):null);
+    const score=nota(a.score); if(score===null) return null;
+    return {...a, score, tech:nota(a.tech), behavior:nota(a.behavior)};
+  }catch{ return null; }
+}
+const STATUS_CANDIDATO=["pendente","revisao","aprovado","rejeitado"];
+// Cor da nota; sem nota (null) fica neutra e a tela mostra "—".
+const corNota=s=>s==null?C.txd:s>=80?C.grn:s>=60?C.amb:C.red;
+
 async function extractPDF(file){
   const fileBase64=await new Promise((res,rej)=>{
     const r=new FileReader();
@@ -98,9 +114,9 @@ const mf=f=>({id:f.id,userId:f.user_id,userName:f.user_name,setor:f.setor,tipo:f
 const mfb=fb=>({id:fb.id,fromId:fb.from_id,fromName:fb.from_name,fromRole:fb.from_role,toId:fb.to_id,toName:fb.to_name,toRole:fb.to_role,tipo:fb.tipo,texto:fb.texto,sigiloso:fb.sigiloso,createdAt:fb.created_at});
 const mch=m=>({id:m.id,fromId:m.from_id,fromName:m.from_name,toId:m.to_id,toName:m.to_name,texto:m.texto,lido:m.lido,createdAt:m.created_at});
 const mav=a=>({id:a.id,avaliadoId:a.avaliado_id,avaliadoName:a.avaliado_name,avaliadorId:a.avaliador_id,avaliadorName:a.avaliador_name,periodo:a.periodo,status:a.status,notas:{qualidade:a.nota_qualidade,produtividade:a.nota_produtividade,trabalhoEquipe:a.nota_trabalho_equipe,pontualidade:a.nota_pontualidade,iniciativa:a.nota_iniciativa},comentario:a.comentario,createdAt:a.created_at});
-const mc=c=>({id:c.id,name:c.name,role:c.role,vaga:"#"+(c.vaga_id||""),email:c.email||"",phone:c.phone||"",score:c.score||0,tech:c.tech||0,behavior:c.behavior||0,status:c.status||"pendente",salarioPret:c.salario_pret||"",pcd:c.pcd,resumo:c.resumo||"",habilidades:c.habilidades||[],emailEnviado:c.email_enviado,noBanco:c.no_banco_talentos,experienciaAnos:c.experiencia_anos??null,formacao:c.formacao||"",certificacoes:c.certificacoes||[],areaSugerida:c.area_sugerida||"",vagaSugeridaConfianca:c.vaga_sugerida_confianca||""});
+const mc=c=>({id:c.id,name:c.name,role:c.role,vaga:"#"+(c.vaga_id||""),email:c.email||"",phone:c.phone||"",score:c.score??null,tech:c.tech??null,behavior:c.behavior??null,status:c.status||"pendente",salarioPret:c.salario_pret||"",pcd:c.pcd,resumo:c.resumo||"",habilidades:c.habilidades||[],emailEnviado:c.email_enviado,noBanco:c.no_banco_talentos,experienciaAnos:c.experiencia_anos??null,formacao:c.formacao||"",certificacoes:c.certificacoes||[],areaSugerida:c.area_sugerida||"",vagaSugeridaConfianca:c.vaga_sugerida_confianca||""});
 const mv=v=>({id:v.id,title:v.title,area:v.area,local:v.local,tipo:v.tipo,desc:v.descricao,salario:v.salario||"",requisitos:v.requisitos||"",prazoEncerramento:v.prazo_encerramento,ativa:v.ativa,movimentacaoId:v.movimentacao_id});
-const mtal=t=>({id:t.id,cId:t.candidato_id,name:t.name,email:t.email||"",phone:t.phone||"",role:t.role||"",vagaId:t.vaga_id||"",score:t.score||0,habs:t.habilidades||[],resumo:t.resumo||"",motivo:t.motivo_arquivo||"",tags:t.tags||[],createdAt:t.created_at});
+const mtal=t=>({id:t.id,cId:t.candidato_id,name:t.name,email:t.email||"",phone:t.phone||"",role:t.role||"",vagaId:t.vaga_id||"",score:t.score??null,habs:t.habilidades||[],resumo:t.resumo||"",motivo:t.motivo_arquivo||"",tags:t.tags||[],createdAt:t.created_at});
 const mcom=c=>({id:c.id,titulo:c.titulo,corpo:c.corpo,autorId:c.autor_id,autorName:c.autor_name,tipo:c.tipo,setores:c.setores||[],fixado:c.fixado,createdAt:c.created_at});
 const mex=e=>({id:e.id,userId:e.user_id,userName:e.user_name,tipo:e.tipo,data:e.data_agendada,local:e.local||"",status:e.status,obs:e.observacoes||"",createdAt:e.created_at});
 const mtk=t=>({id:t.id,titulo:t.titulo,desc:t.descricao||"",coluna:t.coluna,prio:t.prioridade,respId:t.responsavel_id,respName:t.responsavel_name||"",setor:t.setor||"",venc:t.data_vencimento,tags:t.tags||[],ordem:t.ordem||0,criadoPorId:t.criado_por_id,criadoPorName:t.criado_por_name||"",createdAt:t.created_at,origemTipo:t.origem_tipo||null,origemId:t.origem_id||null});
@@ -1265,11 +1281,26 @@ function BancoTalentos({user,talentos,setTalentos,candidates,setCandidates,showT
   
   const archivar=async c=>{
     const sb=getSB();if(!sb)return;
-    const{data}=await sb.from("banco_talentos").insert([{candidato_id:c.id,name:c.name,email:c.email,phone:c.phone,role:c.role,vaga_id:c.vaga?.replace("#",""),score:c.score,habilidades:c.habilidades,resumo:c.resumo,motivo_arquivo:"Não selecionado — pipeline"}]).select().single();
-    if(data){setTalentos(p=>[mtal(data),...p]);await sb.from("candidatos").update({no_banco_talentos:true}).eq("id",c.id);setCandidates(p=>p.map(x=>x.id===c.id?{...x,noBanco:true}:x));}
+    const{data,error}=await sb.from("banco_talentos").insert([{candidato_id:c.id,name:c.name,email:c.email,phone:c.phone,role:c.role,vaga_id:c.vaga?.replace("#","")||null,score:c.score,habilidades:c.habilidades,resumo:c.resumo,motivo_arquivo:"Não selecionado — pipeline"}]).select().single();
+    // Por quê: antes a tela era atualizada sem conferir se o banco gravou.
+    if(error||!data){showToast?.("Não foi possível mover para o Banco de Talentos.","error");console.error(error);return;}
+    setTalentos(p=>[mtal(data),...p]);
+    const{error:e2}=await sb.from("candidatos").update({no_banco_talentos:true}).eq("id",c.id);
+    if(e2){showToast?.("Talento salvo, mas não foi possível marcar o candidato.","error");return;}
+    setCandidates(p=>p.map(x=>x.id===c.id?{...x,noBanco:true}:x));
   };
   
-  const remover=async id=>{await getSB()?.from("banco_talentos").delete().eq("id",id);setTalentos(p=>p.filter(t=>t.id!==id));};
+  const remover=async t=>{
+    const sb=getSB();
+    const{error}=sb?await sb.from("banco_talentos").delete().eq("id",t.id):{error:{message:"sem conexão"}};
+    if(error){showToast?.("Não foi possível remover do Banco de Talentos.","error");console.error(error);return;}
+    setTalentos(p=>p.filter(x=>x.id!==t.id));
+    // Por quê: antes o candidato continuava marcado "♦ Banco" e não podia voltar para o banco.
+    if(t.cId){
+      const{error:e2}=await sb.from("candidatos").update({no_banco_talentos:false}).eq("id",t.cId);
+      if(!e2)setCandidates(p=>p.map(x=>x.id===t.cId?{...x,noBanco:false}:x));
+    }
+  };
   
   const gerarEmail=async t=>{
     setGenLoad(true);
@@ -1306,7 +1337,7 @@ function BancoTalentos({user,talentos,setTalentos,candidates,setCandidates,showT
               <Av name={t.name} size={40} color={C.pur}/>
               <div style={{flex:1}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
-                  <div><div style={{fontWeight:700,fontSize:14}}>{t.name}</div><div style={{fontSize:12,color:C.txm}}>{t.role} · Pontuação: <span style={{color:t.score>=80?C.grn:t.score>=60?C.amb:C.red,fontWeight:700}}>{t.score}</span></div></div>
+                  <div><div style={{fontWeight:700,fontSize:14}}>{t.name}</div><div style={{fontSize:12,color:C.txm}}>{t.role} · Pontuação: <span style={{color:corNota(t.score),fontWeight:700}}>{t.score??"—"}</span></div></div>
                   <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{t.habs.slice(0,3).map(h=><Chip key={h} label={h} color={C.pur}/>)}{t.habs.length>3&&<Chip label={"+"+(t.habs.length-3)} color={C.txm}/>}</div>
                 </div>
               </div>
@@ -1321,7 +1352,7 @@ function BancoTalentos({user,talentos,setTalentos,candidates,setCandidates,showT
                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                   <Btn sz="sm" onClick={()=>{setEmailModal(t);setEmailTxt("");gerarEmail(t);}}>✉ Recontatar por Email</Btn>
                   {t.email&&<Btn sz="sm" v="outline" onClick={()=>window.open("https://wa.me/"+t.phone?.replace(/\D/g,""),"_blank")}>💬 WhatsApp</Btn>}
-                  <Btn sz="sm" v="danger" onClick={()=>remover(t.id)}>✕ Remover</Btn>
+                  <Btn sz="sm" v="danger" onClick={()=>remover(t)}>✕ Remover</Btn>
                 </div>
               </div>
             )}
@@ -1336,6 +1367,8 @@ function BancoTalentos({user,talentos,setTalentos,candidates,setCandidates,showT
             <Btn sz="sm" v="outline" onClick={()=>setEmailModal(null)}>Fechar</Btn>
             <Btn sz="sm" onClick={()=>navigator.clipboard.writeText(emailTxt)}>📋 Copiar</Btn>
             <Btn sz="sm" disabled={sendingEmail} onClick={async()=>{
+              // Por quê: o e-mail gerado traz [INSERIR DATA]/[INSERIR HORÁRIO]; não pode sair sem preencher.
+              if(/\[INSERIR[^\]]*\]/i.test(emailTxt)){showToast?.("Preencha os campos [INSERIR …] do e-mail antes de enviar.","error");return;}
               setSendingEmail(true);
               const res=await sendPAEmail(emailModal?.email, "Oportunidade Kalenborn", emailTxt);
               setSendingEmail(false);
@@ -1355,8 +1388,17 @@ function Recrutamento({user,candidates,setCandidates,talentos,setTalentos,vagas,
   const COLS={aprovado:{l:"Aprovados",c:C.grn},revisao:{l:"Em Revisão",c:C.blu},pendente:{l:"Pendentes",c:C.amb},rejeitado:{l:"Rejeitados",c:C.red}};
   const filtrado=candidates.filter(c=>(fVaga==="todos"||c.vaga==="#"+fVaga)&&(fStatus==="todos"||c.status===fStatus));
   
-  const updStatus=async(id,s)=>{await getSB()?.from("candidatos").update({status:s}).eq("id",id);setCandidates(p=>p.map(c=>c.id===id?{...c,status:s}:c));};
-  const marcarEmail=async id=>{await getSB()?.from("candidatos").update({email_enviado:true,email_enviado_at:new Date().toISOString()}).eq("id",id);setCandidates(p=>p.map(c=>c.id===id?{...c,emailEnviado:true}:c));};
+  // Por quê: antes a tela mudava mesmo se o banco recusasse a gravação.
+  const updStatus=async(id,s)=>{
+    const r=await getSB()?.from("candidatos").update({status:s}).eq("id",id);
+    if(!r||r.error){showToast?.("Não foi possível atualizar o candidato.","error");console.error(r?.error);return;}
+    setCandidates(p=>p.map(c=>c.id===id?{...c,status:s}:c));
+  };
+  const marcarEmail=async id=>{
+    const r=await getSB()?.from("candidatos").update({email_enviado:true,email_enviado_at:new Date().toISOString()}).eq("id",id);
+    if(!r||r.error){showToast?.("E-mail enviado, mas não foi possível registrar o envio no candidato.","error");return;}
+    setCandidates(p=>p.map(c=>c.id===id?{...c,emailEnviado:true}:c));
+  };
   
   const gerarEmail=async(c,tipo)=>{
     setGenLoad(true);const v=vagas.find(x=>"#"+x.id===c.vaga);
@@ -1367,8 +1409,12 @@ function Recrutamento({user,candidates,setCandidates,talentos,setTalentos,vagas,
   
   const moverBanco=async c=>{
     const sb=getSB();if(!sb)return;
-    const{data}=await sb.from("banco_talentos").insert([{candidato_id:c.id,name:c.name,email:c.email,phone:c.phone,role:c.role,vaga_id:c.vaga?.replace("#",""),score:c.score,habilidades:c.habilidades,resumo:c.resumo,motivo_arquivo:"Não selecionado neste processo"}]).select().single();
-    if(data){setTalentos(p=>[mtal(data),...p]);await sb.from("candidatos").update({no_banco_talentos:true}).eq("id",c.id);setCandidates(p=>p.map(x=>x.id===c.id?{...x,noBanco:true}:x));}
+    const{data,error}=await sb.from("banco_talentos").insert([{candidato_id:c.id,name:c.name,email:c.email,phone:c.phone,role:c.role,vaga_id:c.vaga?.replace("#","")||null,score:c.score,habilidades:c.habilidades,resumo:c.resumo,motivo_arquivo:"Não selecionado neste processo"}]).select().single();
+    if(error||!data){showToast?.("Não foi possível mover para o Banco de Talentos.","error");console.error(error);return;}
+    setTalentos(p=>[mtal(data),...p]);
+    const{error:e2}=await sb.from("candidatos").update({no_banco_talentos:true}).eq("id",c.id);
+    if(e2){showToast?.("Talento salvo, mas não foi possível marcar o candidato.","error");return;}
+    setCandidates(p=>p.map(x=>x.id===c.id?{...x,noBanco:true}:x));
   };
   
   return(
@@ -1382,7 +1428,7 @@ function Recrutamento({user,candidates,setCandidates,talentos,setTalentos,vagas,
         <select value={fStatus} onChange={e=>setFStatus(e.target.value)} style={{background:C.bgCard,border:"1px solid "+C.bdr,borderRadius:9,padding:"8px 13px",color:C.txt,fontSize:12}}><option value="todos">Todas as Situações</option>{Object.entries(COLS).map(([k,v])=><option key={k} value={k}>{v.l}</option>)}</select>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
-        {filtrado.sort((a,b)=>b.score-a.score).map(c=>{
+        {filtrado.sort((a,b)=>(b.score??-1)-(a.score??-1)).map(c=>{
           const cfg=COLS[c.status]||COLS.pendente;
           return <Card key={c.id} style={{borderLeft:"3px solid "+cfg.c,cursor:"pointer"}} onClick={()=>setSel(sel?.id===c.id?null:c)}>
             <div style={{display:"flex",gap:14,alignItems:"center"}}>
@@ -1393,11 +1439,11 @@ function Recrutamento({user,candidates,setCandidates,talentos,setTalentos,vagas,
                     <div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:8}}>{c.name}{c.emailEnviado&&<Chip label="✉ E-mail" color={C.grn}/>}{c.noBanco&&<Chip label="♦ Banco" color={C.pur}/>}</div>
                     <div style={{fontSize:12,color:C.txm}}>{c.role} · {c.vaga}</div>
                   </div>
-                  <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:24,fontWeight:700,color:c.score>=80?C.grn:c.score>=60?C.amb:C.red,fontFamily:"'JetBrains Mono',monospace"}}>{c.score}</span><Chip label={cfg.l} color={cfg.c} dot/></div>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:24,fontWeight:700,color:corNota(c.score),fontFamily:"'JetBrains Mono',monospace"}}>{c.score??"—"}</span><Chip label={cfg.l} color={cfg.c} dot/></div>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:8,marginTop:10}}>
                   {[["Técnico",c.tech],["Comportamental",c.behavior]].map(([l,v])=>(
-                    <div key={l}><div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{fontSize:11,color:C.txd}}>{l}</span><span style={{fontSize:11,color:C.acc,fontFamily:"'JetBrains Mono',monospace"}}>{v}</span></div><div style={{height:3,background:C.s3,borderRadius:3}}><div style={{height:"100%",width:v+"%",borderRadius:3,background:C.acc}}/></div></div>
+                    <div key={l}><div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{fontSize:11,color:C.txd}}>{l}</span><span style={{fontSize:11,color:C.acc,fontFamily:"'JetBrains Mono',monospace"}}>{v??"—"}</span></div><div style={{height:3,background:C.s3,borderRadius:3}}><div style={{height:"100%",width:(v||0)+"%",borderRadius:3,background:C.acc}}/></div></div>
                   ))}
                 </div>
               </div>
@@ -1433,6 +1479,8 @@ function Recrutamento({user,candidates,setCandidates,talentos,setTalentos,vagas,
             <div style={{flex:1}}/>
             <Btn sz="sm" v="outline" onClick={()=>navigator.clipboard.writeText(emailTxt)}>📋 Copiar</Btn>
             <Btn sz="sm" disabled={sendingEmail} onClick={async()=>{
+              // Por quê: o e-mail gerado traz [INSERIR DATA]/[INSERIR HORÁRIO]; não pode sair sem preencher.
+              if(/\[INSERIR[^\]]*\]/i.test(emailTxt)){showToast?.("Preencha os campos [INSERIR …] do e-mail antes de enviar.","error");return;}
               setSendingEmail(true);
               const res=await sendPAEmail(emailModal?.email, "Kalenborn International - Processo Seletivo", emailTxt);
               setSendingEmail(false);
@@ -2103,9 +2151,11 @@ function PeopleAnalytics({user,users,ferias,candidates,avaliacoes,exames,tarefas
   // ── SCORE MÉDIO CANDIDATOS POR VAGA ───────────────────────────────
   const vagasComScore=[...new Set(candidates.map(c=>c.vaga))].map(v=>{
     const cands=candidates.filter(c=>c.vaga===v);
-    const avg=parseFloat((cands.reduce((a,b)=>a+b.score,0)/cands.length).toFixed(0));
+    // Candidatos sem nota (IA indisponível) não entram na média — antes contariam como 0.
+    const comNota=cands.filter(c=>c.score!=null);
+    const avg=comNota.length?Math.round(comNota.reduce((a,b)=>a+b.score,0)/comNota.length):null;
     return{vaga:v,score:avg,total:cands.length};
-  }).filter(d=>d.total>0).sort((a,b)=>b.score-a.score).slice(0,6);
+  }).filter(d=>d.total>0&&d.score!=null).sort((a,b)=>b.score-a.score).slice(0,6);
 
   // ── KPI CARDS ─────────────────────────────────────────────────────
   const kpis=[
@@ -3133,7 +3183,7 @@ function Movimentacoes({user,users,movs,setMovs,setUsers,vagas,setVagas}){
         const{data:vaga}=await sb.from("vagas").insert([{
           id:String(Date.now()).slice(-6),
           title:mov.cargo,area:SL[mov.setor]||mov.setor,local:"Kalenborn — presencial",
-          tipo:"CLT",descricao:(mov.requisitos||"")+(mov.salario?"\\n\\nSalário: "+mov.salario:""),
+          tipo:"CLT",descricao:(mov.requisitos||"")+(mov.salario?"\n\nSalário: "+mov.salario:""),
           salario:mov.salario,requisitos:mov.requisitos,prazo_encerramento:mov.prazoEncerramento,
           ativa:true,movimentacao_id:mov.id,
         }]).select().single();
@@ -4052,20 +4102,22 @@ function Contratacao(props){
       </div>
       {tab==="recrutamento"&&<Recrutamento {...props}/>}
       {tab==="talentos"&&<BancoTalentos {...props}/>}
-      {tab==="upload_cvs"&&<UploadCVs vagas={props.vagas} setCandidates={props.setCandidates} criarTarefaAuto={props.criarTarefaAuto}/>}
+      {tab==="upload_cvs"&&<UploadCVs vagas={props.vagas} setCandidates={props.setCandidates} setTalentos={props.setTalentos} criarTarefaAuto={props.criarTarefaAuto}/>}
     </div>
   );
 }
 
 
 // UPLOAD CVs
-function UploadCVs({vagas,setCandidates,criarTarefaAuto}){
+function UploadCVs({vagas,setCandidates,setTalentos,criarTarefaAuto}){
   const[uploads,setUploads]=useState([]);const[vagaSel,setVagaSel]=useState("auto");const fileRef=useRef();
 
   const processar=async up=>{
     const id=up.id;const upd=p=>setUploads(prev=>prev.map(u=>u.id===id?{...u,...p}:u));
     upd({status:"extraindo",progress:20});
-    const txt=await extractPDF(up.file)||"CV: "+up.file.name;
+    const txt=await extractPDF(up.file);
+    // Por quê: antes, sem texto do PDF a IA "avaliava" só o nome do arquivo e dava nota mesmo assim.
+    if(!txt||!txt.trim()){upd({status:"erro",progress:100,erro:"Não foi possível ler o texto do PDF (pode ser imagem escaneada)."});return;}
     upd({progress:45,status:"analisando"});
 
     const modoAuto=up.vaga==="auto";
@@ -4091,33 +4143,46 @@ Retorne APENAS um JSON válido, sem markdown:
 
     try{
       const resp=await gpt([{role:"user",content:prompt}]);
-      let a={score:50,tech:50,behavior:50,resumo:"Análise não pôde ser completada.",pontosFort:[],pontosAtencao:[],decisao:"pendente",experienciaAnos:null,formacao:"",certificacoes:[],vaga_id_sugerida:modoAuto?null:up.vaga,area_sugerida:"",confianca_sugestao:"baixa"};
-      try{
-        const match = resp.match(/\{[\s\S]*\}/);
-        if(match) { a = {...a, ...JSON.parse(match[0])}; }
-      }catch{}
+      const a=lerAnaliseIA(resp);
+      // Sem análise válida: mostra erro e não grava (o RH reenvia). Antes entrava nota 50/50/50 inventada.
+      if(!a){upd({status:"erro",progress:100,erro:"A IA não devolveu uma análise válida. Envie o arquivo de novo."});return;}
 
-      const vagaFinalId = modoAuto ? (a.vaga_id_sugerida || null) : up.vaga;
+      // Só aceita vaga sugerida que exista entre as ativas (a IA pode devolver um id inexistente).
+      const sugerida=a.vaga_id_sugerida==null?null:String(a.vaga_id_sugerida);
+      const vagaFinalId = modoAuto ? (vagas.some(x=>x.id===sugerida)?sugerida:null) : up.vaga;
       const v = vagas.find(x=>x.id===vagaFinalId);
-      upd({status:"concluido",progress:100,resultado:a,vagaDetectada:v||null});
+      upd({progress:85,resultado:a,vagaDetectada:v||null});
 
-      const sb=getSB();if(!sb)return;
-      const{data}=await sb.from("candidatos").insert([{
-        name:up.file.name.replace(".pdf","").replace(/_/g," "),
+      const sb=getSB();if(!sb){upd({status:"erro",progress:100,erro:"Sem conexão com o banco."});return;}
+      const{data,error}=await sb.from("candidatos").insert([{
+        name:up.file.name.replace(/\.pdf$/i,"").replace(/_/g," "),
         role:v?.title||a.area_sugerida||"A definir",
-        vaga_id:vagaFinalId||"",
-        score:a.score||0,tech:a.tech||0,behavior:a.behavior||0,status:a.decisao||"pendente",
+        // Por quê: "" violava a chave estrangeira candidatos.vaga_id → vagas e o candidato não era gravado.
+        vaga_id:vagaFinalId||null,
+        score:a.score,tech:a.tech,behavior:a.behavior,
+        status:STATUS_CANDIDATO.includes(a.decisao)?a.decisao:"pendente",
         resumo:a.resumo,habilidades:a.pontosFort||[],pcd:false,salario_pret:"A definir",
         experiencia_anos:a.experienciaAnos??null,formacao:a.formacao||"",
         certificacoes:a.certificacoes||[],area_sugerida:a.area_sugerida||"",
         vaga_sugerida_confianca:modoAuto?(a.confianca_sugestao||"baixa"):null,
-        no_banco_talentos:modoAuto&&!vagaFinalId,
+        no_banco_talentos:false,
       }]).select().single();
+      // Só marca "Concluído" se o banco gravou (antes marcava antes de gravar e ignorava o erro).
+      if(error||!data){upd({status:"erro",progress:100,erro:"Análise feita, mas não foi possível salvar o candidato."});console.error(error);return;}
+      let cand=mc(data);
 
-      if(data){
-        setCandidates(p=>[...p,mc(data)]);
-        if(criarTarefaAuto) criarTarefaAuto(`Decidir: ${data.name}`, `${v?"Vaga: "+v.title:"Sem vaga ativa compatível · Área sugerida: "+(a.area_sugerida||"—")}\nPontuação IA: ${a.score}\nResumo: ${a.resumo}`, a.score>=70?"baixa":a.score>=40?"media":"alta", ["recrutamento"], "candidatos", data.id);
+      // Sem vaga compatível: inclui de fato no Banco de Talentos (antes só marcava a flag, sem registro).
+      if(modoAuto&&!vagaFinalId){
+        const{data:tal,error:eTal}=await sb.from("banco_talentos").insert([{candidato_id:data.id,name:data.name,email:data.email,phone:data.phone,role:data.role,vaga_id:null,score:data.score,habilidades:data.habilidades,resumo:data.resumo,motivo_arquivo:"Sem vaga ativa compatível (upload de CV)"}]).select().single();
+        if(tal){
+          setTalentos?.(p=>[mtal(tal),...p]);
+          const{error:eFlag}=await sb.from("candidatos").update({no_banco_talentos:true}).eq("id",data.id);
+          if(!eFlag)cand={...cand,noBanco:true};
+        } else console.error(eTal);
       }
+      setCandidates(p=>[...p,cand]);
+      upd({status:"concluido",progress:100});
+      if(criarTarefaAuto) criarTarefaAuto(`Decidir: ${data.name}`, `${v?"Vaga: "+v.title:"Sem vaga ativa compatível · Área sugerida: "+(a.area_sugerida||"—")}\nPontuação IA: ${a.score}\nResumo: ${a.resumo}`, a.score>=70?"baixa":a.score>=40?"media":"alta", ["recrutamento"], "candidatos", data.id);
     }catch(e){upd({status:"erro",progress:100,erro:"Erro na análise IA."});}
   };
 
@@ -4185,11 +4250,12 @@ function Config({user}){
 
 // PORTAL DE CARREIRAS
 function CareerPortal({vagas,carregando=false,onBack,onSubmit,criarTarefaAuto}){
+  const[erroEnvio,setErroEnvio]=useState("");
   const[step,setStep]=useState(1);const[vaga,setVaga]=useState(null);const[form,setForm]=useState({name:"",email:"",phone:"",pcd:false,salarioPret:""});const[ans,setAns]=useState(["","","",""]);const[cvFile,setCvFile]=useState(null);const[loading,setLoading]=useState(false);const[stepMsg,setStepMsg]=useState("");const fileRef=useRef();
   const qs=["Descreva sua experiência mais relevante para esta vaga.","Quais são suas principais habilidades técnicas?","Por que você se interessa pela Kalenborn?","Qual sua pretensão salarial e disponibilidade de início?"];
   
   const submit=async()=>{
-    setLoading(true);
+    setLoading(true);setErroEnvio("");
     try{
       let cv="";if(cvFile){setStepMsg("Processando currículo...");cv=await extractPDF(cvFile)||"";}
       setStepMsg("Analisando seu perfil...");
@@ -4206,21 +4272,19 @@ ${ans.map((a,i)=>(i+1)+": "+a).join("\n")}
 Retorne APENAS um JSON válido, sem markdown:
 {"score":0,"tech":0,"behavior":0,"status":"pendente","pontosFort":["..."],"pontosAtencao":["..."],"resumo":"Resumo crítico (prós e contras)","experienciaAnos":0,"formacao":"","certificacoes":["..."]}`;
       const resp=await gpt([{role:"user",content:prompt}]);
-      let a={score:50,tech:50,behavior:50,status:"pendente",pontosFort:[],resumo:"Análise concluída.",experienciaAnos:null,formacao:"",certificacoes:[]};
-      try{
-        const match = resp.match(/\{[\s\S]*\}/);
-        if(match) { a = {...a, ...JSON.parse(match[0])}; }
-      }catch{}
+      // Se a IA falhar, a candidatura NÃO pode se perder, mas também não ganha nota inventada (antes: 50/50/50).
+      // Fica sem nota e com aviso para o RH avaliar manualmente.
+      const a=lerAnaliseIA(resp)||{score:null,tech:null,behavior:null,status:"pendente",pontosFort:[],resumo:"Análise automática indisponível — avaliar manualmente.",experienciaAnos:null,formacao:"",certificacoes:[]};
       const sb=getSB();
-      if(sb){
-        const{data}=await sb.from("candidatos").insert([{name:form.name,role:vaga.title,vaga_id:vaga.id,email:form.email,phone:form.phone,salario_pret:form.salarioPret,pcd:form.pcd,score:a.score||0,tech:a.tech||0,behavior:a.behavior||0,status:a.status||"pendente",resumo:a.resumo,habilidades:a.pontosFort||[],experiencia_anos:a.experienciaAnos??null,formacao:a.formacao||"",certificacoes:a.certificacoes||[]}]).select().single();
-        if(data){
-          onSubmit(mc(data));
-          if(criarTarefaAuto) criarTarefaAuto(`Decidir: ${form.name}`, `Vaga: ${vaga.title}\nPontuação IA: ${a.score}\nResumo: ${a.resumo}`, a.score>=70?"baixa":a.score>=40?"media":"alta", ["recrutamento"], "candidatos", data.id);
-        }
-      }
+      if(!sb) throw new Error("Sem conexão com o banco.");
+      const{data,error}=await sb.from("candidatos").insert([{name:form.name,role:vaga.title,vaga_id:vaga.id,email:form.email,phone:form.phone,salario_pret:form.salarioPret,pcd:form.pcd,score:a.score,tech:a.tech,behavior:a.behavior,status:STATUS_CANDIDATO.includes(a.status)?a.status:"pendente",resumo:a.resumo,habilidades:a.pontosFort||[],experiencia_anos:a.experienciaAnos??null,formacao:a.formacao||"",certificacoes:a.certificacoes||[]}]).select().single();
+      // Só confirma para o candidato se o banco gravou (antes mostrava "Candidatura Enviada!" mesmo com falha).
+      if(error||!data) throw error||new Error("Candidatura não gravada.");
+      onSubmit(mc(data));
+      // Sem nota, a prioridade fica "media" (neutra) até o RH decidir a regra (ponto B pendente).
+      if(criarTarefaAuto) criarTarefaAuto(`Decidir: ${form.name}`, `Vaga: ${vaga.title}\nPontuação IA: ${a.score??"sem nota (IA indisponível)"}\nResumo: ${a.resumo}`, a.score==null?"media":a.score>=70?"baixa":a.score>=40?"media":"alta", ["recrutamento"], "candidatos", data.id);
       setStep(5);
-    }catch(e){alert("Erro: "+e.message);}
+    }catch(e){console.error(e);setErroEnvio("Não foi possível enviar sua candidatura agora. Tente novamente em alguns minutos.");}
     setLoading(false);setStepMsg("");
   };
   
@@ -4245,7 +4309,7 @@ Retorne APENAS um JSON válido, sem markdown:
               {!carregando&&vagas.length===0&&<div style={{fontSize:13,color:C.txm,padding:"14px 16px",border:"1px dashed "+C.bdr,borderRadius:10}}>Nenhuma vaga aberta no momento. Volte em breve.</div>}
               {!carregando&&vagas.map(v=><button key={v.id} onClick={()=>setVaga(v)} style={{textAlign:"left",padding:"14px 16px",borderRadius:10,cursor:"pointer",border:"1px solid "+(vaga?.id===v.id?C.acc:C.bdr),background:vaga?.id===v.id?C.accBg:C.s2,transition:"all .15s"}}>
                 <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontWeight:700}}>{v.title}</span><div style={{display:"flex",gap:6}}><Chip label={v.tipo} color={C.acc}/><Chip label={v.local} color={C.txm}/></div></div>
-                <div style={{fontSize:12,color:C.txm}}>{v.desc}</div>
+                <div style={{fontSize:12,color:C.txm,whiteSpace:"pre-line"}}>{v.desc}</div>
               </button>)}
             </div>
             <Btn onClick={()=>setStep(2)} disabled={!vaga} full>Continuar →</Btn>
@@ -4277,6 +4341,7 @@ Retorne APENAS um JSON válido, sem markdown:
               <input ref={fileRef} type="file" accept=".pdf" style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(f)setCvFile(f);}}/>
               {cvFile?<><div style={{fontSize:32,marginBottom:8}}>📄</div><div style={{fontWeight:600,color:C.grn}}>{cvFile.name}</div></>:<><div style={{fontSize:32,marginBottom:8}}>☁</div><div style={{fontWeight:600}}>Arraste o PDF</div></>}
             </div>
+            {erroEnvio&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"9px 14px",color:C.red,fontSize:13,marginTop:14}}>{erroEnvio}</div>}
             <div style={{display:"flex",gap:10,marginTop:18}}><Btn v="outline" onClick={()=>setStep(3)}>← Voltar</Btn><Btn onClick={submit} disabled={loading} full>{loading?<><Spin size={14} color="#fff"/> {stepMsg||"Processando..."}</>:"Enviar Candidatura"}</Btn></div>
           </div>}
           {step===5&&<div className="fadeIn" style={{textAlign:"center"}}>
