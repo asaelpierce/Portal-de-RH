@@ -1768,16 +1768,27 @@ function Colaboradores({users,setUsers,currentUser}){
 // PERFIL
 function Perfil({user,setUsers,setPage}){
   const col=SC[user.setor]||C.acc;
-  const [skills, setSkills] = useState(user.skills || ["Comunicação", "Trabalho em Equipe"]);
-  const [cursos, setCursos] = useState([
-    { id: 1, titulo: "Gestão de Tempo e Produtividade", instituicao: "Kalenborn Academy", ano: "2025" },
-    { id: 2, titulo: "Segurança Industrial Básica (NR-12)", instituicao: "Sebrae", ano: "2024" }
-  ]);
-  const [metas, setMetas] = useState([
-    { id: 1, titulo: "Reduzir tempo de setup das máquinas", progresso: 65 },
-    { id: 2, titulo: "Participar de 3 treinamentos no ano", progresso: 33 },
-    { id: 3, titulo: "Atingir 90% na Avaliação de Desempenho", progresso: 100 }
-  ]);
+  // Por quê: o fallback ["Comunicação","Trabalho em Equipe"] era dado fictício (e nunca aparecia, pois mu() já devolve []).
+  const [skills, setSkills] = useState(user.skills || []);
+  // Cursos vêm da tabela cursos_usuarios (antes: lista fictícia fixa, igual para todos).
+  const [cursos, setCursos] = useState([]);
+  const [carregandoCursos, setCarregandoCursos] = useState(true);
+  const [salvandoCurso, setSalvandoCurso] = useState(false);
+  const [erroCurso, setErroCurso] = useState("");
+  useEffect(() => {
+    let ativo = true;  // evita setState se o usuário sair da tela antes da resposta
+    (async () => {
+      const sb = getSB();
+      if(sb){
+        const{data,error} = await sb.from("cursos_usuarios").select("id,titulo,instituicao,ano")
+          .eq("user_id", user.id).order("ano", {ascending:false, nullsFirst:false}).order("created_at", {ascending:false});
+        if(ativo && !error && data) setCursos(data);
+        if(error) console.error(error);
+      }
+      if(ativo) setCarregandoCursos(false);
+    })();
+    return () => { ativo = false; };
+  }, [user.id]);
 
   const [modalSkill, setModalSkill] = useState(false);
   const [newSkill, setNewSkill] = useState("");
@@ -1820,9 +1831,21 @@ function Perfil({user,setUsers,setPage}){
     if(sb) await sb.from("usuarios").update({skills: upd}).eq("id", user.id);
   };
 
-  const addCurso = () => {
-    if(!novoCurso.titulo) return;
-    setCursos([{id: Date.now(), ...novoCurso}, ...cursos]);
+  // Grava em cursos_usuarios e só mostra na lista se o banco confirmar (antes ficava só na tela e sumia ao recarregar).
+  const addCurso = async () => {
+    const titulo = novoCurso.titulo.trim();
+    if(!titulo) return;
+    const anoTxt = String(novoCurso.ano||"").trim();
+    // Ano é opcional; se vier, precisa ser um ano de 4 dígitos (o banco aceita 1950–2100).
+    if(anoTxt && !/^(19[5-9]\d|20\d\d|2100)$/.test(anoTxt)){ setErroCurso("Informe o ano com 4 dígitos (ex.: 2025) ou deixe em branco."); return; }
+    setSalvandoCurso(true); setErroCurso("");
+    const sb = getSB();
+    const{data,error} = sb ? await sb.from("cursos_usuarios")
+      .insert([{user_id: user.id, titulo, instituicao: novoCurso.instituicao.trim()||null, ano: anoTxt ? parseInt(anoTxt,10) : null}])
+      .select("id,titulo,instituicao,ano").single() : {data:null,error:{message:"sem conexão"}};
+    setSalvandoCurso(false);
+    if(error || !data){ setErroCurso("Não foi possível salvar o curso. Tente novamente."); console.error(error); return; }
+    setCursos(p => [data, ...p]);
     setModalCurso(false);
     setNovoCurso({ titulo: "", instituicao: "", ano: "" });
   };
@@ -1878,14 +1901,15 @@ function Perfil({user,setUsers,setPage}){
               <Btn sz="sm" v="ghost" onClick={() => setModalCurso(true)}>+ Adicionar</Btn>
             </div>
             <div style={{display: "flex", flexDirection: "column", gap: 16}}>
-              {cursos.length === 0 && <div style={{fontSize: 13, color: C.txd}}>Nenhum curso cadastrado.</div>}
+              {carregandoCursos && <div style={{display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.txd}}><Spin size={14}/> Carregando cursos…</div>}
+              {!carregandoCursos && cursos.length === 0 && <div style={{fontSize: 13, color: C.txd}}>Nenhum curso cadastrado.</div>}
               {cursos.map(c => (
                 <div key={c.id} style={{display: "flex", gap: 16, paddingBottom: 16, borderBottom: "1px solid "+C.s3}}>
                    <div style={{width: 48, height: 48, background: C.s2, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, color: C.txd, flexShrink: 0}}>🎓</div>
                    <div>
                      <div style={{fontSize: 15, fontWeight: 700, color: C.txt, marginBottom: 2}}>{c.titulo}</div>
-                     <div style={{fontSize: 13, color: C.txm}}>{c.instituicao}</div>
-                     <div style={{fontSize: 12, color: C.txd, marginTop: 4}}>Emitido em {c.ano}</div>
+                     {c.instituicao && <div style={{fontSize: 13, color: C.txm}}>{c.instituicao}</div>}
+                     {c.ano && <div style={{fontSize: 12, color: C.txd, marginTop: 4}}>Concluído em {c.ano}</div>}
                    </div>
                 </div>
               ))}
@@ -1916,19 +1940,9 @@ function Perfil({user,setUsers,setPage}){
              <div style={{fontSize: 16, fontWeight: 800, color: C.accDk, marginBottom: 20, display: "flex", alignItems: "center", gap: 8}}>
                <span>🎯</span> Minhas Metas e Objetivos
              </div>
-             <div style={{display: "flex", flexDirection: "column", gap: 20}}>
-               {metas.map(m => (
-                 <div key={m.id}>
-                   <div style={{display: "flex", justifyContent: "space-between", marginBottom: 8}}>
-                     <span style={{fontSize: 13, fontWeight: 600, color: C.txt, paddingRight: 10}}>{m.titulo}</span>
-                     <span style={{fontSize: 12, fontWeight: 700, color: m.progresso === 100 ? C.grn : C.acc}}>{m.progresso}%</span>
-                   </div>
-                   <div style={{height: 6, background: C.s3, borderRadius: 3, overflow: "hidden"}}>
-                     <div style={{height: "100%", width: m.progresso+"%", background: m.progresso === 100 ? C.grn : C.acc, borderRadius: 3, transition: "width 0.5s ease"}} />
-                   </div>
-                 </div>
-               ))}
-             </div>
+             {/* Por quê: as metas eram fictícias (iguais para todos, progresso fixo). Não existe tabela de
+                 metas ainda; fica o estado vazio até o módulo de metas/PDI existir (decisão do Asael, 07/10/2026). */}
+             <div style={{fontSize: 13, color: C.txd}}>Nenhuma meta definida.</div>
              <Btn sz="sm" v="outline" full style={{marginTop: 24}} onClick={()=>setPage("avaliacoes")}>Visualizar ciclo de avaliação</Btn>
           </Card>
         </div>
@@ -1959,14 +1973,15 @@ function Perfil({user,setUsers,setPage}){
         </div>
       </Modal>
 
-      <Modal open={modalCurso} onClose={()=>setModalCurso(false)} title="Adicionar Novo Curso" width={460}>
+      <Modal open={modalCurso} onClose={()=>{setModalCurso(false);setErroCurso("");}} title="Adicionar Novo Curso" width={460}>
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           <Inp label="Título do Curso / Certificado *" value={novoCurso.titulo} onChange={e=>setNovoCurso({...novoCurso, titulo: e.target.value})} placeholder="Ex: Liderança Estratégica"/>
           <Inp label="Instituição" value={novoCurso.instituicao} onChange={e=>setNovoCurso({...novoCurso, instituicao: e.target.value})} placeholder="Ex: Sebrae"/>
           <Inp label="Ano de Conclusão" value={novoCurso.ano} onChange={e=>setNovoCurso({...novoCurso, ano: e.target.value})} placeholder="Ex: 2025"/>
+          {erroCurso && <div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"9px 14px",color:C.red,fontSize:13}}>{erroCurso}</div>}
           <div style={{display:"flex",gap:10,justifyContent:"flex-end", marginTop: 10}}>
-            <Btn v="outline" onClick={()=>setModalCurso(false)}>Cancelar</Btn>
-            <Btn onClick={addCurso} disabled={!novoCurso.titulo}>Adicionar Curso</Btn>
+            <Btn v="outline" onClick={()=>{setModalCurso(false);setErroCurso("");}}>Cancelar</Btn>
+            <Btn onClick={addCurso} disabled={!novoCurso.titulo.trim()||salvandoCurso}>{salvandoCurso?<Spin size={14} color="#fff"/>:null} Adicionar Curso</Btn>
           </div>
         </div>
       </Modal>
