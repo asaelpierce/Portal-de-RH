@@ -34,8 +34,10 @@ Deno.serve(async (req) => {
 
   const { data: imp } = await admin.from("ferias_importacoes").select("*").order("id", { ascending: false }).limit(1).maybeSingle();
   const { data: saldos, error: eS } = imp ? await admin.from("ferias_saldos").select("*").eq("importacao_id", imp.id) : { data: [], error: null };
-  const { data: usuarios, error: eU } = await admin.from("usuarios").select("id,name,email,status,cadastro,lider_id,role");
+  const { data: usuariosDb, error: eU } = await admin.from("usuarios").select("id,name,email,email_notificacao,status,cadastro,lider_id,role");
   if (eS || eU) return json({ ok: false, error: (eS ?? eU)!.message }, 500);
+  // Notificações vão para email_notificacao quando preenchido (ex.: login asael@, caixa real asael.abdon@).
+  const usuarios = (usuariosDb ?? []).map((u) => ({ ...u, email: u.email_notificacao || u.email }));
 
   const destinatariosRH = (usuarios ?? [])
     .filter((u) => rhIds.includes(u.id) && (u.status ?? "ativo") === "ativo" && u.email)
