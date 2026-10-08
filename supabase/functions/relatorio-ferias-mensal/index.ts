@@ -9,7 +9,7 @@
 //   { "modo": "teste", "para_teste": "x@y" }     → envia a visão geral + 1 exemplo de líder SÓ para x@y, com [TESTE]
 //   { "modo": "envio" }                          → envia para todos os destinatários
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { montarRelatorios } from "./montar.js";
+import { montarRelatorios, comAvisoTeste } from "./montar.js";
 
 const SB_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SB_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
 
   if (modo === "previa") {
     return json({ ok: true, modo, hoje: hojeSP(), resumo,
-      emails: emails.map((e) => ({ para: e.para, tipo: e.tipo, nome: e.nome, assunto: e.assunto, urgentes: e.urgentes ?? null, caracteres: e.corpo.length, corpo: body.com_corpo ? e.corpo : undefined })) });
+      emails: emails.map((e) => ({ para: e.para, tipo: e.tipo, nome: e.nome, assunto: e.assunto, urgentes: e.urgentes ?? null, caracteres: e.corpo.length, corpo: body.com_corpo ? e.corpo : undefined, html: body.com_html ? e.html : undefined })) });
   }
 
   let fila = emails;
@@ -58,6 +58,7 @@ Deno.serve(async (req) => {
     fila = [emails.find((e) => e.tipo === "rh"), exemploLider].filter(Boolean).map((e) => ({
       ...e!, para: alvo, assunto: "[TESTE] " + e!.assunto,
       corpo: `[TESTE — no envio real, este e-mail iria para: ${e!.nome}]\n\n` + e!.corpo,
+      html: comAvisoTeste(e!.html, e!.nome),
     }));
   }
   if (!PA_WEBHOOK) return json({ ok: false, error: "POWER_AUTOMATE_WEBHOOK não configurado." }, 500);
@@ -66,7 +67,7 @@ Deno.serve(async (req) => {
   for (const e of fila) {
     if (!e.para) { resultados.push({ para: null, ok: false, erro: `${e.nome} sem e-mail cadastrado` }); continue; }
     try {
-      const r = await fetch(PA_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: e.para, subject: e.assunto, body: e.corpo }) });
+      const r = await fetch(PA_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: e.para, subject: e.assunto, body: e.html ?? e.corpo }) /* HTML: o Power Automate envia o corpo como HTML */ });
       resultados.push({ para: e.para, ok: r.ok, status: r.status });
     } catch (err) { resultados.push({ para: e.para, ok: false, erro: String(err) }); }
     await new Promise((r) => setTimeout(r, 800)); // não sobrecarregar o Power Automate

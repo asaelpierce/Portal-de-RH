@@ -166,3 +166,33 @@ export async function preencherFormularioFerias(modeloBuf, d) {
   const ordem = [...arq.keys()].sort((a, b) => (a === "[Content_Types].xml" ? -1 : b === "[Content_Types].xml" ? 1 : 0));
   return zipEscrever(ordem.map(k => [k, arq.get(k)]));
 }
+
+// ── E-mail "férias aprovadas" (HTML) ────────────────────────────────────────────
+// Por quê HTML: o Power Automate envia o corpo como HTML; texto puro chegava sem quebras de linha.
+// Mesmo visual do relatório mensal (supabase/functions/relatorio-ferias-mensal/montar.js).
+export function emailFeriasAprovadasHtml({ nome, inicio, fim, dias, abono, periodo }) {
+  const F = "font-family:'Segoe UI',Arial,Helvetica,sans-serif;";
+  const linha = (r, v) => `<tr><td style="${F}font-size:13px;color:#64748b;padding:8px 0;border-bottom:1px solid #e2e8f0;width:45%;">${r}</td><td style="${F}font-size:14px;color:#0f172a;padding:8px 0;border-bottom:1px solid #e2e8f0;font-weight:700;">${v}</td></tr>`;
+  const primeiro = escXml(String(nome || "").split(" ")[0]);
+  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Férias aprovadas</title></head>
+<body style="margin:0;padding:0;background:#f1f5f9;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;"><tr><td align="center" style="padding:20px 8px;">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#ffffff;border:1px solid #e2e8f0;">
+<tr><td style="background:#4338ca;padding:20px 18px;${F}">
+  <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#c7d2fe;">Kalenborn do Brasil · Recursos Humanos</div>
+  <div style="font-size:20px;font-weight:700;color:#ffffff;margin-top:6px;">Suas férias foram aprovadas ✓</div>
+</td></tr>
+<tr><td style="padding:22px 16px;${F}font-size:14px;line-height:1.6;color:#0f172a;">
+  <p style="margin:0 0 14px 0;">Olá, <strong>${primeiro}</strong>!</p>
+  <p style="margin:0 0 16px 0;">O RH aprovou suas férias. Confira os detalhes:</p>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 16px 0;">
+    ${linha("Período de descanso", `${br(inicio)} a ${br(fim)}`)}
+    ${dias ? linha("Dias de descanso", `${dias} dias`) : ""}
+    ${abono ? linha("Abono pecuniário", `${abono} dias`) : ""}
+    ${periodo ? linha("Período aquisitivo", escXml(periodo)) : ""}
+  </table>
+  <p style="margin:0;font-size:13px;color:#334155;">Os detalhes ficam disponíveis no Portal de RH, na tela <strong>Férias</strong>.</p>
+</td></tr>
+<tr><td style="padding:16px 18px;border-top:1px solid #e2e8f0;background:#fafafa;${F}font-size:12px;color:#64748b;">Mensagem automática. Dúvidas: fale com o RH.</td></tr>
+</table></td></tr></table></body></html>`;
+}

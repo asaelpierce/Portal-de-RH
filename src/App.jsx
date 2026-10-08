@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 // Leitura do relatório de saldos da folha BRIT e geração do formulário Word de férias (ver o arquivo para o porquê).
-import { lerRelatorioFerias, preencherFormularioFerias, OPCOES_FERIAS, addDias, diasEntre, addAnos, br as dataBR } from "./feriasFolha.js";
+import { lerRelatorioFerias, preencherFormularioFerias, OPCOES_FERIAS, addDias, diasEntre, addAnos, br as dataBR, emailFeriasAprovadasHtml } from "./feriasFolha.js";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Legend, ReferenceLine } from "recharts";
 
 const SB_URL=import.meta.env.VITE_SUPABASE_URL||"https://zybkcpvdptabxkxpieuv.supabase.co";
@@ -79,9 +79,13 @@ async function extractPDF(file){
   return d.ok?d.text:"";
 }
 
+// Por quê converter: o Power Automate envia o corpo como HTML; texto puro (ex.: e-mails do recrutamento
+// gerados pela IA) chegava sem as quebras de linha, num parágrafo só. Corpo que já é HTML passa direto.
+const textoParaHtml=t=>`<div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#0f172a;">${String(t??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\r?\n/g,"<br>")}</div>`;
 async function sendPAEmail(to, subject, body){
   if(!to)return{ok:false,error:"Destinatário vazio."};
-  return callProxy("email",{to,subject,body});
+  const html=/^\s*<(!doctype|html|div|table|p)\b/i.test(body||"")?body:textoParaHtml(body);
+  return callProxy("email",{to,subject,body:html});
 }
 
 // PALETTE — Light Mode Corporativo
@@ -803,11 +807,7 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast}){
     if(!colab?.email){showToast?.("Férias aprovadas, mas "+f.userName+" não tem e-mail cadastrado.","error");return false;}
     const op=OPCOES_FERIAS.find(o=>o.id===f.opcao);
     const dias=f.inicio&&f.fim?diasEntre(f.inicio,f.fim)+1:null;
-    const corpo=`Olá, ${f.userName.split(" ")[0]}!\n\nSuas férias foram aprovadas pelo RH.\n\n`+
-      `Período de descanso: ${dataBR(f.inicio)} a ${dataBR(f.fim)}${dias?" ("+dias+" dias)":""}\n`+
-      (op&&op.abono?`Abono pecuniário: ${op.abono} dias\n`:"")+
-      (f.periodoAq?`Período aquisitivo: ${f.periodoAq}\n`:"")+
-      `\nOs detalhes estão no Portal de RH, na tela Férias.\n\nRecursos Humanos — Kalenborn do Brasil`;
+    const corpo=emailFeriasAprovadasHtml({nome:f.userName,inicio:f.inicio,fim:f.fim,dias,abono:op?.abono||0,periodo:f.periodoAq});
     const res=await sendPAEmail(colab.email,`Férias aprovadas — ${dataBR(f.inicio)} a ${dataBR(f.fim)}`,corpo);
     if(!res?.ok){showToast?.("Férias aprovadas, mas o e-mail falhou: "+(res?.error||"erro desconhecido"),"error");return false;}
     const sb=getSB();const{data}=await sb.from("ferias").update({email_enviado_em:new Date().toISOString()}).eq("id",f.id).select().single();
