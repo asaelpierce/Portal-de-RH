@@ -740,9 +740,14 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast}){
     const sb=getSB();if(!sb){setSaldos({carregando:false,imp:null,linhas:[]});return;}
     const{data:imp,error}=await sb.from("ferias_importacoes").select("*").order("id",{ascending:false}).limit(1).maybeSingle();
     if(error||!imp){setSaldos({carregando:false,imp:null,linhas:[]});if(error)console.error(error);return;}
-    const{data:linhas,error:e2}=await sb.from("ferias_saldos").select("*").eq("importacao_id",imp.id).order("nome").order("periodo_inicio");
+    // Saldo CALCULADO pelo portal (função ferias_saldo_atual no banco): parte do relatório mais recente,
+    // acumula 2,5 dias/mês, abre períodos novos e desconta as férias aprovadas no portal. O e-mail mensal usa a mesma função.
+    const{data:linhas,error:e2}=await sb.rpc("ferias_saldo_atual",{p_hoje:hojeISO()});
     if(e2)console.error(e2);
-    setSaldos({carregando:false,imp,linhas:linhas||[]});
+    setSaldos({carregando:false,imp,linhas:(linhas||[]).map(l=>({...l,
+      id:l.cadastro+"|"+l.periodo_inicio,
+      debito:Number(l.debito_folha)+Number(l.debito_portal),
+      sugestao:l.prazo_inicio}))});
   };
   useEffect(()=>{carregarSaldos();},[]);
   const saldosDe=cad=>cad?saldos.linhas.filter(l=>l.cadastro===cad):[];
@@ -844,6 +849,7 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast}){
     const{data,error}=await sb.from("ferias").update(p).eq("id",id).select().single();
     if(error||!data){showToast?.("Não foi possível registrar a decisão.","error");console.error(error);return;}
     setFerias(prev=>prev.map(x=>x.id===id?mf(data):x));
+    carregarSaldos();  // aprovação do RH reserva os dias no saldo
     // Aprovação final do RH → avisa o colaborador por e-mail.
     if(isRH&&acao==="aprovado")await enviarEmailAprovacao(mf(data));
   };
@@ -869,7 +875,7 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast}){
       obs:formEdit.obs,periodo_aquisitivo:formEdit.periodoAq||null,
       historico_edicoes:novoHistorico,
     }).eq("id",modalEdit.id).select().single();
-    if(data){setFerias(p=>p.map(x=>x.id===modalEdit.id?mf(data):x));setModalEdit(null);}
+    if(data){setFerias(p=>p.map(x=>x.id===modalEdit.id?mf(data):x));setModalEdit(null);carregarSaldos();}
     setSavingEdit(false);
   };
 
@@ -877,11 +883,15 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast}){
   const confirmarCancelamento=async()=>{
     if(!modalCancel||!motivoCancel.trim())return;setSavingCancel(true);
     const sb=getSB();
-    const{data}=await sb.from("ferias").update({
+    const{data,error}=await sb.from("ferias").update({
       status:"cancelado",cancelado_por:user.id,cancelado_motivo:motivoCancel.trim(),cancelado_em:new Date().toISOString(),
     }).eq("id",modalCancel.id).select().single();
-    if(data){setFerias(p=>p.map(x=>x.id===modalCancel.id?mf(data):x));setModalCancel(null);setMotivoCancel("");}
     setSavingCancel(false);
+    // Por quê checar: o banco recusava status "cancelado" e a tela fechava como se tivesse dado certo.
+    if(error||!data){showToast?.("Não foi possível cancelar a férias.","error");console.error(error);return;}
+    setFerias(p=>p.map(x=>x.id===modalCancel.id?mf(data):x));setModalCancel(null);setMotivoCancel("");
+    carregarSaldos();  // cancelada devolve os dias ao saldo
+    showToast?.("Férias cancelada — os dias voltaram ao saldo.","success");
   };
 
   const teamIds=isRH?users.map(u=>u.id):can(user.role,"gestor")?users.filter(u=>u.gestorId===user.id||u.id===user.id).map(u=>u.id):can(user.role,"lider")?users.filter(u=>u.liderId===user.id||u.id===user.id).map(u=>u.id):[user.id];
@@ -906,7 +916,7 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast}){
   });
 
   // ── VENCIMENTOS ── pelos saldos reais da folha (antes: estimativa por meses desde a admissão).
-  // Entra todo período já adquirido com saldo > 0. "Iniciar até" = coluna Sugestão da folha.
+  // Entra todo período já adquirido com saldo > 0. "Iniciar até" = fim do concessivo − saldo (calculado pelo portal).
   const cadsEquipe=new Set(users.filter(u=>teamIds.includes(u.id)).map(u=>u.cadastro).filter(Boolean));
   const vencimentos=saldos.linhas.filter(l=>Number(l.saldo)>0&&l.periodo_fim<hojeF&&(isRH||cadsEquipe.has(l.cadastro))).map(l=>{
     const u=users.find(x=>x.cadastro===l.cadastro);
@@ -1138,7 +1148,7 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast}){
           {saldos.carregando?<Card><div style={{display:"flex",gap:10,alignItems:"center",fontSize:13,color:C.txm}}><Spin size={14}/> Carregando saldos…</div></Card>
           :!saldos.imp?<Card><div style={{fontSize:13,color:C.txm}}>Nenhum relatório de férias importado ainda.{isRH?" Importe o Excel da folha na aba Saldos.":" O RH precisa importar o relatório da folha."}</div></Card>
           :<>
-            <div style={{fontSize:12,color:C.txd}}>Saldos da folha de {dataBR(saldos.imp.data_relatorio)} · períodos já adquiridos com saldo, ordenados pelo prazo para iniciar o gozo (coluna Sugestão da folha).</div>
+            <div style={{fontSize:12,color:C.txd}}>Saldos calculados pelo portal (base: folha de {dataBR(saldos.imp.data_relatorio)} + férias aprovadas no portal) · períodos já adquiridos com saldo, pelo prazo para iniciar o gozo.</div>
             {vencimentos.length===0&&<Card><div style={{fontSize:13,color:C.txd,textAlign:"center",padding:12}}>Nenhum saldo em período já adquirido.</div></Card>}
             {vencimentos.map(v=>{
               const vencido=v.fc<hojeF;const cor=vencido||v.diasPrazo<=30?C.red:v.diasPrazo<=90?C.amb:C.grn;
@@ -1176,7 +1186,7 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast}){
                 <div>
                   <div style={{fontWeight:700,fontSize:14}}>Relatório de férias da folha (BRIT)</div>
                   <div style={{fontSize:12,color:C.txm,marginTop:3}}>{saldos.imp?"Relatório de "+dataBR(saldos.imp.data_relatorio)+" · importado em "+new Date(saldos.imp.importado_em).toLocaleString("pt-BR")+" por "+nomeImportador(saldos.imp.importado_por)+" · "+saldos.imp.colaboradores+" colaboradores":"Nenhum relatório importado ainda."}</div>
-                  <div style={{fontSize:11,color:C.txd,marginTop:3}}>Use o Excel "Relatório Coleta" (FPPF001) exportado da folha, sem alterar. Cada importação substitui os saldos exibidos.</div>
+                  <div style={{fontSize:11,color:C.txd,marginTop:3}}>O portal calcula os saldos a partir do último relatório importado (2,5 dias/mês + férias aprovadas). Importar um relatório novo da folha (Excel "Relatório Coleta" FPPF001, sem alterar) atualiza o ponto de partida — útil para incluir faltas e afastamentos, que o portal não conhece.</div>
                 </div>
                 <input ref={arqRef} type="file" accept=".xlsx" style={{display:"none"}} onChange={e=>importar(e.target.files?.[0])}/>
                 <Btn onClick={()=>arqRef.current?.click()} disabled={importando}>{importando?<Spin size={14} color="#fff"/>:null} Importar Excel</Btn>
@@ -1195,12 +1205,12 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast}){
                 <div style={{fontSize:12,color:C.txm,marginTop:2,marginBottom:10}}>Cadastro {ls[0].cadastro} · {ls[0].cargo} · admissão {dataBR(ls[0].admissao)}</div>
                 <div style={{overflowX:"auto"}}>
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                    <thead><tr style={{color:C.txd,textAlign:"left"}}>{["Período aquisitivo","Direito","Gozado","Saldo","Iniciar até"].map(h=><th key={h} style={{padding:"4px 8px",fontWeight:600,borderBottom:"1px solid "+C.bdr}}>{h}</th>)}</tr></thead>
+                    <thead><tr style={{color:C.txd,textAlign:"left"}}>{["Período aquisitivo","Direito","Descontado","Saldo","Iniciar até"].map(h=><th key={h} style={{padding:"4px 8px",fontWeight:600,borderBottom:"1px solid "+C.bdr}}>{h}</th>)}</tr></thead>
                     <tbody>{ls.map(l=>{const emCurso=l.periodo_fim>=hojeF;return(
                       <tr key={l.id}>
-                        <td style={{padding:"6px 8px"}}>{dataBR(l.periodo_inicio)} a {dataBR(l.periodo_fim)}{emCurso&&<span style={{color:C.txd}}> (em aquisição)</span>}</td>
+                        <td style={{padding:"6px 8px"}}>{dataBR(l.periodo_inicio)} a {dataBR(l.periodo_fim)}{emCurso&&<span style={{color:C.txd}}> (em aquisição)</span>}{l.origem==="calculado"&&<span style={{color:C.txd}}> · aberto pelo portal</span>}</td>
                         <td style={{padding:"6px 8px"}}>{Number(l.direito)}</td>
-                        <td style={{padding:"6px 8px"}}>{Number(l.debito)}</td>
+                        <td style={{padding:"6px 8px"}}>{Number(l.debito)}{Number(l.debito_portal)>0&&<span style={{color:C.txd,fontSize:11}}> ({Number(l.debito_portal)} no portal)</span>}</td>
                         <td style={{padding:"6px 8px",fontWeight:700}}>{Number(l.saldo)}</td>
                         <td style={{padding:"6px 8px"}}>{Number(l.saldo)>0&&l.sugestao?dataBR(l.sugestao):"—"}</td>
                       </tr>);})}</tbody>

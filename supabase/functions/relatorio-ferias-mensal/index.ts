@@ -33,7 +33,9 @@ Deno.serve(async (req) => {
   if (!["previa", "teste", "envio"].includes(modo)) return json({ ok: false, error: "Modo inválido." }, 400);
 
   const { data: imp } = await admin.from("ferias_importacoes").select("*").order("id", { ascending: false }).limit(1).maybeSingle();
-  const { data: saldos, error: eS } = imp ? await admin.from("ferias_saldos").select("*").eq("importacao_id", imp.id) : { data: [], error: null };
+  // Saldo CALCULADO pelo portal (mesma função que o portal usa): base no último relatório + acúmulo + férias aprovadas.
+  const { data: calc, error: eS } = imp ? await admin.rpc("ferias_saldo_atual", { p_hoje: hojeSP() }) : { data: [], error: null };
+  const saldos = (calc ?? []).map((l) => ({ ...l, sugestao: l.prazo_inicio }));
   const { data: usuariosDb, error: eU } = await admin.from("usuarios").select("id,name,email,email_notificacao,status,cadastro,lider_id,role");
   if (eS || eU) return json({ ok: false, error: (eS ?? eU)!.message }, 500);
   // Notificações vão para email_notificacao quando preenchido (ex.: login asael@, caixa real asael.abdon@).

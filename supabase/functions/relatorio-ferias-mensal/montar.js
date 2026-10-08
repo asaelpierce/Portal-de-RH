@@ -67,7 +67,9 @@ export function montarRelatorios({ imp, saldos, usuarios, hoje, destinatariosRH 
   const linhaPeriodo = l => `${br(l.periodo_inicio)} a ${br(l.periodo_fim)}: saldo ${n(l.saldo)} dias, iniciar até ${br(prazo(l))}`;
   const idadeRel = imp?.data_relatorio ? dias(imp.data_relatorio, hoje) : null;
   const avisoIdade = !imp ? "⚠ Nenhum relatório de férias foi importado no portal ainda.\n\n"
-    : idadeRel > 40 ? `⚠ Atenção: o relatório da folha mais recente no portal é de ${br(imp.data_relatorio)} (${idadeRel} dias atrás). Os saldos podem estar desatualizados.\n\n` : "";
+    : idadeRel > 40 ? `⚠ Atenção: o cálculo parte do relatório da folha de ${br(imp.data_relatorio)} (${idadeRel} dias atrás). Faltas e afastamentos desde então não estão considerados — importe o relatório mais recente para conferência.\n\n` : "";
+  // Para o líder só interessa se não houver base nenhuma; a idade da base é assunto do RH.
+  const avisoLider = !imp ? avisoIdade : "";
   const mes = new Date(hoje + "T12:00:00Z").toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
   const emails = [];
 
@@ -82,15 +84,15 @@ export function montarRelatorios({ imp, saldos, usuarios, hoje, destinatariosRH 
       (ps.length ? comSaldo : semSaldo).push({ x, ps });
     }
     const urgentes = comSaldo.flatMap(({ x, ps }) => ps.map(p => ({ x, p, d: dias(hoje, prazo(p)) }))).filter(u => u.d <= 90).sort((a, b) => a.d - b.d);
-    let corpo = `Olá, ${l.name.split(" ")[0]}!\n\nSegue o saldo de férias da sua equipe${imp ? `, conforme o relatório da folha de ${br(imp.data_relatorio)}` : ""}.\n\n` + avisoIdade;
+    let corpo = `Olá, ${l.name.split(" ")[0]}!\n\nSegue o saldo de férias da sua equipe, calculado pelo portal${imp ? ` (base: folha de ${br(imp.data_relatorio)} + férias aprovadas no portal)` : ""}.\n\n` + avisoLider;
     if (urgentes.length) corpo += "⚠ PRECISAM INICIAR FÉRIAS NOS PRÓXIMOS 90 DIAS:\n" + urgentes.map(u => `• ${u.x.name} — ${n(u.p.saldo)} dias, iniciar até ${br(prazo(u.p))}${u.d < 0 ? " (PRAZO JÁ PASSOU)" : ` (faltam ${u.d} dias)`}`).join("\n") + "\n\n";
     corpo += "SALDOS DA EQUIPE (períodos já adquiridos):\n" + (comSaldo.length ? comSaldo.map(({ x, ps }) => `• ${x.name}\n` + ps.map(p => "   " + linhaPeriodo(p)).join("\n")).join("\n") : "• Ninguém com saldo pendente.") + "\n";
     if (semSaldo.length) corpo += `\nSem saldo pendente: ${semSaldo.map(s => s.x.name).join(", ")}.\n`;
     if (semCadastro.length) corpo += `\nSem vínculo com a folha (avise o RH): ${semCadastro.join(", ")}.\n`;
     corpo += "\nPara lançar férias: Portal de RH › Férias › + Lançar férias.\n\nRecursos Humanos — Kalenborn do Brasil";
     let h = `<p style="margin:0 0 12px 0;">Olá, <strong>${esc(l.name.split(" ")[0])}</strong>!</p>`
-      + `<p style="margin:0 0 18px 0;">Segue o saldo de férias da sua equipe${imp ? `, conforme o relatório da folha de <strong>${br(imp.data_relatorio)}</strong>` : ""}.</p>`;
-    if (avisoIdade) h += caixa("amarelo", "Atenção", esc(avisoIdade.replace(/^⚠\s*(Atenção:\s*)?/, "").trim()));
+      + `<p style="margin:0 0 18px 0;">Segue o saldo de férias da sua equipe, atualizado pelo portal com as férias já aprovadas.</p>`;
+    if (avisoLider) h += caixa("amarelo", "Atenção", esc(avisoLider.replace(/^⚠\s*(Atenção:\s*)?/, "").trim()));
     if (urgentes.length) h += caixa(urgentes.some(u => u.d < 0) ? "vermelho" : "amarelo", "Precisam iniciar férias nos próximos 90 dias",
       urgentes.map(u => `• <strong>${esc(u.x.name)}</strong> — ${n(u.p.saldo)} dias · iniciar até <strong>${br(prazo(u.p))}</strong> (${prazoTxt(u.d)})`).join("<br>"));
     h += `<div style="${FONTE}font-size:15px;font-weight:700;color:${COR.txt};margin:6px 0 8px 0;">Saldos da equipe</div><div style="font-size:12px;color:${COR.txd};margin:0 0 8px 0;">Períodos aquisitivos já completos, com saldo a gozar.</div>`;
@@ -98,7 +100,7 @@ export function montarRelatorios({ imp, saldos, usuarios, hoje, destinatariosRH 
       : `<p style="margin:0 0 14px 0;color:${COR.txd};">Ninguém da equipe tem saldo pendente.</p>`;
     if (semSaldo.length) h += `<p style="margin:0 0 8px 0;font-size:12px;color:${COR.txd};"><strong>Sem saldo pendente:</strong> ${semSaldo.map(s => esc(s.x.name)).join(", ")}.</p>`;
     if (semCadastro.length) h += `<p style="margin:0 0 8px 0;font-size:12px;color:${COR.amb};"><strong>Sem vínculo com a folha (avise o RH):</strong> ${semCadastro.map(esc).join(", ")}.</p>`;
-    const html = layoutEmail({ titulo: "Saldo de férias da sua equipe", subtitulo: mes.charAt(0).toUpperCase() + mes.slice(1) + (imp ? ` · folha de ${br(imp.data_relatorio)}` : ""),
+    const html = layoutEmail({ titulo: "Saldo de férias da sua equipe", subtitulo: mes.charAt(0).toUpperCase() + mes.slice(1) + (imp ? ` · base: folha de ${br(imp.data_relatorio)}` : ""),
       corpo: h, preheader: urgentes.length ? `${urgentes.length} pessoa(s) precisam iniciar férias nos próximos 90 dias.` : "Saldo de férias da sua equipe." });
     emails.push({ para: l.email, nome: l.name, tipo: "lider", assunto: `Saldo de férias da sua equipe — ${mes}`, corpo, html, equipe: equipe.length, urgentes: urgentes.length });
   }
@@ -111,13 +113,13 @@ export function montarRelatorios({ imp, saldos, usuarios, hoje, destinatariosRH 
   const semUsuario = todos.filter(t => !cadsPortal.has(t.c)).map(t => `${t.nome} (${t.c})`);
   const totalDias = todos.reduce((s, t) => s + t.ps.reduce((a, p) => a + n(p.saldo), 0), 0);
   let rh = `Relatório mensal de saldo de férias — ${mes}.\n\n` + avisoIdade;
-  if (imp) rh += `Relatório da folha: ${br(imp.data_relatorio)} · ${imp.colaboradores} colaboradores · ${totalDias} dias de saldo em períodos já adquiridos.\n\n`;
+  if (imp) rh += `Saldos calculados pelo portal (base: folha de ${br(imp.data_relatorio)} + férias aprovadas) · ${porCad.size} colaboradores · ${totalDias} dias de saldo em períodos já adquiridos.\n\n`;
   rh += urg.length ? "⚠ INICIAR NOS PRÓXIMOS 90 DIAS:\n" + urg.map(u => `• ${u.t.nome} (${u.t.c}) — ${n(u.p.saldo)} dias, iniciar até ${br(prazo(u.p))}${u.d < 0 ? " (PRAZO JÁ PASSOU)" : ` (faltam ${u.d} dias)`}`).join("\n") + "\n\n" : "Nenhum prazo de início nos próximos 90 dias.\n\n";
   if (aposPrazo.length) rh += "⚠ DATA SUGERIDA PELA FOLHA DEPOIS DO FIM DO CONCESSIVO (confirmar com a contabilidade):\n" + aposPrazo.map(l => `• ${l.nome} (${l.cadastro}) — aquisitivo ${br(l.periodo_inicio)} a ${br(l.periodo_fim)}, concessivo até ${br(addAnos(l.periodo_fim, 1))}, sugestão ${br(l.sugestao)}`).join("\n") + "\n\n";
   if (semUsuario.length) rh += `Cadastros da folha sem usuário no portal (${semUsuario.length}): ${semUsuario.join(", ")}.\n\n`;
   rh += `Relatórios enviados aos líderes: ${emails.length}.\n\nDetalhes por colaborador: Portal de RH › Férias › Saldos.`;
   let hr = "";
-  if (imp) hr += `<table role="presentation" width="100%" cellpadding="0" cellspacing="6" style="margin:0 0 16px 0;"><tr>${indicador(imp.colaboradores, "colaboradores")}${indicador(totalDias, "dias de saldo")}${indicador(urg.length, "prazos em 90 dias", urg.length ? COR.amb : COR.grn)}</tr></table>`;
+  if (imp) hr += `<table role="presentation" width="100%" cellpadding="0" cellspacing="6" style="margin:0 0 16px 0;"><tr>${indicador(porCad.size, "colaboradores")}${indicador(totalDias, "dias de saldo")}${indicador(urg.length, "prazos em 90 dias", urg.length ? COR.amb : COR.grn)}</tr></table>`;
   if (avisoIdade) hr += caixa("amarelo", "Atenção", esc(avisoIdade.replace(/^⚠\s*(Atenção:\s*)?/, "").trim()));
   hr += urg.length ? caixa(urg.some(u => u.d < 0) ? "vermelho" : "amarelo", "Iniciar férias nos próximos 90 dias",
       urg.map(u => `• <strong>${esc(u.t.nome)}</strong> <span style="color:${COR.txd};">(cad. ${esc(u.t.c)})</span> — ${n(u.p.saldo)} dias · iniciar até <strong>${br(prazo(u.p))}</strong> (${prazoTxt(u.d)})`).join("<br>"))
@@ -126,7 +128,7 @@ export function montarRelatorios({ imp, saldos, usuarios, hoje, destinatariosRH 
       aposPrazo.map(l => `• <strong>${esc(l.nome)}</strong> (cad. ${esc(l.cadastro)}) — aquisitivo ${br(l.periodo_inicio)} a ${br(l.periodo_fim)} · concessivo até <strong>${br(addAnos(l.periodo_fim, 1))}</strong> · sugestão da folha ${br(l.sugestao)}`).join("<br>"));
   if (semUsuario.length) hr += `<p style="margin:0 0 10px 0;font-size:12px;color:${COR.txd};"><strong>Cadastros da folha sem usuário no portal (${semUsuario.length}):</strong> ${semUsuario.map(esc).join(", ")}.</p>`;
   hr += `<p style="margin:0;font-size:12px;color:${COR.txd};">Relatórios enviados aos líderes: <strong>${emails.length}</strong>. Detalhes por colaborador: Portal de RH › Férias › Saldos.</p>`;
-  const htmlRH = layoutEmail({ titulo: "Saldo de férias — visão geral", subtitulo: mes.charAt(0).toUpperCase() + mes.slice(1) + (imp ? ` · folha de ${br(imp.data_relatorio)}` : ""),
+  const htmlRH = layoutEmail({ titulo: "Saldo de férias — visão geral", subtitulo: mes.charAt(0).toUpperCase() + mes.slice(1) + (imp ? ` · base: folha de ${br(imp.data_relatorio)}` : ""),
     corpo: hr, preheader: urg.length ? `${urg.length} prazo(s) de férias nos próximos 90 dias.` : "Relatório mensal de saldo de férias." });
   for (const d of destinatariosRH) emails.push({ para: d.email, nome: d.name, tipo: "rh", assunto: `Saldo de férias — visão geral — ${mes}`, corpo: rh, html: htmlRH });
 
