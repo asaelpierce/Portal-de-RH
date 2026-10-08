@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+// Leitura do relatório de saldos da folha BRIT e geração do formulário Word de férias (ver o arquivo para o porquê).
+import { lerRelatorioFerias, preencherFormularioFerias, OPCOES_FERIAS, addDias, diasEntre, addAnos, br as dataBR } from "./feriasFolha.js";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Legend, ReferenceLine } from "recharts";
 
 const SB_URL=import.meta.env.VITE_SUPABASE_URL||"https://zybkcpvdptabxkxpieuv.supabase.co";
@@ -109,8 +111,8 @@ const can=(r,m)=>(RL[r]||0)>=(RL[m]||0);
 // que checam user.role==="rh" diretamente em vez de usar can().
 const isRHouDev=r=>r==="rh"||r==="dev";
 
-const mu=u=>({id:u.id,name:u.name,email:u.email,role:u.role,setor:u.setor,area:u.area||null,cargo:u.cargo,admissao:u.admissao,gestorId:u.gestor_id,liderId:u.lider_id,skills:u.skills||[],senioridade:u.senioridade||0,telefone:u.telefone||"",fotoUrl:u.foto_url||""});
-const mf=f=>({id:f.id,userId:f.user_id,userName:f.user_name,setor:f.setor,tipo:f.tipo,inicio:f.inicio,fim:f.fim,abono:f.abono,status:f.status,liderAprov:f.lider_aprov,gestorAprov:f.gestor_aprov,rhAprov:f.rh_aprov,obs:f.obs,dataVenc:f.data_vencimento,periodoAq:f.periodo_aquisitivo,createdAt:f.created_at,historico:f.historico_edicoes||[],canceladoPor:f.cancelado_por,canceladoMotivo:f.cancelado_motivo,canceladoEm:f.cancelado_em});
+const mu=u=>({id:u.id,name:u.name,email:u.email,role:u.role,setor:u.setor,area:u.area||null,cargo:u.cargo,admissao:u.admissao,gestorId:u.gestor_id,liderId:u.lider_id,skills:u.skills||[],senioridade:u.senioridade||0,telefone:u.telefone||"",fotoUrl:u.foto_url||"",status:u.status||"ativo",cadastro:u.cadastro||null});
+const mf=f=>({id:f.id,userId:f.user_id,userName:f.user_name,setor:f.setor,tipo:f.tipo,inicio:f.inicio,fim:f.fim,abono:f.abono,status:f.status,liderAprov:f.lider_aprov,gestorAprov:f.gestor_aprov,rhAprov:f.rh_aprov,obs:f.obs,dataVenc:f.data_vencimento,periodoAq:f.periodo_aquisitivo,createdAt:f.created_at,historico:f.historico_edicoes||[],canceladoPor:f.cancelado_por,canceladoMotivo:f.cancelado_motivo,canceladoEm:f.cancelado_em,opcao:f.opcao||(f.tipo==="30dias"?"30":f.tipo==="15dias"?"15":null),adiantamento13:f.adiantamento_13,lancadoPor:f.lancado_por,lancadoPorNome:f.lancado_por_nome,periodoInicio:f.periodo_inicio,periodoFim:f.periodo_fim,emailEnviadoEm:f.email_enviado_em});
 const mfb=fb=>({id:fb.id,fromId:fb.from_id,fromName:fb.from_name,fromRole:fb.from_role,toId:fb.to_id,toName:fb.to_name,toRole:fb.to_role,tipo:fb.tipo,texto:fb.texto,sigiloso:fb.sigiloso,createdAt:fb.created_at});
 const mch=m=>({id:m.id,fromId:m.from_id,fromName:m.from_name,toId:m.to_id,toName:m.to_name,texto:m.texto,lido:m.lido,createdAt:m.created_at});
 const mav=a=>({id:a.id,avaliadoId:a.avaliado_id,avaliadoName:a.avaliado_name,avaliadorId:a.avaliador_id,avaliadorName:a.avaliador_name,periodo:a.periodo,status:a.status,notas:{qualidade:a.nota_qualidade,produtividade:a.nota_produtividade,trabalhoEquipe:a.nota_trabalho_equipe,pontualidade:a.nota_pontualidade,iniciativa:a.nota_iniciativa},comentario:a.comentario,createdAt:a.created_at});
@@ -710,7 +712,13 @@ function Planner({user,users,ferias,tarefas,setTarefas,setPage}){
 }
 
 // FÉRIAS
-function Ferias({user,users,ferias,setFerias,criarTarefaAuto}){
+function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast}){
+  // ── Fluxo (decisão do RH em 08/10/2026): o colaborador pede ao líder fora do sistema; o LÍDER lança aqui
+  // → GESTOR aprova → RH aprova → colaborador vê na tela e recebe e-mail. Saldos vêm da folha (aba Saldos).
+  const VAZIO_LANC={userId:"",periodoKey:"",periodoManual:"",opcao:"",inicio:"",adiantamento13:"",obs:""};
+  const[modalLanc,setModalLanc]=useState(false);const[formLanc,setFormLanc]=useState(VAZIO_LANC);const[erroLanc,setErroLanc]=useState("");
+  const[saldos,setSaldos]=useState({carregando:true,imp:null,linhas:[]});const[importando,setImportando]=useState(false);const[buscaSaldo,setBuscaSaldo]=useState("");
+  const arqRef=useRef(null);
   const[tab,setTab]=useState("lista");const[modal,setModal]=useState(false);
   const[form,setForm]=useState({tipo:"30dias",inicio:"",fim:"",abono:false,obs:"",periodoAq:""});const[saving,setSaving]=useState(false);
   const[busca,setBusca]=useState("");const[filtroSetor,setFiltroSetor]=useState("todos");const[filtroStatus,setFiltroStatus]=useState("todos");
@@ -720,6 +728,105 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto}){
   const[modalCancel,setModalCancel]=useState(null);const[motivoCancel,setMotivoCancel]=useState("");const[savingCancel,setSavingCancel]=useState(false);
 
   const isRH=can(user.role,"rh");
+  const hojeF=hojeISO();
+  const nomeImportador=id=>users.find(u=>u.id===id)?.name||"—";
+
+  // Saldos: sempre a importação mais recente do relatório da folha.
+  const carregarSaldos=async()=>{
+    const sb=getSB();if(!sb){setSaldos({carregando:false,imp:null,linhas:[]});return;}
+    const{data:imp,error}=await sb.from("ferias_importacoes").select("*").order("id",{ascending:false}).limit(1).maybeSingle();
+    if(error||!imp){setSaldos({carregando:false,imp:null,linhas:[]});if(error)console.error(error);return;}
+    const{data:linhas,error:e2}=await sb.from("ferias_saldos").select("*").eq("importacao_id",imp.id).order("nome").order("periodo_inicio");
+    if(e2)console.error(e2);
+    setSaldos({carregando:false,imp,linhas:linhas||[]});
+  };
+  useEffect(()=>{carregarSaldos();},[]);
+  const saldosDe=cad=>cad?saldos.linhas.filter(l=>l.cadastro===cad):[];
+  const fimConcessivo=l=>addAnos(l.periodo_fim,1);
+
+  // Importação (RH): lê o Excel da BRIT no navegador e grava tudo de uma vez pela função do banco.
+  const importar=async file=>{
+    if(!file)return;setImportando(true);
+    try{
+      const{dataRelatorio,linhas}=await lerRelatorioFerias(await file.arrayBuffer());
+      const sb=getSB();
+      const{data,error}=await sb.rpc("importar_saldos_ferias",{p_arquivo:file.name,p_data_relatorio:dataRelatorio,p_importado_por:user.id,p_linhas:linhas});
+      if(error)throw new Error(error.message);
+      const r=Array.isArray(data)?data[0]:data;
+      showToast?.(`Relatório importado: ${r?.colaboradores??"?"} colaboradores, ${r?.periodos??"?"} períodos.`,"success");
+      await carregarSaldos();
+    }catch(e){console.error(e);showToast?.(e.message||"Falha ao importar o relatório.","error");}
+    setImportando(false);if(arqRef.current)arqRef.current.value="";
+  };
+
+  // Quem cada papel pode lançar: líder → sua equipe; gestor → quem ele gere; RH → todos. Só ativos.
+  const lancaveis=users.filter(u=>u.status==="ativo"&&u.id!==user.id&&(isRH||(can(user.role,"gestor")?u.gestorId===user.id:u.liderId===user.id)))
+    .sort((a,b)=>a.name.localeCompare(b.name));
+  const colabLanc=users.find(u=>String(u.id)===String(formLanc.userId));
+  const periodosLanc=saldosDe(colabLanc?.cadastro).filter(l=>Number(l.saldo)>0);
+  const perSel=periodosLanc.find(l=>String(l.id)===formLanc.periodoKey);
+  const opSel=OPCOES_FERIAS.find(o=>o.id===formLanc.opcao);
+  const fimLanc=formLanc.inicio&&opSel?addDias(formLanc.inicio,opSel.descanso-1):"";
+  const avisosLanc=[];
+  if(perSel&&opSel&&opSel.descanso+opSel.abono>Number(perSel.saldo))avisosLanc.push(`Esta opção usa ${opSel.descanso+opSel.abono} dias, mas o saldo do período é ${Number(perSel.saldo)} dias.`);
+  if(perSel&&perSel.periodo_fim>=hojeF)avisosLanc.push("O período aquisitivo escolhido ainda não terminou ("+dataBR(perSel.periodo_fim)+").");
+  if(perSel&&formLanc.inicio&&perSel.sugestao&&formLanc.inicio>perSel.sugestao)avisosLanc.push("O início passa da data sugerida pela folha ("+dataBR(perSel.sugestao)+"): risco de férias fora do prazo.");
+  if(formLanc.inicio&&formLanc.inicio>=hojeF&&diasEntre(hojeF,formLanc.inicio)<30)avisosLanc.push("Menos de 30 dias de antecedência (o formulário pede aviso com 30 dias).");
+
+  const lancar=async()=>{
+    setErroLanc("");
+    if(!colabLanc||!opSel||!formLanc.inicio||formLanc.adiantamento13===""){setErroLanc("Preencha colaborador, opção, data de início e a 1ª parcela do 13º.");return;}
+    if(formLanc.inicio<hojeF){setErroLanc("A data de início não pode estar no passado.");return;}
+    if(!perSel&&!formLanc.periodoManual.trim()){setErroLanc("Escolha o período aquisitivo.");return;}
+    // Status inicial pela etapa de quem lança: líder → aguarda gestor; gestor ou RH → aguarda RH.
+    const porLider=!can(user.role,"gestor");
+    const row={user_id:colabLanc.id,user_name:colabLanc.name,setor:colabLanc.setor,tipo:opSel.id,opcao:opSel.id,
+      inicio:formLanc.inicio,fim:fimLanc,abono:opSel.abono>0,adiantamento_13:formLanc.adiantamento13==="sim",obs:formLanc.obs.trim()||null,
+      status:porLider?"pendente_gestor":"pendente_rh",lider_aprov:porLider?"aprovado":null,gestor_aprov:!porLider&&!isRH?"aprovado":null,rh_aprov:null,
+      periodo_aquisitivo:perSel?dataBR(perSel.periodo_inicio)+" a "+dataBR(perSel.periodo_fim):formLanc.periodoManual.trim(),
+      periodo_inicio:perSel?.periodo_inicio||null,periodo_fim:perSel?.periodo_fim||null,data_vencimento:perSel?.sugestao||null,
+      lancado_por:user.id,lancado_por_nome:user.name};
+    setSaving(true);
+    const sb=getSB();
+    const{data,error}=sb?await sb.from("ferias").insert([row]).select().single():{data:null,error:{message:"sem conexão"}};
+    setSaving(false);
+    if(error||!data){setErroLanc("Não foi possível lançar as férias. Tente novamente.");console.error(error);return;}
+    setFerias(p=>[mf(data),...p]);setModalLanc(false);setFormLanc(VAZIO_LANC);
+    showToast?.("Férias lançadas — aguardando "+(porLider?"gestor":"RH")+".","success");
+    if(criarTarefaAuto)criarTarefaAuto(`Aprovar Férias: ${colabLanc.name.split(" ")[0]}`,`Período: ${dataBR(row.inicio)} a ${dataBR(row.fim)}.\nLançado por ${user.name}.`,"alta",["férias"],"ferias",data.id);
+  };
+
+  // E-mail ao colaborador depois da aprovação do RH. A aprovação NÃO depende do e-mail: se falhar, avisa e
+  // deixa o botão "Enviar e-mail" para tentar de novo.
+  const enviarEmailAprovacao=async f=>{
+    const colab=users.find(u=>u.id===f.userId);
+    if(!colab?.email){showToast?.("Férias aprovadas, mas "+f.userName+" não tem e-mail cadastrado.","error");return false;}
+    const op=OPCOES_FERIAS.find(o=>o.id===f.opcao);
+    const dias=f.inicio&&f.fim?diasEntre(f.inicio,f.fim)+1:null;
+    const corpo=`Olá, ${f.userName.split(" ")[0]}!\n\nSuas férias foram aprovadas pelo RH.\n\n`+
+      `Período de descanso: ${dataBR(f.inicio)} a ${dataBR(f.fim)}${dias?" ("+dias+" dias)":""}\n`+
+      (op&&op.abono?`Abono pecuniário: ${op.abono} dias\n`:"")+
+      (f.periodoAq?`Período aquisitivo: ${f.periodoAq}\n`:"")+
+      `\nOs detalhes estão no Portal de RH, na tela Férias.\n\nRecursos Humanos — Kalenborn do Brasil`;
+    const res=await sendPAEmail(colab.email,`Férias aprovadas — ${dataBR(f.inicio)} a ${dataBR(f.fim)}`,corpo);
+    if(!res?.ok){showToast?.("Férias aprovadas, mas o e-mail falhou: "+(res?.error||"erro desconhecido"),"error");return false;}
+    const sb=getSB();const{data}=await sb.from("ferias").update({email_enviado_em:new Date().toISOString()}).eq("id",f.id).select().single();
+    if(data)setFerias(prev=>prev.map(x=>x.id===f.id?mf(data):x));
+    showToast?.("E-mail enviado para "+colab.email,"success");return true;
+  };
+
+  // Formulário oficial "Solicitação de Férias" preenchido (modelo do RH em public/modelos).
+  const baixarFormulario=async f=>{
+    try{
+      if(!f.opcao)throw new Error("Defina a opção do formulário (30, 15, 5+10 ou 10 dias) editando esta férias.");
+      const modelo=await (await fetch("/modelos/solicitacao_ferias.docx")).arrayBuffer();
+      const cad=users.find(u=>u.id===f.userId)?.cadastro;
+      const blob=await preencherFormularioFerias(modelo,{nome:f.userName,cadastro:cad,inicio:f.inicio,opcao:f.opcao,periodo:f.periodoAq||"",adiantamento13:f.adiantamento13});
+      const url=URL.createObjectURL(blob),a=document.createElement("a");
+      a.href=url;a.download="Solicitacao_Ferias_"+f.userName.replace(/\s+/g,"_")+"_"+f.inicio+".docx";
+      document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
+    }catch(e){console.error(e);showToast?.(e.message||"Não foi possível gerar o formulário.","error");}
+  };
 
   useEffect(()=>{if(form.inicio){const d=new Date(form.inicio);d.setDate(d.getDate()+(form.tipo==="30dias"?29:14));setForm(f=>({...f,fim:d.toISOString().split("T")[0]}));}},[ form.inicio,form.tipo]);
 
@@ -734,26 +841,16 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto}){
     }
     else if(user.role==="lider")p={lider_aprov:acao,status:acao==="aprovado"?"pendente_gestor":"rejeitado"};
     else if(user.role==="gestor")p={gestor_aprov:acao,status:acao==="aprovado"?"pendente_rh":"rejeitado"};
-    const{data}=await sb.from("ferias").update(p).eq("id",id).select().single();
-    if(data)setFerias(prev=>prev.map(x=>x.id===id?mf(data):x));
-  };
-
-  const solicitar=async()=>{
-    if(!form.inicio)return;setSaving(true);const sb=getSB();if(!sb){setSaving(false);return;}
-    const row={user_id:user.id,user_name:user.name,setor:user.setor,tipo:form.tipo,inicio:form.inicio,fim:form.fim,abono:form.abono,obs:form.obs,status:"pendente_lider",lider_aprov:null,gestor_aprov:null,rh_aprov:null,periodo_aquisitivo:form.periodoAq||null};
-    const{data}=await sb.from("ferias").insert([row]).select().single();
-    if(data){
-      setFerias(p=>[mf(data),...p]);
-      setModal(false);
-      setForm({tipo:"30dias",inicio:"",fim:"",abono:false,obs:"",periodoAq:""});
-      if(criarTarefaAuto) criarTarefaAuto(`Aprovar Férias: ${user.name.split(' ')[0]}`, `Período: ${fd(form.inicio)} a ${fd(form.fim)}.\nRequer análise e aprovação na aba de férias.`, "alta", ["férias"], "ferias", data.id);
-    }
-    setSaving(false);
+    const{data,error}=await sb.from("ferias").update(p).eq("id",id).select().single();
+    if(error||!data){showToast?.("Não foi possível registrar a decisão.","error");console.error(error);return;}
+    setFerias(prev=>prev.map(x=>x.id===id?mf(data):x));
+    // Aprovação final do RH → avisa o colaborador por e-mail.
+    if(isRH&&acao==="aprovado")await enviarEmailAprovacao(mf(data));
   };
 
   // ── EDIÇÃO PELO RH (qualquer status) — registra histórico de quem editou ──
   const abrirEdicao=f=>{
-    setFormEdit({inicio:f.inicio,fim:f.fim,tipo:f.tipo,abono:f.abono,obs:f.obs||"",periodoAq:f.periodoAq||""});
+    setFormEdit({inicio:f.inicio,fim:f.fim,tipo:f.tipo,opcao:f.opcao||"",adiantamento13:f.adiantamento13===true?"sim":f.adiantamento13===false?"nao":"",abono:f.abono,obs:f.obs||"",periodoAq:f.periodoAq||""});
     setModalEdit(f);
   };
 
@@ -767,7 +864,8 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto}){
     };
     const novoHistorico=[...(modalEdit.historico||[]),entradaHistorico];
     const{data}=await sb.from("ferias").update({
-      inicio:formEdit.inicio,fim:formEdit.fim,tipo:formEdit.tipo,abono:formEdit.abono,
+      inicio:formEdit.inicio,fim:formEdit.fim,tipo:formEdit.opcao||formEdit.tipo,abono:formEdit.abono,
+      opcao:formEdit.opcao||null,adiantamento_13:formEdit.adiantamento13==="sim"?true:formEdit.adiantamento13==="nao"?false:null,
       obs:formEdit.obs,periodo_aquisitivo:formEdit.periodoAq||null,
       historico_edicoes:novoHistorico,
     }).eq("id",modalEdit.id).select().single();
@@ -807,26 +905,18 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto}){
     return false;
   });
 
-  // ── VENCIMENTOS ──
-  const hoje=tod();
-  const comPeriodoReal=ferias.filter(f=>f.periodoAq&&(f.status==="pendente_lider"||f.status==="pendente_gestor"||f.status==="pendente_rh")&&teamIds.includes(f.userId));
-  const vencimentosReais=comPeriodoReal.map(f=>{
-    const u=users.find(x=>x.id===f.userId);
-    const diasLimite=f.fim?Math.ceil((new Date(f.fim)-new Date(hoje))/86400000):null;
-    return{userId:f.userId,nome:f.userName,setor:f.setor||u?.setor,cargo:u?.cargo,limite:f.fim,diasLimite,obs:f.obs,fonte:"planilha"};
-  }).filter(v=>v.diasLimite!==null);
-
-  const idsComDadoReal=new Set(vencimentosReais.map(v=>v.userId));
-  const vencimentosEstimados=users.filter(u=>{
-    if(!teamIds.includes(u.id))return false;
-    if(idsComDadoReal.has(u.id))return false;
-    const m=Math.floor((new Date()-new Date(u.admissao))/(30.44*86400000));
-    if(m<12)return false;
-    return !ferias.find(f=>f.userId===u.id&&f.status!=="rejeitado"&&new Date(f.fim)>new Date());
-  }).map(u=>{
-    const m=Math.floor((new Date()-new Date(u.admissao))/(30.44*86400000));
-    return{userId:u.id,nome:u.name,setor:u.setor,cargo:u.cargo,mesesSemFerias:m,fonte:"estimado"};
-  });
+  // ── VENCIMENTOS ── pelos saldos reais da folha (antes: estimativa por meses desde a admissão).
+  // Entra todo período já adquirido com saldo > 0. "Iniciar até" = coluna Sugestão da folha.
+  const cadsEquipe=new Set(users.filter(u=>teamIds.includes(u.id)).map(u=>u.cadastro).filter(Boolean));
+  const vencimentos=saldos.linhas.filter(l=>Number(l.saldo)>0&&l.periodo_fim<hojeF&&(isRH||cadsEquipe.has(l.cadastro))).map(l=>{
+    const u=users.find(x=>x.cadastro===l.cadastro);
+    const fc=fimConcessivo(l);
+    const lancada=ferias.find(f=>f.userId===u?.id&&f.periodoInicio===l.periodo_inicio&&!["rejeitado","cancelado"].includes(f.status));
+    return{...l,u,fc,diasPrazo:l.sugestao?diasEntre(hojeF,l.sugestao):diasEntre(hojeF,fc),lancada,
+      // A folha às vezes sugere início DEPOIS do fim do concessivo (ex.: casos com afastamento). Sinalizamos para conferência.
+      sugestaoAposPrazo:!!(l.sugestao&&l.sugestao>fc)};
+  }).sort((a,b)=>a.diasPrazo-b.diasPrazo);
+  const vencUrgentes=vencimentos.filter(v=>v.diasPrazo<=90&&!v.lancada).length;
 
   // ── CALENDÁRIO ──
   const meses=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
@@ -849,7 +939,8 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto}){
     {id:"lista",l:"Solicitações"},
     {id:"calendario",l:"Calendário"},
     {id:"pendencias",l:"Pendências"+(pendencias.length>0?" ("+pendencias.length+")":"")},
-    {id:"vencimentos",l:"Vencimentos"+((vencimentosReais.length+vencimentosEstimados.length)>0?" ("+(vencimentosReais.length+vencimentosEstimados.length)+")":"")},
+    {id:"vencimentos",l:"Vencimentos"+(vencUrgentes>0?" ("+vencUrgentes+")":"")},
+    {id:"saldos",l:can(user.role,"lider")?"Saldos":"Meu saldo"},
   ];
 
   const STATUS_L={pendente_lider:"Aguard. Líder",pendente_gestor:"Aguard. Gestor",pendente_rh:"Aguard. RH",aprovado:"Aprovado",rejeitado:"Rejeitado",cancelado:"Cancelado"};
@@ -858,7 +949,7 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto}){
     <div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:20}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
         <div><div style={{fontSize:22,fontWeight:800,letterSpacing:"-.02em"}}>Férias</div><div style={{fontSize:13,color:C.txm,marginTop:2}}>{isRH?"Controle total — RH pode editar, aprovar ou cancelar qualquer registro":"Controle completo de períodos"}</div></div>
-        {user.role==="colaborador"&&<Btn onClick={()=>setModal(true)}>+ Solicitar</Btn>}
+        {can(user.role,"lider")&&<Btn onClick={()=>{setFormLanc(VAZIO_LANC);setErroLanc("");setModalLanc(true);}}>+ Lançar férias</Btn>}
       </div>
       <div style={{display:"flex",gap:3,background:C.s2,borderRadius:10,padding:3,border:"1px solid "+C.bdr,width:"fit-content",flexWrap:"wrap"}}>
         {tabs.map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"7px 16px",borderRadius:8,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",background:tab===t.id?C.acc:"transparent",color:tab===t.id?"#fff":C.txm,transition:"all .2s"}}>{t.l}</button>)}
@@ -898,6 +989,10 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto}){
                     <span>📅 {fd(f.inicio)} → {fd(f.fim)}</span>
                     {f.abono&&<span style={{color:C.amb}}>💰 Abono</span>}
                     {f.periodoAq&&<span>📋 {f.periodoAq}</span>}
+                    {f.opcao&&<span>🗂 {OPCOES_FERIAS.find(o=>o.id===f.opcao)?.label||f.opcao}</span>}
+                    {f.adiantamento13!=null&&<span>13º junto: {f.adiantamento13?"sim":"não"}</span>}
+                    {f.lancadoPorNome&&<span>Lançado por {f.lancadoPorNome}</span>}
+                    {isRH&&f.status==="aprovado"&&<span style={{color:f.emailEnviadoEm?C.grn:C.amb}}>{f.emailEnviadoEm?"✉ e-mail enviado":"✉ e-mail não enviado"}</span>}
                   </div>
                   {f.obs&&<div style={{fontSize:12,color:C.txd,fontStyle:"italic",marginBottom:8}}>"{f.obs}"</div>}
                   {f.status==="cancelado"&&f.canceladoMotivo&&<div style={{fontSize:12,color:C.red,background:C.redBg,borderRadius:7,padding:"6px 10px",marginBottom:8}}>Cancelado: {f.canceladoMotivo}</div>}
@@ -920,8 +1015,11 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto}){
                         <span style={{color:C.txm}}>{s.l}</span>
                       </div>
                     ))}
-                    {isRH&&(
-                      <div style={{marginLeft:"auto",display:"flex",gap:6}}>
+                    {can(user.role,"lider")&&(
+                      <div style={{marginLeft:"auto",display:"flex",gap:6,flexWrap:"wrap"}}>
+                        <button onClick={()=>baixarFormulario(f)} title="Baixar formulário de solicitação (Word)" style={{background:"none",border:"1px solid "+C.bdr,borderRadius:7,padding:"4px 10px",fontSize:11,color:C.txm,cursor:"pointer"}}>⬇ Formulário</button>
+                        {isRH&&f.status==="aprovado"&&!f.emailEnviadoEm&&<button onClick={()=>enviarEmailAprovacao(f)} style={{background:"none",border:"1px solid "+C.bdr,borderRadius:7,padding:"4px 10px",fontSize:11,color:C.txm,cursor:"pointer"}}>✉ Enviar e-mail</button>}
+                        {isRH&&(<>
                         <button onClick={()=>abrirEdicao(f)} title="Editar" style={{background:"none",border:"1px solid "+C.bdr,borderRadius:7,padding:"4px 10px",fontSize:11,color:C.txm,cursor:"pointer"}}>✎ Editar</button>
                         {f.status==="aprovado"&&<button onClick={()=>setModalCancel(f)} title="Cancelar" style={{background:"none",border:"1px solid "+C.red+"40",borderRadius:7,padding:"4px 10px",fontSize:11,color:C.red,cursor:"pointer"}}>✕ Cancelar</button>}
                         {["pendente_lider","pendente_gestor","pendente_rh"].includes(f.status)&&(
@@ -930,6 +1028,7 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto}){
                             <button onClick={()=>aprovar(f.id,"rejeitado")} style={{background:"none",border:"1px solid "+C.red+"40",borderRadius:7,padding:"4px 10px",fontSize:11,color:C.red,cursor:"pointer"}}>✗ Rejeitar</button>
                           </>
                         )}
+                        </>)}
                       </div>
                     )}
                   </div>
@@ -1017,7 +1116,7 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto}){
                 <Av name={f.userName} size={40} color={col}/>
                 <div style={{flex:1}}>
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-                    <div><div style={{fontWeight:700,fontSize:14}}>{f.userName}</div><div style={{fontSize:12,color:C.txm}}>{SL[u?.setor]} · {f.tipo==="30dias"?"30":"15"} dias</div></div>
+                    <div><div style={{fontWeight:700,fontSize:14}}>{f.userName}</div><div style={{fontSize:12,color:C.txm}}>{SL[u?.setor]} · {f.inicio&&f.fim?diasEntre(f.inicio,f.fim)+1:"—"} dias</div></div>
                     <STag status={f.status}/>
                   </div>
                   <div style={{fontSize:12,color:C.txm,marginBottom:12}}>📅 {fd(f.inicio)} → {fd(f.fim)}{f.abono?" · 💰 Abono":""}</div>
@@ -1036,68 +1135,106 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto}){
 
       {tab==="vencimentos"&&(
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
-          <Card style={{borderColor:C.amb+"35",background:C.ambBg}}><div style={{fontSize:13,color:C.amb,fontWeight:600}}>⚠ Colaboradores com período aquisitivo vencendo ou sem férias agendadas</div></Card>
-
-          {vencimentosReais.length===0&&vencimentosEstimados.length===0?(
-            <Card><div style={{color:C.txd,textAlign:"center",padding:18}}>Todos controlados.</div></Card>
-          ):(
-            <>
-              {vencimentosReais.length>0&&(
-                <>
-                  <div style={{fontSize:11,color:C.txd,fontWeight:700,letterSpacing:".04em",textTransform:"uppercase",marginTop:4}}>Com dado da planilha de RH ({vencimentosReais.length})</div>
-                  {vencimentosReais.sort((a,b)=>a.diasLimite-b.diasLimite).map(v=>{
-                    const col=SC[v.setor]||C.acc;const vencido=v.diasLimite<0;const urgente=v.diasLimite<=30;
-                    return(
-                      <Card key={v.userId} style={{borderColor:vencido?C.red+"45":urgente?C.amb+"40":C.bdr}}>
-                        <div style={{display:"flex",alignItems:"center",gap:14}}>
-                          <Av name={v.nome} size={40} color={col}/>
-                          <div style={{flex:1}}>
-                            <div style={{fontWeight:700,fontSize:14}}>{v.nome}</div>
-                            <div style={{fontSize:12,color:C.txm}}>{v.cargo} · {SL[v.setor]||v.setor}</div>
-                            {v.obs&&<div style={{fontSize:11,color:C.txd,marginTop:3,fontStyle:"italic"}}>{v.obs}</div>}
-                          </div>
-                          <div style={{textAlign:"right"}}>
-                            <Chip label={vencido?"Vencido há "+Math.abs(v.diasLimite)+"d":v.diasLimite+"d restantes"} color={vencido?C.red:urgente?C.amb:C.grn} dot/>
-                            <div style={{fontSize:10,color:C.txd,marginTop:4}}>limite: {fd(v.limite)}</div>
-                          </div>
-                        </div>
-                      </Card>
-                    );
-                  })}
-                </>
-              )}
-
-              {vencimentosEstimados.length>0&&(
-                <>
-                  <div style={{fontSize:11,color:C.txd,fontWeight:700,letterSpacing:".04em",textTransform:"uppercase",marginTop:vencimentosReais.length>0?16:4}}>Estimado por tempo sem férias ({vencimentosEstimados.length})</div>
-                  {vencimentosEstimados.map(v=>{
-                    const col=SC[v.setor]||C.acc;const urgente=v.mesesSemFerias>=24;
-                    return(
-                      <Card key={v.userId} style={{borderColor:urgente?C.red+"40":C.amb+"40"}}>
-                        <div style={{display:"flex",alignItems:"center",gap:14}}>
-                          <Av name={v.nome} size={40} color={col}/>
-                          <div style={{flex:1}}><div style={{fontWeight:700,fontSize:14}}>{v.nome}</div><div style={{fontSize:12,color:C.txm}}>{SL[v.setor]} · {v.cargo}</div></div>
-                          <div style={{textAlign:"right"}}><Chip label={v.mesesSemFerias+" meses"} color={urgente?C.red:C.amb} dot/>{urgente&&<div style={{fontSize:11,color:C.red,marginTop:4,fontWeight:600}}>⚠ Risco de perda</div>}</div>
-                        </div>
-                      </Card>
-                    );
-                  })}
-                </>
-              )}
-            </>
-          )}
+          {saldos.carregando?<Card><div style={{display:"flex",gap:10,alignItems:"center",fontSize:13,color:C.txm}}><Spin size={14}/> Carregando saldos…</div></Card>
+          :!saldos.imp?<Card><div style={{fontSize:13,color:C.txm}}>Nenhum relatório de férias importado ainda.{isRH?" Importe o Excel da folha na aba Saldos.":" O RH precisa importar o relatório da folha."}</div></Card>
+          :<>
+            <div style={{fontSize:12,color:C.txd}}>Saldos da folha de {dataBR(saldos.imp.data_relatorio)} · períodos já adquiridos com saldo, ordenados pelo prazo para iniciar o gozo (coluna Sugestão da folha).</div>
+            {vencimentos.length===0&&<Card><div style={{fontSize:13,color:C.txd,textAlign:"center",padding:12}}>Nenhum saldo em período já adquirido.</div></Card>}
+            {vencimentos.map(v=>{
+              const vencido=v.fc<hojeF;const cor=vencido||v.diasPrazo<=30?C.red:v.diasPrazo<=90?C.amb:C.grn;
+              return(
+              <Card key={v.id} style={{borderLeft:"3px solid "+cor,padding:16}}>
+                <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",alignItems:"flex-start"}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontWeight:700,fontSize:14}}>{v.nome}</div>
+                    <div style={{fontSize:12,color:C.txm,marginTop:2}}>Cadastro {v.cadastro} · {v.cargo} · aquisitivo {dataBR(v.periodo_inicio)} a {dataBR(v.periodo_fim)}</div>
+                    <div style={{fontSize:12,color:C.txd,marginTop:4}}>Saldo {Number(v.saldo)} dias · concessivo até {dataBR(v.fc)}{v.lancada?" · já lançada para "+dataBR(v.lancada.inicio)+" ("+(STATUS_L[v.lancada.status]||v.lancada.status)+")":""}</div>
+                    {v.sugestaoAposPrazo&&<div style={{fontSize:12,color:C.red,marginTop:4}}>⚠ A data sugerida pela folha ({dataBR(v.sugestao)}) passa do fim do concessivo ({dataBR(v.fc)}). Confirmar com a contabilidade.</div>}
+                    {!v.u&&<div style={{fontSize:12,color:C.amb,marginTop:4}}>Sem usuário no portal para este cadastro.</div>}
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <Chip label={vencido?"Concessivo vencido":v.diasPrazo<0?"Prazo de início passou":"Iniciar até "+dataBR(v.sugestao||v.fc)} color={cor} dot/>
+                    {!vencido&&v.diasPrazo>=0&&<div style={{fontSize:11,color:C.txd,marginTop:4}}>faltam {v.diasPrazo} dia{v.diasPrazo===1?"":"s"}</div>}
+                  </div>
+                </div>
+              </Card>);})}
+          </>}
         </div>
       )}
 
-      <Modal open={modal} onClose={()=>setModal(false)} title="Solicitar Férias">
-        <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          <Sel label="Tipo" value={form.tipo} onChange={e=>setForm(f=>({...f,tipo:e.target.value}))} options={[{value:"30dias",label:"30 dias"},{value:"15dias",label:"15 dias (fracionado)"}]}/>
-          <Inp label="Data de Início" type="date" value={form.inicio} onChange={e=>setForm(f=>({...f,inicio:e.target.value}))}/>
-          {form.fim&&<div style={{background:C.accBg,border:"1px solid "+C.acc+"30",borderRadius:9,padding:"10px 14px",fontSize:13,color:C.accLt}}>📅 Retorno: <strong>{fd(form.fim)}</strong></div>}
-          <Inp label="Período Aquisitivo (ex: 2025/2026)" value={form.periodoAq} onChange={e=>setForm(f=>({...f,periodoAq:e.target.value}))} placeholder="2025/2026"/>
-          <div style={{display:"flex",alignItems:"center",gap:10}}><input type="checkbox" checked={form.abono} onChange={e=>setForm(f=>({...f,abono:e.target.checked}))} style={{accentColor:C.acc,width:14,height:14}}/><label style={{fontSize:13,cursor:"pointer",color:C.txm}}>💰 Solicitar abono pecuniário (1/3)</label></div>
-          <Tex label="Observações" value={form.obs} onChange={e=>setForm(f=>({...f,obs:e.target.value}))} placeholder="Opcional..."/>
-          <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}><Btn v="outline" onClick={()=>setModal(false)}>Cancelar</Btn><Btn onClick={solicitar} disabled={!form.inicio||saving}>{saving?<Spin size={14} color="#fff"/>:null} Solicitar</Btn></div>
+      {tab==="saldos"&&(()=>{
+        const meuCad=users.find(u=>u.id===user.id)?.cadastro;
+        const base=can(user.role,"lider")?saldos.linhas.filter(l=>isRH||cadsEquipe.has(l.cadastro)):saldosDe(meuCad);
+        const b=buscaSaldo.trim().toLowerCase();
+        const grupos=[...new Set(base.map(l=>l.cadastro))].map(c=>base.filter(l=>l.cadastro===c)).filter(ls=>!b||ls[0].nome.toLowerCase().includes(b)||ls[0].cadastro.includes(b));
+        const semUsuario=isRH?[...new Set(saldos.linhas.map(l=>l.cadastro))].filter(c=>!users.some(u=>u.cadastro===c)).map(c=>saldos.linhas.find(l=>l.cadastro===c).nome):[];
+        return(
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          {isRH&&(
+            <Card style={{padding:18}}>
+              <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",alignItems:"center"}}>
+                <div>
+                  <div style={{fontWeight:700,fontSize:14}}>Relatório de férias da folha (BRIT)</div>
+                  <div style={{fontSize:12,color:C.txm,marginTop:3}}>{saldos.imp?"Relatório de "+dataBR(saldos.imp.data_relatorio)+" · importado em "+new Date(saldos.imp.importado_em).toLocaleString("pt-BR")+" por "+nomeImportador(saldos.imp.importado_por)+" · "+saldos.imp.colaboradores+" colaboradores":"Nenhum relatório importado ainda."}</div>
+                  <div style={{fontSize:11,color:C.txd,marginTop:3}}>Use o Excel "Relatório Coleta" (FPPF001) exportado da folha, sem alterar. Cada importação substitui os saldos exibidos.</div>
+                </div>
+                <input ref={arqRef} type="file" accept=".xlsx" style={{display:"none"}} onChange={e=>importar(e.target.files?.[0])}/>
+                <Btn onClick={()=>arqRef.current?.click()} disabled={importando}>{importando?<Spin size={14} color="#fff"/>:null} Importar Excel</Btn>
+              </div>
+            </Card>
+          )}
+          {saldos.carregando?<Card><div style={{display:"flex",gap:10,alignItems:"center",fontSize:13,color:C.txm}}><Spin size={14}/> Carregando saldos…</div></Card>
+          :!saldos.imp?(!isRH&&<Card><div style={{fontSize:13,color:C.txm}}>O RH ainda não importou o relatório de saldos.</div></Card>)
+          :<>
+            {can(user.role,"lider")&&<input value={buscaSaldo} onChange={e=>setBuscaSaldo(e.target.value)} placeholder="Buscar por nome ou cadastro..." style={{background:C.bgCard,border:"1px solid "+C.bdr,borderRadius:9,padding:"8px 13px",color:C.txt,fontSize:13,maxWidth:340}}/>}
+            {semUsuario.length>0&&<Card style={{borderColor:C.amb+"35",background:C.ambBg,padding:14}}><div style={{fontSize:12,color:C.amb}}>{semUsuario.length} cadastro{semUsuario.length===1?"":"s"} da folha sem usuário no portal: {semUsuario.slice(0,10).join(", ")}{semUsuario.length>10?" e mais "+(semUsuario.length-10):""}.</div></Card>}
+            {grupos.length===0&&<Card><div style={{fontSize:13,color:C.txd,textAlign:"center",padding:12}}>{can(user.role,"lider")?"Nenhum saldo para mostrar.":"Não encontramos seu saldo no relatório da folha. Fale com o RH."}</div></Card>}
+            {grupos.map(ls=>(
+              <Card key={ls[0].cadastro} style={{padding:16}}>
+                <div style={{fontWeight:700,fontSize:14}}>{ls[0].nome}</div>
+                <div style={{fontSize:12,color:C.txm,marginTop:2,marginBottom:10}}>Cadastro {ls[0].cadastro} · {ls[0].cargo} · admissão {dataBR(ls[0].admissao)}</div>
+                <div style={{overflowX:"auto"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                    <thead><tr style={{color:C.txd,textAlign:"left"}}>{["Período aquisitivo","Direito","Gozado","Saldo","Iniciar até"].map(h=><th key={h} style={{padding:"4px 8px",fontWeight:600,borderBottom:"1px solid "+C.bdr}}>{h}</th>)}</tr></thead>
+                    <tbody>{ls.map(l=>{const emCurso=l.periodo_fim>=hojeF;return(
+                      <tr key={l.id}>
+                        <td style={{padding:"6px 8px"}}>{dataBR(l.periodo_inicio)} a {dataBR(l.periodo_fim)}{emCurso&&<span style={{color:C.txd}}> (em aquisição)</span>}</td>
+                        <td style={{padding:"6px 8px"}}>{Number(l.direito)}</td>
+                        <td style={{padding:"6px 8px"}}>{Number(l.debito)}</td>
+                        <td style={{padding:"6px 8px",fontWeight:700}}>{Number(l.saldo)}</td>
+                        <td style={{padding:"6px 8px"}}>{Number(l.saldo)>0&&l.sugestao?dataBR(l.sugestao):"—"}</td>
+                      </tr>);})}</tbody>
+                  </table>
+                </div>
+              </Card>
+            ))}
+          </>}
+        </div>);
+      })()}
+
+      <Modal open={modalLanc} onClose={()=>setModalLanc(false)} title="Lançar férias" width={560}>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <Sel label="Colaborador *" value={formLanc.userId} onChange={e=>setFormLanc({...VAZIO_LANC,userId:e.target.value})} options={[{value:"",label:lancaveis.length?"Selecione...":"Nenhum colaborador na sua equipe"},...lancaveis.map(u=>({value:String(u.id),label:u.name+(u.cadastro?" · cad. "+u.cadastro:"")}))]}/>
+          {colabLanc&&(periodosLanc.length>0
+            ?<Sel label="Período aquisitivo *" value={formLanc.periodoKey} onChange={e=>setFormLanc({...formLanc,periodoKey:e.target.value})} options={[{value:"",label:"Selecione..."},...periodosLanc.map(l=>({value:String(l.id),label:dataBR(l.periodo_inicio)+" a "+dataBR(l.periodo_fim)+" · saldo "+Number(l.saldo)+" dias"+(l.sugestao?" · iniciar até "+dataBR(l.sugestao):"")}))]}/>
+            :<>
+              <div style={{fontSize:12,color:C.amb}}>{!saldos.imp?"Nenhum relatório de saldos importado.":!colabLanc.cadastro?"Este usuário não está vinculado a um cadastro da folha.":"Sem saldo na folha para este colaborador."} Informe o período manualmente.</div>
+              <Inp label="Período aquisitivo *" value={formLanc.periodoManual} onChange={e=>setFormLanc({...formLanc,periodoManual:e.target.value})} placeholder="dd/mm/aaaa a dd/mm/aaaa"/>
+            </>)}
+          <div>
+            <div style={{fontSize:12,fontWeight:600,color:C.txm,marginBottom:6,letterSpacing:".02em",textTransform:"uppercase"}}>Opção (formulário oficial) *</div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {OPCOES_FERIAS.map(o=><label key={o.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,cursor:"pointer"}}><input type="radio" name="opcaoFerias" checked={formLanc.opcao===o.id} onChange={()=>setFormLanc({...formLanc,opcao:o.id})}/>{o.label}</label>)}
+            </div>
+          </div>
+          <Inp label="Data de início do gozo *" type="date" value={formLanc.inicio} onChange={e=>setFormLanc({...formLanc,inicio:e.target.value})}/>
+          {fimLanc&&<div style={{fontSize:13,color:C.txm}}>📅 Descanso de <strong>{dataBR(formLanc.inicio)}</strong> a <strong>{dataBR(fimLanc)}</strong> ({opSel.descanso} dias){opSel.abono?" + "+opSel.abono+" dias de abono pecuniário":""}</div>}
+          <Sel label="1ª parcela do 13º junto com as férias? *" value={formLanc.adiantamento13} onChange={e=>setFormLanc({...formLanc,adiantamento13:e.target.value})} options={[{value:"",label:"Selecione..."},{value:"sim",label:"Sim"},{value:"nao",label:"Não"}]}/>
+          <Tex label="Observações" value={formLanc.obs} onChange={e=>setFormLanc({...formLanc,obs:e.target.value})} placeholder="Opcional..."/>
+          {avisosLanc.map(a=><div key={a} style={{background:C.ambBg,border:"1px solid "+C.amb+"30",borderRadius:8,padding:"8px 12px",color:C.amb,fontSize:12}}>⚠ {a}</div>)}
+          {erroLanc&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"9px 14px",color:C.red,fontSize:13}}>{erroLanc}</div>}
+          <div style={{fontSize:11,color:C.txd}}>Depois de lançar: {can(user.role,"gestor")?"aprovação do RH":"aprovação do gestor e do RH"}. Na aprovação do RH o colaborador recebe e-mail.</div>
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}><Btn v="outline" onClick={()=>setModalLanc(false)}>Cancelar</Btn><Btn onClick={lancar} disabled={saving}>{saving?<Spin size={14} color="#fff"/>:null} Lançar férias</Btn></div>
         </div>
       </Modal>
 
@@ -1106,7 +1243,8 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto}){
         {modalEdit&&(
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
             <div style={{background:C.purBg,borderRadius:9,padding:"8px 14px",fontSize:11,color:C.pur}}>🔑 Edição de RH — fica registrada no histórico desta solicitação</div>
-            <Sel label="Tipo" value={formEdit.tipo} onChange={e=>setFormEdit({...formEdit,tipo:e.target.value})} options={[{value:"30dias",label:"30 dias"},{value:"15dias",label:"15 dias (fracionado)"}]}/>
+            <Sel label="Opção do formulário" value={formEdit.opcao} onChange={e=>setFormEdit({...formEdit,opcao:e.target.value,abono:(OPCOES_FERIAS.find(o=>o.id===e.target.value)?.abono||0)>0})} options={[{value:"",label:"(não definida)"},...OPCOES_FERIAS.map(o=>({value:o.id,label:o.label}))]}/>
+            <Sel label="1ª parcela do 13º junto?" value={formEdit.adiantamento13} onChange={e=>setFormEdit({...formEdit,adiantamento13:e.target.value})} options={[{value:"",label:"(não informado)"},{value:"sim",label:"Sim"},{value:"nao",label:"Não"}]}/>
             <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:12}}>
               <Inp label="Início" type="date" value={formEdit.inicio} onChange={e=>setFormEdit({...formEdit,inicio:e.target.value})}/>
               <Inp label="Fim" type="date" value={formEdit.fim} onChange={e=>setFormEdit({...formEdit,fim:e.target.value})}/>
@@ -4492,7 +4630,7 @@ export default function App(){
     setLoading(true);const sb=await initSB();if(!sb){setLoading(false);return;}
     try{
       const[uR,fR,fbR,cR,aR,cadR,vR,tR,comR,exR,tkR,plR,npsR,bcR,buR,bsR,movR]=await Promise.all([
-        sb.from("usuarios").select("id,name,email,role,setor,area,cargo,admissao,gestor_id,lider_id,skills,senioridade,telefone,foto_url,status,data_desligamento").order("id"),
+        sb.from("usuarios").select("id,name,email,role,setor,area,cargo,admissao,gestor_id,lider_id,skills,senioridade,telefone,foto_url,status,data_desligamento,cadastro").order("id"),
         sb.from("ferias").select("*").order("created_at",{ascending:false}),
         sb.from("feedbacks").select("*").order("created_at",{ascending:false}),
         sb.from("chat").select("*").order("created_at"),
