@@ -123,6 +123,12 @@ const mtk=t=>({id:t.id,titulo:t.titulo,desc:t.descricao||"",coluna:t.coluna,prio
 const mmv=m=>({id:m.id,tipo:m.tipo,status:m.status,solicitanteId:m.solicitante_id,solicitanteName:m.solicitante_name,nome:m.nome,email:m.email,cargo:m.cargo,setor:m.setor,liderId:m.lider_id,gestorId:m.gestor_id,dataPrevista:m.data_prevista,motivo:m.motivo,userId:m.user_id,tipoDemissao:m.tipo_demissao,ultimoDia:m.ultimo_dia,liderParecer:m.lider_parecer,liderObs:m.lider_obs,liderEm:m.lider_em,gestorParecer:m.gestor_parecer,gestorObs:m.gestor_obs,gestorEm:m.gestor_em,rhDecisao:m.rh_decisao,rhObs:m.rh_obs,rhEm:m.rh_em,rhId:m.rh_id,createdAt:m.created_at,salario:m.salario,requisitos:m.requisitos,prazoEncerramento:m.prazo_encerramento,vagaCriadaId:m.vaga_criada_id});
 
 const fd=d=>{if(!d)return"—";const s=(d+"").split("T")[0];const[y,m,dd]=s.split("-");return dd+"/"+m+"/"+y;};
+// Data de hoje no fuso do navegador, no mesmo formato do banco (YYYY-MM-DD).
+const hojeISO=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
+// Vaga aberta = ativa e dentro do prazo. O prazo é INCLUSIVO: a vaga fica aberta até o fim do dia do prazo.
+// Por quê calcular na leitura: assim o encerramento por prazo acontece sozinho, sem rotina agendada no banco.
+const vagaAberta=v=>!!v&&v.ativa===true&&(!v.prazoEncerramento||String(v.prazoEncerramento).slice(0,10)>=hojeISO());
+const situacaoVaga=v=>v.ativa!==true?"encerrada":vagaAberta(v)?"aberta":"vencida";
 const tod=()=>new Date().toISOString().split("T")[0];
 const dU=d=>d?Math.ceil((new Date(d)-new Date(tod()))/86400000):null;
 
@@ -1383,7 +1389,9 @@ function BancoTalentos({user,talentos,setTalentos,candidates,setCandidates,showT
 }
 
 // RECRUTAMENTO
-function Recrutamento({user,candidates,setCandidates,talentos,setTalentos,vagas,showToast}){
+function Recrutamento({user,candidates,setCandidates,talentos,setTalentos,vagas:vagasAbertasRec,vagasTodas,showToast}){
+  // Por quê: candidatos de vagas encerradas continuam aqui, então o filtro precisa listar todas as vagas.
+  const vagas=vagasTodas||vagasAbertasRec;
   const[fVaga,setFVaga]=useState("todos");const[fStatus,setFStatus]=useState("todos");const[sel,setSel]=useState(null);const[emailModal,setEmailModal]=useState(null);const[emailTxt,setEmailTxt]=useState("");const[genLoad,setGenLoad]=useState(false);const[sendingEmail,setSendingEmail]=useState(false);
   const COLS={aprovado:{l:"Aprovados",c:C.grn},revisao:{l:"Em Revisão",c:C.blu},pendente:{l:"Pendentes",c:C.amb},rejeitado:{l:"Rejeitados",c:C.red}};
   const filtrado=candidates.filter(c=>(fVaga==="todos"||c.vaga==="#"+fVaga)&&(fStatus==="todos"||c.status===fStatus));
@@ -1424,7 +1432,7 @@ function Recrutamento({user,candidates,setCandidates,talentos,setTalentos,vagas,
         {Object.entries(COLS).map(([k,v])=><div key={k} style={{background:C.bgCard,border:"1px solid "+C.bdr,borderTop:"2px solid "+v.c,borderRadius:12,padding:"12px 16px",textAlign:"center"}}><div style={{fontSize:22,fontWeight:700,color:v.c,fontFamily:"'JetBrains Mono',monospace"}}>{candidates.filter(c=>c.status===k).length}</div><div style={{fontSize:11,color:C.txd,marginTop:2}}>{v.l}</div></div>)}
       </div>
       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-        <select value={fVaga} onChange={e=>setFVaga(e.target.value)} style={{background:C.bgCard,border:"1px solid "+C.bdr,borderRadius:9,padding:"8px 13px",color:C.txt,fontSize:12}}><option value="todos">Todas as Vagas</option>{vagas.map(v=><option key={v.id} value={v.id}>#{v.id} — {v.title}</option>)}</select>
+        <select value={fVaga} onChange={e=>setFVaga(e.target.value)} style={{background:C.bgCard,border:"1px solid "+C.bdr,borderRadius:9,padding:"8px 13px",color:C.txt,fontSize:12}}><option value="todos">Todas as Vagas</option>{vagas.map(v=><option key={v.id} value={v.id}>#{v.id} — {v.title}{vagaAberta(v)?"":" (encerrada)"}</option>)}</select>
         <select value={fStatus} onChange={e=>setFStatus(e.target.value)} style={{background:C.bgCard,border:"1px solid "+C.bdr,borderRadius:9,padding:"8px 13px",color:C.txt,fontSize:12}}><option value="todos">Todas as Situações</option>{Object.entries(COLS).map(([k,v])=><option key={k} value={k}>{v.l}</option>)}</select>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -4085,9 +4093,113 @@ function PesquisaClima({user,users,pulses,setPulses,nps,setNps}){
 
 
 // CONTRATAÇÃO — agrupa Recrutamento, Banco de Talentos e Upload de CVs
+// ── GESTÃO DE VAGAS ──────────────────────────────────────────────
+// Criar, editar, encerrar e reabrir vagas. Antes, vaga só nascia de movimentação de admissão aprovada
+// e nunca encerrava (o prazo era gravado e ignorado). O código da vaga é gerado pelo banco (100, 101, ...).
+function GestaoVagas({vagasTodas=[],setVagas,candidates=[],showToast}){
+  const VAZIO={title:"",area:"",local:"",tipo:"CLT",desc:"",salario:"",prazoEncerramento:""};
+  const[modal,setModal]=useState(null);  // null | {modo:"nova"|"editar"|"reabrir", vaga}
+  const[form,setForm]=useState(VAZIO);const[erro,setErro]=useState("");const[saving,setSaving]=useState(false);
+  const[filtro,setFiltro]=useState("abertas");
+  const hoje=hojeISO();
+  const SIT={aberta:{l:"Aberta",c:C.grn},vencida:{l:"Prazo vencido",c:C.amb},encerrada:{l:"Encerrada",c:C.txd}};
+  const nCand=id=>candidates.filter(c=>c.vaga==="#"+id).length;
+  const lista=vagasTodas.filter(v=>filtro==="todas"||(filtro==="abertas"?vagaAberta(v):!vagaAberta(v)))
+    .sort((a,b)=>(Number(vagaAberta(b))-Number(vagaAberta(a)))||String(b.id).localeCompare(String(a.id),undefined,{numeric:true}));
+  const abrir=(modo,v)=>{
+    setErro("");setModal({modo,vaga:v||null});
+    setForm(v?{title:v.title||"",area:v.area||"",local:v.local||"",tipo:v.tipo||"",desc:v.desc||"",salario:v.salario||"",
+      prazoEncerramento:modo==="reabrir"?"":(v.prazoEncerramento?String(v.prazoEncerramento).slice(0,10):"")}:VAZIO);
+  };
+  const salvar=async()=>{
+    const f={title:form.title.trim(),area:form.area.trim(),local:form.local.trim(),tipo:form.tipo.trim(),desc:form.desc.trim(),salario:form.salario.trim(),prazo:form.prazoEncerramento||""};
+    if(!f.title||!f.area||!f.local||!f.tipo){setErro("Preencha título, área, local e tipo de contrato.");return;}
+    // Prazo no passado encerraria a vaga na hora de salvar.
+    if(f.prazo&&f.prazo<hoje){setErro("O prazo não pode ser anterior a hoje.");return;}
+    // Reabrir vaga com prazo vencido exige prazo novo (senão ela continuaria encerrada).
+    if(modal.modo==="reabrir"&&!f.prazo){setErro("Informe o novo prazo para reabrir esta vaga.");return;}
+    const row={title:f.title,area:f.area,local:f.local,tipo:f.tipo,descricao:f.desc||null,salario:f.salario||null,prazo_encerramento:f.prazo||null};
+    if(modal.modo!=="editar")row.ativa=true;
+    setSaving(true);setErro("");
+    const sb=getSB();
+    const q=!sb?null:modal.modo==="nova"?sb.from("vagas").insert([row]):sb.from("vagas").update(row).eq("id",modal.vaga.id);
+    const{data,error}=q?await q.select().single():{data:null,error:{message:"sem conexão"}};
+    setSaving(false);
+    if(error||!data){setErro("Não foi possível salvar a vaga. Tente novamente.");console.error(error);return;}
+    setVagas(p=>modal.modo==="nova"?[...p,mv(data)]:p.map(x=>x.id===modal.vaga.id?mv(data):x));
+    showToast?.(modal.modo==="nova"?"Vaga #"+data.id+" criada.":modal.modo==="reabrir"?"Vaga reaberta.":"Vaga atualizada.","success");
+    setModal(null);
+  };
+  const mudarAtiva=async(v,ativa)=>{
+    if(!ativa&&!window.confirm("Encerrar a vaga #"+v.id+" — "+v.title+"?\nEla sai do Portal de Vagas e do Upload de CVs. Os candidatos continuam no sistema."))return;
+    const sb=getSB();
+    const{data,error}=sb?await sb.from("vagas").update({ativa}).eq("id",v.id).select().single():{data:null,error:{message:"sem conexão"}};
+    if(error||!data){showToast?.("Não foi possível "+(ativa?"reabrir":"encerrar")+" a vaga.","error");console.error(error);return;}
+    setVagas(p=>p.map(x=>x.id===v.id?mv(data):x));
+    showToast?.(ativa?"Vaga reaberta.":"Vaga encerrada.","success");
+  };
+  // Reabrir: se o prazo já venceu, pede um prazo novo; senão só reativa.
+  const reabrir=v=>{if(v.prazoEncerramento&&String(v.prazoEncerramento).slice(0,10)<hoje)abrir("reabrir",v);else mudarAtiva(v,true);};
+  const nAbertas=vagasTodas.filter(vagaAberta).length;
+  return(
+    <div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",gap:12,flexWrap:"wrap"}}>
+        <div><div style={{fontSize:18,fontWeight:800}}>Vagas</div><div style={{fontSize:13,color:C.txm,marginTop:2}}>{nAbertas} aberta{nAbertas===1?"":"s"} no Portal de Vagas · a vaga encerra sozinha no fim do dia do prazo</div></div>
+        <Btn onClick={()=>abrir("nova")}>+ Nova vaga</Btn>
+      </div>
+      <div style={{display:"flex",gap:3,background:C.s2,borderRadius:10,padding:3,border:"1px solid "+C.bdr,width:"fit-content"}}>
+        {[["abertas","Abertas"],["encerradas","Encerradas"],["todas","Todas"]].map(([k,l])=><button key={k} onClick={()=>setFiltro(k)} style={{padding:"6px 14px",borderRadius:8,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",background:filtro===k?C.acc:"transparent",color:filtro===k?"#fff":C.txm}}>{l}</button>)}
+      </div>
+      {lista.length===0&&<Card><div style={{color:C.txd,textAlign:"center",padding:14,fontSize:13}}>{filtro==="abertas"?"Nenhuma vaga aberta. Use “+ Nova vaga” para cadastrar.":"Nenhuma vaga nesta lista."}</div></Card>}
+      {lista.map(v=>{const sit=SIT[situacaoVaga(v)];const n=nCand(v.id);return(
+        <Card key={v.id} style={{borderLeft:"3px solid "+sit.c,padding:18}}>
+          <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",alignItems:"flex-start"}}>
+            <div style={{minWidth:0}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><span style={{fontWeight:700,fontSize:15}}>{v.title}</span><Chip label={sit.l} color={sit.c} dot/></div>
+              <div style={{fontSize:12,color:C.txm,marginTop:3}}>#{v.id} · {v.area} · {v.local} · {v.tipo}</div>
+              <div style={{fontSize:12,color:C.txd,marginTop:6,display:"flex",gap:14,flexWrap:"wrap"}}>
+                <span>Prazo: {v.prazoEncerramento?fd(v.prazoEncerramento):"sem prazo"}</span>
+                <span>{n} candidato{n===1?"":"s"}</span>
+                {v.movimentacaoId&&<span>Criada por movimentação de admissão</span>}
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <Btn sz="sm" v="outline" onClick={()=>abrir("editar",v)}>Editar</Btn>
+              {situacaoVaga(v)==="aberta"
+                ?<Btn sz="sm" v="danger" onClick={()=>mudarAtiva(v,false)}>Encerrar</Btn>
+                :<Btn sz="sm" v="success" onClick={()=>reabrir(v)}>Reabrir</Btn>}
+            </div>
+          </div>
+        </Card>);})}
+      <Modal open={!!modal} onClose={()=>setModal(null)} title={modal?.modo==="nova"?"Nova vaga":modal?.modo==="reabrir"?"Reabrir vaga #"+modal?.vaga?.id:"Editar vaga #"+modal?.vaga?.id}>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          {modal?.modo==="reabrir"&&<div style={{fontSize:13,color:C.txm}}>O prazo anterior ({fd(modal.vaga.prazoEncerramento)}) já venceu. Informe o novo prazo para a vaga voltar ao portal.</div>}
+          <Inp label="Título da vaga *" value={form.title} onChange={e=>setForm({...form,title:e.target.value})} placeholder="Ex: Operador de Produção"/>
+          <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:12}}>
+            <Inp label="Área *" value={form.area} onChange={e=>setForm({...form,area:e.target.value})} placeholder="Ex: Produção"/>
+            <Inp label="Tipo de contrato *" value={form.tipo} onChange={e=>setForm({...form,tipo:e.target.value})} placeholder="Ex: CLT"/>
+          </div>
+          <Inp label="Local *" value={form.local} onChange={e=>setForm({...form,local:e.target.value})} placeholder="Ex: Santa Luzia/MG — presencial"/>
+          <Tex label="Descrição e requisitos (aparece para o candidato)" value={form.desc} onChange={e=>setForm({...form,desc:e.target.value})} rows={4}/>
+          <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:12}}>
+            <Inp label="Salário (interno — não aparece no portal)" value={form.salario} onChange={e=>setForm({...form,salario:e.target.value})} placeholder="Ex: R$ 3.500"/>
+            <Inp label={"Prazo de encerramento"+(modal?.modo==="reabrir"?" *":" (opcional)")} type="date" value={form.prazoEncerramento} onChange={e=>setForm({...form,prazoEncerramento:e.target.value})}/>
+          </div>
+          {erro&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"9px 14px",color:C.red,fontSize:13}}>{erro}</div>}
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:4}}>
+            <Btn v="outline" onClick={()=>setModal(null)}>Cancelar</Btn>
+            <Btn onClick={salvar} disabled={saving}>{saving?<Spin size={14} color="#fff"/>:null} {modal?.modo==="nova"?"Criar vaga":modal?.modo==="reabrir"?"Reabrir vaga":"Salvar"}</Btn>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
 function Contratacao(props){
   const[tab,setTab]=useState("recrutamento");
   const TABS=[
+    {id:"vagas",l:"Vagas",count:props.vagas?.length},
     {id:"recrutamento",l:"Candidatos",count:props.candidates?.filter(c=>c.status!=="rejeitado").length},
     {id:"talentos",l:"Banco de Talentos",count:props.talentos?.length},
     {id:"upload_cvs",l:"Upload de CVs"},
@@ -4100,6 +4212,7 @@ function Contratacao(props){
           {t.l}{typeof t.count==="number"&&<span style={{background:tab===t.id?"rgba(255,255,255,.25)":C.bdr,borderRadius:10,fontSize:10,padding:"1px 6px"}}>{t.count}</span>}
         </button>)}
       </div>
+      {tab==="vagas"&&<GestaoVagas vagasTodas={props.vagasTodas} setVagas={props.setVagas} candidates={props.candidates} showToast={props.showToast}/>}
       {tab==="recrutamento"&&<Recrutamento {...props}/>}
       {tab==="talentos"&&<BancoTalentos {...props}/>}
       {tab==="upload_cvs"&&<UploadCVs vagas={props.vagas} setCandidates={props.setCandidates} setTalentos={props.setTalentos} criarTarefaAuto={props.criarTarefaAuto}/>}
@@ -4385,7 +4498,8 @@ export default function App(){
         sb.from("chat").select("*").order("created_at"),
         sb.from("avaliacoes").select("*").order("created_at",{ascending:false}),
         sb.from("candidatos").select("*").order("created_at",{ascending:false}),
-        sb.from("vagas").select("*").eq("ativa",true),
+        // Todas as vagas (a aba Vagas precisa das encerradas); as outras telas recebem só as abertas (vagasAbertas).
+      sb.from("vagas").select("*"),
         sb.from("banco_talentos").select("*").order("created_at",{ascending:false}),
         sb.from("comunicados").select("*").order("created_at",{ascending:false}),
         sb.from("exames").select("*").order("created_at",{ascending:false}),
@@ -4465,11 +4579,13 @@ export default function App(){
   const badges={chat:chatUnread,ferias:feriasPend,comunicados:comUnread};
   
   if(!sbReady)return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,flexDirection:"column",gap:16}}><style>{CSS}</style><Spin size={36}/><div style={{fontSize:14,color:C.txd}}>Conectando ao banco...</div></div>;
-  if(!user&&screen==="career")return<CareerPortal vagas={vagas} carregando={vagasCarregando} onBack={()=>setScreen("login")} onSubmit={c=>setCandidates(p=>[c,...p])} criarTarefaAuto={criarTarefaAuto}/>;
+  // Vagas abertas = ativas e dentro do prazo. É o que o portal, o upload e as demais telas enxergam.
+  const vagasAbertas=vagas.filter(vagaAberta);
+  if(!user&&screen==="career")return<CareerPortal vagas={vagasAbertas} carregando={vagasCarregando} onBack={()=>setScreen("login")} onSubmit={c=>setCandidates(p=>[c,...p])} criarTarefaAuto={criarTarefaAuto}/>;
   if(!user)return<Login onLogin={handleLogin} onPortal={abrirPortalVagas}/>;
   if(loading&&users.length===0)return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,flexDirection:"column",gap:16}}><style>{CSS}</style><Spin size={36}/><div style={{fontSize:14,color:C.txd}}>Carregando dados...</div></div>;
   
-  const props={user,users,setUsers,ferias,setFerias,feedbacks,setFeedbacks,chat,setChat,avaliacoes,setAvaliacoes,candidates,setCandidates,vagas,setVagas,talentos,setTalentos,comunicados,setComunicados,exames,setExames,tarefas,setTarefas,criarTarefaAuto,pulses,setPulses,nps,setNps,benCatalogo,setBenCatalogo,benUsuarios,setBenUsuarios,benSolicits,setBenSolicits,movs,setMovs,showToast};
+  const props={user,users,setUsers,ferias,setFerias,feedbacks,setFeedbacks,chat,setChat,avaliacoes,setAvaliacoes,candidates,setCandidates,vagas:vagasAbertas,vagasTodas:vagas,setVagas,talentos,setTalentos,comunicados,setComunicados,exames,setExames,tarefas,setTarefas,criarTarefaAuto,pulses,setPulses,nps,setNps,benCatalogo,setBenCatalogo,benUsuarios,setBenUsuarios,benSolicits,setBenSolicits,movs,setMovs,showToast};
   
   const renderPage=()=>{
     switch(page){
