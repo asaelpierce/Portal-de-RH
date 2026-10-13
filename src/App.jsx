@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+// Portal: janelas e avisos são desenhados direto no <body>, fora das telas (ver Modal).
+import { createPortal } from "react-dom";
 // Leitura do relatório de saldos da folha BRIT e geração do formulário Word de férias (ver o arquivo para o porquê).
 import { lerRelatorioFerias, preencherFormularioFerias, OPCOES_FERIAS, addDias, diasEntre, addAnos, br as dataBR, emailFeriasAprovadasHtml } from "./feriasFolha.js";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Legend, ReferenceLine } from "recharts";
@@ -179,17 +181,28 @@ const Tex=({label,value,onChange,placeholder,rows=3,style={}})=>(
   </div>
 );
 
+// Janela (pop-up). Por quê o portal: as telas usam a animação .fadeUp (transform); com ela ativa, o navegador
+// posiciona elementos "fixed" em relação à TELA ANIMADA e não à janela do navegador — o pop-up abria no meio da
+// página longa (era preciso rolar até achar). Desenhando direto no <body>, ele sempre abre centralizado na vista.
+// Também: Esc fecha e a página de fundo não rola enquanto a janela está aberta.
 const Modal=({open,onClose,title,children,width=560})=>{
+  useEffect(()=>{
+    if(!open)return;
+    const esc=e=>{if(e.key==="Escape")onClose?.();};
+    const antes=document.body.style.overflow;document.body.style.overflow="hidden";
+    window.addEventListener("keydown",esc);
+    return()=>{window.removeEventListener("keydown",esc);document.body.style.overflow=antes;};
+  },[open]);
   if(!open)return null;
-  return <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16,backdropFilter:"blur(3px)"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
+  return createPortal(<div role="dialog" aria-modal="true" aria-label={typeof title==="string"?title:undefined} style={{position:"fixed",inset:0,background:"rgba(15,23,42,.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16,backdropFilter:"blur(3px)"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
     <div style={{background:C.s2,border:"1px solid "+C.bdrHi,borderRadius:20,padding:32,width:"100%",maxWidth:width,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 60px rgba(0,0,0,.12)"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
         <span style={{fontSize:18,fontWeight:700}}>{title}</span>
-        <button onClick={onClose} style={{background:"none",border:"none",color:C.txd,fontSize:26,cursor:"pointer",lineHeight:1,padding:"0 4px"}}>×</button>
+        <button onClick={onClose} title="Fechar (Esc)" aria-label="Fechar" style={{background:"none",border:"none",color:C.txd,fontSize:26,cursor:"pointer",lineHeight:1,padding:"0 4px"}}>×</button>
       </div>
       {children}
     </div>
-  </div>;
+  </div>,document.body);
 };
 
 const STag=({status})=>{
@@ -197,10 +210,14 @@ const STag=({status})=>{
   const s=m[status]||{l:status,c:C.txm};return <Chip label={s.l} color={s.c} dot/>;
 };
 
-const Stat=({label,value,icon,color=C.acc})=>{
+// Card de número. Com onClick vira atalho (mão, realce ao passar o mouse, Enter/Espaço, dica no "title").
+const Stat=({label,value,icon,color=C.acc,onClick,dica})=>{
   const[v,setV]=useState(0);const n=parseInt(value)||0;
   useEffect(()=>{let s=0;const step=Math.max(1,Math.ceil(n/20));const t=setInterval(()=>{s+=step;if(s>=n){setV(n);clearInterval(t);}else setV(s);},28);return()=>clearInterval(t);},[n]);
-  return <div style={{background:C.bgCard,border:"1px solid "+C.bdr,borderTop:"3px solid "+color,borderRadius:16,padding:"20px 24px",position:"relative",overflow:"hidden",boxShadow:"0 4px 12px rgba(0,0,0,.02)"}}>
+  return <div {...(onClick?{role:"button",tabIndex:0,title:dica||"Abrir",onClick,onKeyDown:e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();onClick();}},
+      onMouseEnter:e=>{e.currentTarget.style.boxShadow="0 8px 22px rgba(0,0,0,.08)";e.currentTarget.style.transform="translateY(-2px)";},
+      onMouseLeave:e=>{e.currentTarget.style.boxShadow="0 4px 12px rgba(0,0,0,.02)";e.currentTarget.style.transform="none";}}:{})}
+    style={{background:C.bgCard,border:"1px solid "+C.bdr,borderTop:"3px solid "+color,borderRadius:16,padding:"20px 24px",position:"relative",overflow:"hidden",boxShadow:"0 4px 12px rgba(0,0,0,.02)",cursor:onClick?"pointer":"default",transition:"box-shadow .15s, transform .15s"}}>
     <div style={{fontSize:12,color:C.txm,fontWeight:700,letterSpacing:".05em",marginBottom:8}}>{label.toUpperCase()}</div>
     <div style={{fontSize:32,fontWeight:800,color,fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}>{isNaN(parseInt(value))?value:typeof value==="number"&&!Number.isInteger(value)?String(value).replace(".",","):v}</div>{/* frações (ex.: 22,5 dias de férias) não podem virar inteiro na animação */}
     <div style={{position:"absolute",bottom:16,right:16,fontSize:28,opacity:.15}}>{icon}</div>
@@ -209,10 +226,11 @@ const Stat=({label,value,icon,color=C.acc})=>{
 
 const Toast=({msg,type})=>{
   const col=type==="error"?C.red:type==="warn"?C.amb:C.grn;
-  return <div style={{position:"fixed",bottom:24,right:24,zIndex:9999,background:C.s3,border:"1px solid "+col+"40",borderLeft:"4px solid "+col,borderRadius:12,padding:"14px 20px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 12px 32px rgba(0,0,0,.1)"}}>
+  // Aviso flutuante também via portal (mesmo motivo do Modal) e anunciado a leitores de tela.
+  return createPortal(<div role="status" aria-live="polite" style={{position:"fixed",bottom:24,right:24,zIndex:9999,background:C.s3,border:"1px solid "+col+"40",borderLeft:"4px solid "+col,borderRadius:12,padding:"14px 20px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 12px 32px rgba(0,0,0,.1)"}}>
     <span style={{color:col,fontSize:16}}>{type==="error"?"✗":"✓"}</span>
     <span style={{fontSize:14,color:C.txt,fontWeight:500}}>{msg}</span>
-  </div>;
+  </div>,document.body);
 };
 
 const CSS=`
@@ -230,40 +248,40 @@ button{cursor:pointer;font-family:'Inter',sans-serif;}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
-.fadeUp{animation:fadeUp .3s cubic-bezier(.16,1,.3,1) both;}
-.fadeIn{animation:fadeIn .2s ease both;}
+.fadeUp{animation:fadeUp .3s cubic-bezier(.16,1,.3,1) backwards;}
+.fadeIn{animation:fadeIn .2s ease backwards;}
 .drag-over{border-color:#4f46e5!important;background:rgba(79,70,229,.08)!important;}
 `;
 
 const NAV=[
   {group:"Visão geral",items:[
-    {id:"dashboard",icon:"⬡",label:"Painel",min:"colaborador"},
-    {id:"analytics",icon:"◉",label:"Análise de Pessoas",min:"gestor"},
+    {id:"dashboard",icon:"⬡",label:"Painel",min:"colaborador",desc:"Resumo do dia: pessoas, férias, pendências e alertas. Clique nos cards para ir direto ao assunto."},
+    {id:"analytics",icon:"◉",label:"Análise de Pessoas",min:"gestor",desc:"Indicadores de pessoas: headcount, distribuição por setor, desempenho e clima."},
   ]},
   {group:"Pessoas",items:[
-    {id:"colaboradores",icon:"⊞",label:"Colaboradores",min:"gestor"},
-    {id:"movimentacoes",icon:"⇄",label:"Admissão/Demissão",min:"lider"},
-    {id:"ferias",icon:"✈",label:"Férias",min:"colaborador"},
-    {id:"exames",icon:"🏥",label:"Exames",min:"gestor"},
-    {id:"avaliacoes",icon:"★",label:"Avaliações",min:"colaborador"},
+    {id:"colaboradores",icon:"⊞",label:"Colaboradores",min:"gestor",desc:"Colaboradores ativos com cargo, setor e contato. Clique numa pessoa para ver detalhes ou mudar de setor."},
+    {id:"movimentacoes",icon:"⇄",label:"Admissão/Demissão",min:"lider",desc:"Pedidos de admissão e desligamento: o líder solicita, o gestor detalha e o RH decide."},
+    {id:"ferias",icon:"✈",label:"Férias",min:"colaborador",desc:"Férias: o líder lança, o gestor e o RH aprovam. Saldos, prazos e o formulário de solicitação."},
+    {id:"exames",icon:"🏥",label:"Exames",min:"gestor",desc:"Agenda de exames ocupacionais (admissional, periódico e demissional)."},
+    {id:"avaliacoes",icon:"★",label:"Avaliações",min:"colaborador",desc:"Avaliações de desempenho semestrais: o líder avalia a equipe e acompanha o histórico."},
   ]},
   {group:"Contratação",items:[
-    {id:"contratacao",icon:"⊕",label:"Vagas e candidatos",min:"rh"},
+    {id:"contratacao",icon:"⊕",label:"Vagas e candidatos",min:"rh",desc:"Vagas, candidatos, banco de talentos e leitura de currículos."},
   ]},
   {group:"Clima e benefícios",items:[
-    {id:"beneficios",icon:"🎁",label:"Benefícios",min:"colaborador"},
-    {id:"clima",icon:"❤",label:"Pesquisa de Clima",min:"colaborador"},
+    {id:"beneficios",icon:"🎁",label:"Benefícios",min:"colaborador",desc:"Benefícios oferecidos, quem tem cada um e pedidos de inclusão."},
+    {id:"clima",icon:"❤",label:"Pesquisa de Clima",min:"colaborador",desc:"Termômetro semanal, satisfação e canal anônimo de denúncias."},
   ]},
   {group:"Comunicação",items:[
-    {id:"chat",icon:"✉",label:"Mensagens",min:"colaborador"},
-    {id:"comunicados",icon:"📢",label:"Comunicados",min:"colaborador"},
-    {id:"feedbacks",icon:"◆",label:"Feedbacks",min:"colaborador"},
-    {id:"eventos",icon:"🎉",label:"Eventos",min:"rh"},
+    {id:"chat",icon:"✉",label:"Mensagens",min:"colaborador",desc:"Mensagens diretas entre colaboradores, líderes e RH."},
+    {id:"comunicados",icon:"📢",label:"Comunicados",min:"colaborador",desc:"Avisos oficiais da empresa para todos ou por setor."},
+    {id:"feedbacks",icon:"◆",label:"Feedbacks",min:"colaborador",desc:"Feedbacks entre colaboradores e líderes: elogios e pontos de melhoria."},
+    {id:"eventos",icon:"🎉",label:"Eventos",min:"rh",desc:"Inscrições de eventos por link (ex.: confraternização): quem já respondeu e quem falta."},
   ]},
   {group:"Minha conta",items:[
-    {id:"perfil",icon:"◎",label:"Meu Perfil",min:"colaborador"},
-    {id:"planner",icon:"⬛",label:"Planejamento",min:"lider"},
-    {id:"config",icon:"⚙",label:"Configurações",min:"rh"},
+    {id:"perfil",icon:"◎",label:"Meu Perfil",min:"colaborador",desc:"Seus dados, habilidades, cursos e certificações."},
+    {id:"planner",icon:"⬛",label:"Planejamento",min:"lider",desc:"Quadro de tarefas da equipe por tipo de demanda; clique no card para abrir o registro original."},
+    {id:"config",icon:"⚙",label:"Configurações",min:"rh",desc:"Integrações do portal (e-mail, IA, banco) e informações do ambiente."},
   ]},
 ];
 
@@ -446,7 +464,15 @@ function Dashboard({user,users,ferias,tarefas,comunicados,exames,candidates,feed
 
       {/* ── KPIs ── */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(165px,1fr))",gap:14}}>
-        {stats.map((s,i)=><Stat key={i} {...s}/>)}
+        {stats.map((s,i)=>{
+          // Atalho de cada card: para onde leva e o que explica ao passar o mouse.
+          const DEST={"Colaboradores":["colaboradores","Ver a lista de colaboradores ativos"],"De Férias":["ferias","Ver quem está de férias e o calendário"],
+            "Aprovações Pend.":["ferias","Ver as férias aguardando aprovação"],"Candidatos":["contratacao","Ver vagas e candidatos"],
+            "Minha Equipe":["colaboradores","Ver sua equipe"],"Tarefas Atrasadas":["planner","Ver as tarefas no Planejamento"],
+            "Férias Disponíveis (dias)":["ferias","Ver seu saldo e suas férias"],"Feedbacks":["feedbacks","Ver seus feedbacks"],
+            "Avaliações":["avaliacoes","Ver suas avaliações"],"Comunicados":["comunicados","Ver os comunicados"]};
+          const d=DEST[s.label];
+          return <Stat key={i} {...s} onClick={d?()=>setPage(d[0]):undefined} dica={d?.[1]}/>;})}
       </div>
 
       {/* ── GRÁFICOS ── */}
@@ -1082,9 +1108,9 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast}){
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <button onClick={()=>{if(mesCalendario===0){setMesCalendario(11);setAnoCalendario(a=>a-1);}else setMesCalendario(m=>m-1);}} style={{background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:14,color:C.txm}}>‹</button>
+              <button onClick={()=>{if(mesCalendario===0){setMesCalendario(11);setAnoCalendario(a=>a-1);}else setMesCalendario(m=>m-1);}} style={{background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:14,color:C.txm}} title="Mês anterior" aria-label="Mês anterior">‹</button>
               <div style={{fontSize:15,fontWeight:700,minWidth:160,textAlign:"center"}}>{meses[mesCalendario]} {anoCalendario}</div>
-              <button onClick={()=>{if(mesCalendario===11){setMesCalendario(0);setAnoCalendario(a=>a+1);}else setMesCalendario(m=>m+1);}} style={{background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:14,color:C.txm}}>›</button>
+              <button onClick={()=>{if(mesCalendario===11){setMesCalendario(0);setAnoCalendario(a=>a+1);}else setMesCalendario(m=>m+1);}} style={{background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:14,color:C.txm}} title="Próximo mês" aria-label="Próximo mês">›</button>
             </div>
             <Chip label={totalFeriasNoMes+" pessoa"+(totalFeriasNoMes!==1?"s":"")+" de férias neste mês"} color={C.grn} dot/>
           </div>
@@ -1132,7 +1158,7 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast}){
                       <Av name={f.userName} size={26} color={col}/>
                       <div style={{flex:1}}><span style={{fontSize:13,fontWeight:600}}>{f.userName}</span><span style={{fontSize:11,color:C.txd,marginLeft:8}}>{SL[u?.setor]}</span></div>
                       <span style={{fontSize:12,color:C.txm}}>{fd(f.inicio)} → {fd(f.fim)}</span>
-                      {isRH&&<button onClick={()=>abrirEdicao(f)} style={{background:"none",border:"1px solid "+C.bdr,borderRadius:6,padding:"3px 8px",fontSize:10,color:C.txm,cursor:"pointer"}}>✎</button>}
+                      {isRH&&<button onClick={()=>abrirEdicao(f)} style={{background:"none",border:"1px solid "+C.bdr,borderRadius:6,padding:"3px 8px",fontSize:10,color:C.txm,cursor:"pointer"}} title="Editar esta férias (RH)" aria-label="Editar esta férias (RH)">✎</button>}
                     </div>
                   );
                 })}
@@ -1328,7 +1354,13 @@ function Comunicados({user,comunicados,setComunicados}){
     setSaving(false);
   };
   
-  const deletar=async id=>{await getSB()?.from("comunicados").delete().eq("id",id);setComunicados(p=>p.filter(c=>c.id!==id));};
+  // Por quê: o ✕ apagava na hora, sem confirmação e sem conferir se o banco apagou.
+  const deletar=async id=>{
+    if(!window.confirm("Excluir este comunicado? Ele some para todos."))return;
+    const r=await getSB()?.from("comunicados").delete().eq("id",id);
+    if(!r||r.error){window.alert("Não foi possível excluir o comunicado.");console.error(r?.error);return;}
+    setComunicados(p=>p.filter(c=>c.id!==id));
+  };
   const visiveis=comunicados.filter(c=>c.setores.length===0||c.setores.includes(user.setor)||can(user.role,"gestor"));
   
   return(
@@ -1352,7 +1384,7 @@ function Comunicados({user,comunicados,setComunicados}){
                 <div style={{fontWeight:700,fontSize:15,marginBottom:8}}>{c.titulo}</div>
                 <div style={{fontSize:13,color:C.txm,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{c.corpo}</div>
               </div>
-              {(user.id===c.autorId||can(user.role,"rh"))&&<button onClick={()=>deletar(c.id)} style={{background:"none",border:"none",color:C.txf,cursor:"pointer",fontSize:18,padding:4}}>✕</button>}
+              {(user.id===c.autorId||can(user.role,"rh"))&&<button onClick={()=>deletar(c.id)} style={{background:"none",border:"none",color:C.txf,cursor:"pointer",fontSize:18,padding:4}} title="Excluir comunicado" aria-label="Excluir comunicado">✕</button>}
             </div>
           </Card>
         );})}
@@ -2165,7 +2197,7 @@ function Perfil({user,setUsers,setPage}){
               {skills.map(sk => (
                 <div key={sk} style={{display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 14px", borderRadius: 20, background: C.s1, border: "1px solid "+C.bdr, fontSize: 13, fontWeight: 600, color: C.txt}}>
                   {sk}
-                  <button onClick={() => removeSkill(sk)} style={{background: "none", border: "none", color: C.txd, cursor: "pointer", fontSize: 14}}>✕</button>
+                  <button onClick={() => removeSkill(sk)} style={{background: "none", border: "none", color: C.txd, cursor: "pointer", fontSize: 14}} title="Remover habilidade" aria-label="Remover habilidade">✕</button>
                 </div>
               ))}
             </div>
@@ -3040,7 +3072,7 @@ function GestBeneficios({user,users,benCatalogo,setBenCatalogo,benUsuarios,setBe
                       <span style={{fontSize:11,color:C.txd}}>{adesoes} adesão{adesoes!==1?"ões":""}</span>
                       {isRH&&(
                         <div style={{display:"flex",gap:6}}>
-                          <button onClick={()=>{setEditCat(b.id);setFormCat({nome:b.nome,descricao:b.descricao||"",categoria:b.categoria,valor_empresa:b.valor_empresa,valor_collab:b.valor_collab,elegibilidade:b.elegibilidade,icone:b.icone||"🎁"});setModalCat(true);}} style={{background:"none",border:"none",color:C.txd,cursor:"pointer",fontSize:13,padding:"2px 6px"}}>✎</button>
+                          <button onClick={()=>{setEditCat(b.id);setFormCat({nome:b.nome,descricao:b.descricao||"",categoria:b.categoria,valor_empresa:b.valor_empresa,valor_collab:b.valor_collab,elegibilidade:b.elegibilidade,icone:b.icone||"🎁"});setModalCat(true);}} style={{background:"none",border:"none",color:C.txd,cursor:"pointer",fontSize:13,padding:"2px 6px"}} title="Editar benefício" aria-label="Editar benefício">✎</button>
                           <button onClick={()=>toggleAtivoBeneficio(b.id,b.ativo)} style={{background:"none",border:"none",color:b.ativo?C.red:C.grn,cursor:"pointer",fontSize:11,padding:"2px 6px",fontWeight:600}}>{b.ativo?"Desativar":"Ativar"}</button>
                         </div>
                       )}
@@ -5056,7 +5088,7 @@ export default function App(){
               {collapsed&&gi>0&&<div style={{height:1,background:C.bdr,margin:"6px 10px"}}/>}
               {grp.items.map(item=>{
                 const isA=page===item.id;const badge=badges[item.id]||0;
-                return <div key={item.id} onClick={()=>setPage(item.id)} title={collapsed?item.label:""} style={{display:"flex",alignItems:"center",gap:9,padding:collapsed?"9px 0":"8px 12px",justifyContent:collapsed?"center":"flex-start",margin:"1px 5px",borderRadius:9,background:isA?C.accBg:"transparent",color:isA?C.acc:C.txd,cursor:"pointer",transition:"all .15s",position:"relative",borderLeft:isA?"2px solid "+C.acc:"2px solid transparent"}} onMouseEnter={e=>{if(!isA)e.currentTarget.style.background=C.s2;}} onMouseLeave={e=>{if(!isA)e.currentTarget.style.background="transparent";}}>
+                return <div key={item.id} onClick={()=>setPage(item.id)} title={(collapsed?item.label+" — ":"")+(item.desc||"")} style={{display:"flex",alignItems:"center",gap:9,padding:collapsed?"9px 0":"8px 12px",justifyContent:collapsed?"center":"flex-start",margin:"1px 5px",borderRadius:9,background:isA?C.accBg:"transparent",color:isA?C.acc:C.txd,cursor:"pointer",transition:"all .15s",position:"relative",borderLeft:isA?"2px solid "+C.acc:"2px solid transparent"}} onMouseEnter={e=>{if(!isA)e.currentTarget.style.background=C.s2;}} onMouseLeave={e=>{if(!isA)e.currentTarget.style.background="transparent";}}>
                   <span style={{fontSize:14,flexShrink:0,lineHeight:1}}>{item.icon}</span>
                   {!collapsed&&<span style={{fontSize:12,fontWeight:isA?600:400,whiteSpace:"nowrap",overflow:"hidden",flex:1}}>{item.label}</span>}
                   {badge>0&&<span style={{position:collapsed?"absolute":"static",top:collapsed?4:undefined,right:collapsed?4:undefined,marginLeft:collapsed?undefined:"auto",background:C.acc,color:"#fff",fontSize:9,fontWeight:700,borderRadius:"50%",width:15,height:15,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{badge}</span>}
@@ -5074,7 +5106,11 @@ export default function App(){
         </div>
       </div>
       {/* MAIN */}
-      <main style={{flex:1,overflowY:"auto",padding:"24px 28px"}}>{renderPage()}</main>
+      <main style={{flex:1,overflowY:"auto",padding:"24px 28px"}}>
+        {/* "Para que serve esta tela": uma linha discreta no topo de cada tela (mesma descrição do menu). */}
+        {(()=>{const it=NAV.flatMap(g=>g.items).find(x=>x.id===page);return it?.desc?<div style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:12,color:C.txd,margin:"0 0 14px",lineHeight:1.5}}><span aria-hidden="true">ℹ</span><span>{it.desc}</span></div>:null;})()}
+        {renderPage()}
+      </main>
       {toast&&<Toast msg={toast.msg} type={toast.type}/>}
     </div>
   );
