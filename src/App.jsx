@@ -1873,7 +1873,7 @@ function Equipe({user,users,ferias}){
                   {u.role==="lider"&&<Chip label="Líder" color={col}/>}
                 </div>
                 {sel?.id===u.id&&<div className="fadeIn" style={{marginTop:12,paddingTop:12,borderTop:"1px solid "+C.bdr,fontSize:12,color:C.txm,display:"flex",flexDirection:"column",gap:5}}>
-                  <span>📧 {u.email}</span><span>📅 {fd(u.admissao)}</span>
+                  <span>📧 {u.email||"sem e-mail"}</span><span>📅 {fd(u.admissao)}</span>
                   {isF(u.id)&&<span style={{color:C.grn}}>🏖 De férias agora</span>}
                   {u.skills.length>0&&<div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:4}}>{u.skills.map(sk=><Chip key={sk} label={sk} color={col}/>)}</div>}
                 </div>}
@@ -1890,18 +1890,22 @@ function Equipe({user,users,ferias}){
 function Colaboradores({users,setUsers,currentUser}){
   const[busca,setBusca]=useState("");const[fSetor,setFSetor]=useState("todos");const[fRole,setFRole]=useState("todos");const[fArea,setFArea]=useState("todas");const[sel,setSel]=useState(null);
   const[modalMov,setModalMov]=useState(null); // colaborador sendo movido
+  // Por quê: a tela mostrava também os desligados (ex.: Ademar), porque não filtrava por situação.
+  // Padrão: só ativos. O RH pode ver os desligados marcando a opção.
+  const[verDesligados,setVerDesligados]=useState(false);
   const[formMov,setFormMov]=useState({setor:"",area:""});const[saving,setSaving]=useState(false);
 
   // Visibilidade por hierarquia: RH vê todos · Gestor vê todas as equipes sob sua gestão · Líder vê só a própria equipe
+  const base=users.filter(u=>verDesligados&&can(currentUser.role,"rh")?true:u.status==="ativo");
   const escopo=can(currentUser.role,"rh")
-    ? users
+    ? base
     : can(currentUser.role,"gestor")
-      ? users.filter(u=>u.gestorId===currentUser.id||u.id===currentUser.id)
-      : users.filter(u=>u.liderId===currentUser.id||u.id===currentUser.id);
+      ? base.filter(u=>u.gestorId===currentUser.id||u.id===currentUser.id)
+      : base.filter(u=>u.liderId===currentUser.id||u.id===currentUser.id);
 
   const setores=[...new Set(escopo.map(u=>u.setor))].filter(Boolean);
   const areasProducao=[...new Set(escopo.filter(u=>u.setor==="producao").map(u=>u.area))].filter(Boolean);
-  const filtrado=escopo.filter(u=>{const b=busca.toLowerCase();return(u.name.toLowerCase().includes(b)||u.cargo.toLowerCase().includes(b)||u.email.toLowerCase().includes(b))&&(fSetor==="todos"||u.setor===fSetor)&&(fRole==="todos"||u.role===fRole)&&(fArea==="todas"||u.area===fArea);});
+  const filtrado=escopo.filter(u=>{const b=busca.toLowerCase();return(u.name.toLowerCase().includes(b)||(u.cargo||"").toLowerCase().includes(b)||(u.email||"").toLowerCase().includes(b))&&(fSetor==="todos"||u.setor===fSetor)&&(fRole==="todos"||u.role===fRole)&&(fArea==="todas"||u.area===fArea);});
 
   const podeMovimentar=can(currentUser.role,"lider");
   const areasOpcoes=Object.entries(AL).map(([k,v])=>({value:k,label:v}));
@@ -1933,14 +1937,15 @@ function Colaboradores({users,setUsers,currentUser}){
         <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar nome, cargo, e-mail..." style={{flex:1,minWidth:200,background:C.bgCard,border:"1px solid "+C.bdr,borderRadius:9,padding:"9px 13px",color:C.txt,fontSize:13,boxSizing:"border-box"}}/>
         <select value={fSetor} onChange={e=>{setFSetor(e.target.value);setFArea("todas");}} style={{background:C.bgCard,border:"1px solid "+C.bdr,borderRadius:9,padding:"9px 13px",color:C.txt,fontSize:13}}><option value="todos">Todos Setores</option>{setores.map(s=><option key={s} value={s}>{SL[s]||s}</option>)}</select>
         {fSetor==="producao"&&areasProducao.length>0&&<select value={fArea} onChange={e=>setFArea(e.target.value)} style={{background:C.bgCard,border:"1px solid "+C.bdr,borderRadius:9,padding:"9px 13px",color:C.txt,fontSize:13}}><option value="todas">Todas Áreas</option>{areasProducao.map(a=><option key={a} value={a}>{AL[a]||a}</option>)}</select>}
-        <select value={fRole} onChange={e=>setFRole(e.target.value)} style={{background:C.bgCard,border:"1px solid "+C.bdr,borderRadius:9,padding:"9px 13px",color:C.txt,fontSize:13}}><option value="todos">Todos</option>{["colaborador","lider","gestor","rh","dev"].map(r=><option key={r} value={r}>{r}</option>)}</select>
+        {can(currentUser.role,"rh")&&<label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:C.txm,cursor:"pointer",whiteSpace:"nowrap"}}><input type="checkbox" checked={verDesligados} onChange={e=>setVerDesligados(e.target.checked)}/>Mostrar desligados</label>}
+          <select value={fRole} onChange={e=>setFRole(e.target.value)} style={{background:C.bgCard,border:"1px solid "+C.bdr,borderRadius:9,padding:"9px 13px",color:C.txt,fontSize:13}}><option value="todos">Todos</option>{["colaborador","lider","gestor","rh","dev"].map(r=><option key={r} value={r}>{r}</option>)}</select>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
         {filtrado.map(u=>{const col=SC[u.setor]||C.acc;const isS=sel?.id===u.id;return(
           <Card key={u.id} onClick={()=>setSel(isS?null:u)} style={{cursor:"pointer",borderLeft:"3px solid "+(isS?col:C.bdr),transition:"all .15s"}}>
             <div style={{display:"flex",gap:14,alignItems:"center"}}><Av name={u.name} size={36} color={col}/><div style={{flex:1}}><div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}><div><div style={{fontWeight:700,fontSize:14}}>{u.name}</div><div style={{fontSize:12,color:C.txm}}>{u.cargo}</div></div><div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}><Chip label={SL[u.setor]||u.setor} color={col}/>{u.setor==="producao"&&u.area&&u.area!=="geral"&&<Chip label={AL[u.area]||u.area} color={ACOL[u.area]||col}/>}<Chip label={u.role} color={C.txm}/></div></div></div></div>
             {isS&&<div className="fadeIn" style={{marginTop:12,paddingTop:12,borderTop:"1px solid "+C.bdr,display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:8,fontSize:12,color:C.txm}}>
-              <span>📧 {u.email}</span><span>📅 {fd(u.admissao)}</span>
+              <span>📧 {u.email||"sem e-mail"}</span><span>📅 {fd(u.admissao)}</span>
               <div style={{gridColumn:"1/-1",display:"flex",alignItems:"center",gap:8}}>Senioridade:<div style={{flex:1,height:4,background:C.s3,borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:u.senioridade+"%",background:col,borderRadius:3}}/></div><span style={{color:col,fontFamily:"'JetBrains Mono',monospace",fontSize:11}}>{u.senioridade}%</span></div>
               {u.skills.length>0&&<div style={{gridColumn:"1/-1",display:"flex",gap:4,flexWrap:"wrap"}}>{u.skills.map(sk=><Chip key={sk} label={sk} color={col}/>)}</div>}
               {podeMovimentar&&<div style={{gridColumn:"1/-1",marginTop:4}}><Btn sz="sm" v="outline" onClick={e=>abrirMovimentacao(u,e)}>⇄ Movimentar setor/área</Btn></div>}
@@ -4733,7 +4738,11 @@ export default function App(){
   if(!user)return<Login onLogin={handleLogin} onPortal={abrirPortalVagas}/>;
   if(loading&&users.length===0)return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,flexDirection:"column",gap:16}}><style>{CSS}</style><Spin size={36}/><div style={{fontSize:14,color:C.txd}}>Carregando dados...</div></div>;
   
-  const props={user,users,setUsers,ferias,setFerias,feedbacks,setFeedbacks,chat,setChat,avaliacoes,setAvaliacoes,candidates,setCandidates,vagas:vagasAbertas,vagasTodas:vagas,setVagas,talentos,setTalentos,comunicados,setComunicados,exames,setExames,tarefas,setTarefas,criarTarefaAuto,pulses,setPulses,nps,setNps,benCatalogo,setBenCatalogo,benUsuarios,setBenUsuarios,benSolicits,setBenSolicits,movs,setMovs,showToast};
+  // Por quê: as telas contavam e listavam também desligados e contas sem situação ativa (totais do Painel,
+  // headcount, equipes, seletores, chat). Elas recebem só os ATIVOS; a lista completa fica em todosUsuarios
+  // (e a tela Colaboradores recebe tudo, para o RH poder "Mostrar desligados").
+  const usuariosAtivos=users.filter(u=>u.status==="ativo");
+  const props={user,users:usuariosAtivos,todosUsuarios:users,setUsers,ferias,setFerias,feedbacks,setFeedbacks,chat,setChat,avaliacoes,setAvaliacoes,candidates,setCandidates,vagas:vagasAbertas,vagasTodas:vagas,setVagas,talentos,setTalentos,comunicados,setComunicados,exames,setExames,tarefas,setTarefas,criarTarefaAuto,pulses,setPulses,nps,setNps,benCatalogo,setBenCatalogo,benUsuarios,setBenUsuarios,benSolicits,setBenSolicits,movs,setMovs,showToast};
   
   const renderPage=()=>{
     switch(page){
