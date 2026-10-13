@@ -258,6 +258,7 @@ const NAV=[
     {id:"chat",icon:"✉",label:"Mensagens",min:"colaborador"},
     {id:"comunicados",icon:"📢",label:"Comunicados",min:"colaborador"},
     {id:"feedbacks",icon:"◆",label:"Feedbacks",min:"colaborador"},
+    {id:"eventos",icon:"🎉",label:"Eventos",min:"rh"},
   ]},
   {group:"Minha conta",items:[
     {id:"perfil",icon:"◎",label:"Meu Perfil",min:"colaborador"},
@@ -4515,6 +4516,250 @@ function Config({user}){
 }
 
 // PORTAL DE CARREIRAS
+// ── EVENTOS (confraternização) ────────────────────────────────────────────────
+// Pedido do RH (13/10/2026): substituir o Google Forms. O portal sabe QUEM deveria responder (colaboradores
+// ativos), então mostra quem já respondeu e quem falta. A maioria não tem login: o link é público, a pessoa
+// escolhe o próprio nome e responde. Toda validação e o cálculo das faixas de idade ficam no banco
+// (responder_evento); as respostas (com nome/idade de familiares) só saem para o RH (respostas_evento).
+const PARENTESCOS=["Cônjuge / Companheiro(a)","Filho(a)","Enteado(a)","Pai / Mãe","Irmão(ã)","Neto(a)","Sobrinho(a)","Outro"];
+// Tempo de empresa por extenso (mesma regra da função tempo_de_empresa do banco).
+const tempoEmpresa=(adm,ref=hojeISO())=>{
+  if(!adm)return"";const[a1,m1,d1]=adm.split("-").map(Number),[a2,m2,d2]=ref.split("-").map(Number);
+  let meses=(a2-a1)*12+(m2-m1);if(d2<d1)meses--;if(meses<1)return"menos de 1 mês";
+  const a=Math.floor(meses/12),m=meses%12;
+  return[a?a+(a===1?" ano":" anos"):"",m?m+(m===1?" mês":" meses"):""].filter(Boolean).join(" e ");
+};
+const faixas=acs=>({ad:acs.filter(x=>Number(x.idade)>=18).length,ado:acs.filter(x=>Number(x.idade)>=13&&Number(x.idade)<=17).length,cr:acs.filter(x=>x.idade!==""&&Number(x.idade)<=12).length});
+
+function FormularioEvento({slug}){
+  const[ev,setEv]=useState(undefined);const[pessoas,setPessoas]=useState([]);
+  const[busca,setBusca]=useState("");const[pessoa,setPessoa]=useState(null);const[jaRespondeu,setJaRespondeu]=useState(null);
+  const[vai,setVai]=useState(null);const[acs,setAcs]=useState([]);const[jaParticipou,setJaParticipou]=useState(null);const[email,setEmail]=useState("");
+  const[enviando,setEnviando]=useState(false);const[erro,setErro]=useState("");const[feito,setFeito]=useState(null);
+  useEffect(()=>{(async()=>{
+    const sb=await initSB();if(!sb){setEv(null);return;}
+    const{data:e}=await sb.from("eventos").select("*").eq("slug",slug).maybeSingle();setEv(e||null);
+    // Só ativos com cadastro na folha (exclui contas técnicas). Só nome e admissão (para o tempo de empresa).
+    const{data:u}=await sb.from("usuarios").select("id,name,admissao,status,cadastro").eq("status","ativo");
+    setPessoas((u||[]).filter(x=>x.cadastro).sort((a,b)=>a.name.localeCompare(b.name)));
+  })();},[slug]);
+  const norm=s=>s.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+  // A lista só aparece depois de digitar 2 letras: não expõe todos os nomes de uma vez.
+  const sugestoes=busca.trim().length>=2?pessoas.filter(p=>norm(p.name).includes(norm(busca.trim()))).slice(0,8):[];
+  const escolher=async p=>{
+    setPessoa(p);setBusca("");setErro("");setJaRespondeu(null);
+    const{data}=await getSB().rpc("status_resposta_evento",{p_slug:slug,p_usuario_id:p.id});
+    const r=Array.isArray(data)?data[0]:data;if(r?.respondido_em)setJaRespondeu(r);
+  };
+  const f=faixas(acs);
+  const enviar=async()=>{
+    setErro("");
+    if(vai===null){setErro("Responda se você vai participar.");return;}
+    if(vai){
+      if(acs.some(a=>a.nome.trim().length<3||a.idade===""||!a.parentesco)){setErro("Preencha nome completo, idade e parentesco de cada acompanhante.");return;}
+      if(jaParticipou===null){setErro("Responda se você já participou de um evento da Kalenborn.");return;}
+    }
+    setEnviando(true);
+    const{data,error}=await getSB().rpc("responder_evento",{p_slug:slug,p_usuario_id:pessoa.id,p_vai:vai,p_email:email.trim()||null,
+      p_ja_participou:vai?jaParticipou:null,p_acompanhantes:vai?acs.map(a=>({nome:a.nome.trim(),idade:Number(a.idade),parentesco:a.parentesco})):[]});
+    setEnviando(false);
+    if(error){setErro(error.message||"Não foi possível enviar. Tente novamente.");return;}
+    setFeito({primeira:(Array.isArray(data)?data[0]:data)?.primeira_vez!==false});
+  };
+  const moldura=conteudo=>(
+    <div style={{minHeight:"100vh",background:C.bg,display:"flex",justifyContent:"center",padding:"24px 12px"}}>
+      <style>{CSS}</style>{/* página pública fica fora do layout do app: precisa do estilo global (fonte Inter etc.) */}
+      <div style={{width:"100%",maxWidth:560}}>
+        <div style={{textAlign:"center",marginBottom:18}}>
+          <div style={{fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:C.txd}}>Kalenborn do Brasil · Recursos Humanos</div>
+          <div style={{fontSize:22,fontWeight:800,marginTop:4}}>{ev?.nome||"Evento"}</div>
+          {ev?.prazo&&<div style={{fontSize:13,color:C.txm,marginTop:4}}>Responda até {fd(ev.prazo)}</div>}
+        </div>
+        <Card style={{padding:20}}>{conteudo}</Card>
+      </div>
+    </div>);
+  if(ev===undefined)return moldura(<div style={{display:"flex",gap:10,alignItems:"center",color:C.txm}}><Spin size={16}/> Carregando…</div>);
+  if(ev===null)return moldura(<div style={{color:C.txm}}>Evento não encontrado. Confira o link com o RH.</div>);
+  const encerrado=!ev.aberto||(ev.prazo&&hojeISO()>ev.prazo);
+  if(encerrado)return moldura(<div style={{color:C.txm}}>As inscrições deste evento estão encerradas. Dúvidas? Fale com o RH.</div>);
+  if(feito)return moldura(<div style={{textAlign:"center",padding:"10px 0"}}>
+    <div style={{fontSize:40}}>🎉</div>
+    <div style={{fontSize:18,fontWeight:800,marginTop:6}}>{feito.primeira?"Resposta registrada!":"Resposta atualizada!"}</div>
+    <div style={{fontSize:14,color:C.txm,marginTop:8}}>{vai?`${pessoa.name.split(" ")[0]}, contamos com você${acs.length?` e mais ${acs.length} acompanhante${acs.length===1?"":"s"}`:""}.`:`Obrigado por avisar, ${pessoa.name.split(" ")[0]}.`}</div>
+    <div style={{fontSize:12,color:C.txd,marginTop:14}}>Se precisar mudar algo, abra o link de novo e escolha seu nome.</div>
+  </div>);
+  const linhaAc=(a,i)=>(
+    <div key={i} style={{border:"1px solid "+C.bdr,borderRadius:10,padding:12,display:"flex",flexDirection:"column",gap:8}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:12,fontWeight:700,color:C.txm}}>Acompanhante {i+1}</span>
+        <button onClick={()=>setAcs(acs.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:C.red,fontSize:12,cursor:"pointer"}}>Remover</button></div>
+      <Inp label="Nome completo" value={a.nome} onChange={e=>setAcs(acs.map((x,j)=>j===i?{...x,nome:e.target.value}:x))}/>
+      <div style={{display:"grid",gridTemplateColumns:"90px minmax(0,1fr)",gap:8}}>
+        <Inp label="Idade" type="number" value={a.idade} onChange={e=>setAcs(acs.map((x,j)=>j===i?{...x,idade:e.target.value.replace(/\D/g,"").slice(0,3)}:x))}/>
+        <Sel label="Parentesco" value={a.parentesco} onChange={e=>setAcs(acs.map((x,j)=>j===i?{...x,parentesco:e.target.value}:x))} options={[{value:"",label:"Selecione..."},...PARENTESCOS.map(p=>({value:p,label:p}))]}/>
+      </div>
+    </div>);
+  const botaoSimNao=(valor,set,rotSim="Sim",rotNao="Não")=>(
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+      {[[true,rotSim],[false,rotNao]].map(([v,l])=><button key={l} onClick={()=>set(v)} style={{padding:"12px",borderRadius:10,border:"2px solid "+(valor===v?C.acc:C.bdr),background:valor===v?C.acc+"12":"transparent",color:C.txt,fontWeight:700,fontSize:14,cursor:"pointer"}}>{l}</button>)}
+    </div>);
+  return moldura(
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      {!pessoa?(
+        <div>
+          <div style={{fontSize:15,fontWeight:700,marginBottom:8}}>Quem é você?</div>
+          <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Digite seu nome..." autoFocus style={{width:"100%",boxSizing:"border-box",padding:"12px 14px",borderRadius:10,border:"1px solid "+C.bdr,fontSize:15,background:C.s1,color:C.txt}}/>
+          <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8}}>
+            {sugestoes.map(p=><button key={p.id} onClick={()=>escolher(p)} style={{textAlign:"left",padding:"10px 12px",borderRadius:9,border:"1px solid "+C.bdr,background:"transparent",color:C.txt,fontSize:14,cursor:"pointer"}}>{p.name}</button>)}
+            {busca.trim().length>=2&&!sugestoes.length&&<div style={{fontSize:13,color:C.txd}}>Nenhum colaborador com esse nome. Confira a grafia ou fale com o RH.</div>}
+          </div>
+        </div>
+      ):(
+        <>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+            <div><div style={{fontWeight:800,fontSize:16}}>{pessoa.name}</div><div style={{fontSize:13,color:C.txm}}>{tempoEmpresa(pessoa.admissao)} de empresa</div></div>
+            <button onClick={()=>{setPessoa(null);setVai(null);setAcs([]);setJaParticipou(null);setEmail("");setErro("");}} style={{background:"none",border:"none",color:C.accLt,fontSize:12,cursor:"pointer",textDecoration:"underline",whiteSpace:"nowrap"}}>Não sou eu</button>
+          </div>
+          {jaRespondeu&&<div style={{background:C.ambBg,border:"1px solid "+C.amb+"30",borderRadius:8,padding:"9px 12px",color:C.amb,fontSize:13}}>Você já respondeu em {new Date(jaRespondeu.atualizado_em).toLocaleDateString("pt-BR")}. Se enviar de novo, sua resposta anterior será substituída.</div>}
+          <div><div style={{fontSize:15,fontWeight:700,marginBottom:8}}>Você vai participar?</div>{botaoSimNao(vai,v=>{setVai(v);setErro("");},"Sim, vou","Não vou")}</div>
+          {vai&&<>
+            <div>
+              <div style={{fontSize:15,fontWeight:700}}>Pessoas da sua família que irão participar</div>
+              <div style={{fontSize:12,color:C.txd,margin:"2px 0 10px"}}>Nome completo, idade e parentesco de cada uma. Deixe vazio se for sozinho(a).</div>
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>{acs.map(linhaAc)}</div>
+              {acs.length<15&&<Btn v="outline" sz="sm" onClick={()=>setAcs([...acs,{nome:"",idade:"",parentesco:""}])} style={{marginTop:10}}>+ Adicionar acompanhante</Btn>}
+              {acs.length>0&&<div style={{fontSize:13,color:C.txm,marginTop:10}}>Adultos (acima de 18): <b>{f.ad}</b> · 13 a 17 anos: <b>{f.ado}</b> · Crianças até 12: <b>{f.cr}</b></div>}
+            </div>
+            <div><div style={{fontSize:15,fontWeight:700,marginBottom:8}}>Você já participou de um evento da Kalenborn?</div>{botaoSimNao(jaParticipou,setJaParticipou)}</div>
+          </>}
+          <Inp label="Seu e-mail (opcional — para o RH mandar avisos)" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="nome@email.com"/>
+          {erro&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"9px 14px",color:C.red,fontSize:13}}>{erro}</div>}
+          <Btn onClick={enviar} disabled={enviando} full>{enviando?<Spin size={14} color="#fff"/>:null} {jaRespondeu?"Atualizar resposta":"Enviar resposta"}</Btn>
+        </>
+      )}
+    </div>);
+}
+
+function GestaoEventos({user,users,showToast}){
+  const[eventos,setEventos]=useState(null);const[evId,setEvId]=useState(null);const[resp,setResp]=useState([]);const[carregando,setCarregando]=useState(true);
+  const[filtro,setFiltro]=useState("todos");const[busca,setBusca]=useState("");const[aberto,setAberto]=useState(null);
+  const[modal,setModal]=useState(null);const[form,setForm]=useState({nome:"",prazo:""});const[erroForm,setErroForm]=useState("");
+  const carregarEventos=async()=>{
+    const sb=getSB();const{data,error}=await sb.from("eventos").select("*").order("id",{ascending:false});
+    if(error){showToast?.("Não foi possível carregar os eventos.","error");setEventos([]);return;}
+    setEventos(data||[]);setEvId(p=>p&&data.some(e=>e.id===p)?p:data?.[0]?.id||null);
+  };
+  const carregarRespostas=async id=>{
+    if(!id){setResp([]);setCarregando(false);return;}
+    setCarregando(true);
+    const{data,error}=await getSB().rpc("respostas_evento",{p_evento_id:id,p_pedido_por:user.id});
+    if(error){showToast?.(error.message||"Não foi possível carregar as respostas.","error");setResp([]);}else setResp(data||[]);
+    setCarregando(false);
+  };
+  useEffect(()=>{carregarEventos();},[]);
+  useEffect(()=>{carregarRespostas(evId);},[evId]);
+  const ev=(eventos||[]).find(e=>e.id===evId);
+  const link=ev?`${window.location.origin}${window.location.pathname}?evento=${ev.slug}`:"";
+  // Quem deveria responder: colaboradores ativos com cadastro na folha.
+  const publico=users.filter(u=>u.status==="ativo"&&u.cadastro);
+  const porUser=new Map(resp.map(r=>[r.usuario_id,r]));
+  const linhas=publico.map(u=>({u,r:porUser.get(u.id)||null})).sort((a,b)=>a.u.name.localeCompare(b.u.name));
+  const vao=resp.filter(r=>r.vai_participar),naoVao=resp.filter(r=>!r.vai_participar);
+  const soma=k=>vao.reduce((s,r)=>s+(r[k]||0),0);
+  const totalPessoas=vao.length+soma("qtd_adultos")+soma("qtd_13_17")+soma("qtd_ate_12");
+  const b=busca.trim().toLowerCase();
+  const visiveis=linhas.filter(({u,r})=>(filtro==="todos"||(filtro==="faltam"&&!r)||(filtro==="vao"&&r?.vai_participar)||(filtro==="naovao"&&r&&!r.vai_participar))&&(!b||u.name.toLowerCase().includes(b)));
+  const salvar=async(dados)=>{
+    setErroForm("");
+    const{data,error}=await getSB().rpc("salvar_evento",{p_pedido_por:user.id,p_id:dados.id??null,p_nome:dados.nome,p_prazo:dados.prazo||null,p_aberto:dados.aberto??true});
+    if(error){setErroForm(error.message);showToast?.(error.message,"error");return false;}
+    const novo=Array.isArray(data)?data[0]:data;await carregarEventos();if(novo?.id)setEvId(novo.id);return true;
+  };
+  const copiar=async()=>{try{await navigator.clipboard.writeText(link);showToast?.("Link copiado.","success");}catch{showToast?.("Copie o link manualmente: "+link,"error");}};
+  // Planilha no formato do Forms (abre no Excel). ";" e BOM para acentos e colunas certas no Excel em português.
+  const baixar=()=>{
+    const cel=v=>{const s=String(v??"");return/[;"\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
+    const cab=["Carimbo de data/hora","Nome completo","Tempo de empresa","Setor","Situação","Acompanhantes (nome – idade – parentesco)","Qtde acompanhantes adulto (acima 18 anos)","Qtde acompanhantes 13 a 17 anos","Qtde crianças até 12 anos","Já participou de evento da Kalenborn?","E-mail"];
+    const rows=linhas.map(({u,r})=>[r?new Date(r.atualizado_em).toLocaleString("pt-BR"):"",u.name,r?.tempo_empresa||tempoEmpresa(u.admissao),SL[u.setor]||u.setor||"",
+      !r?"Não respondeu":r.vai_participar?"Vai participar":"Não vai",(r?.acompanhantes||[]).map(a=>`${a.nome} – ${a.idade} – ${a.parentesco}`).join(" | "),
+      r?r.qtd_adultos:"",r?r.qtd_13_17:"",r?r.qtd_ate_12:"",r?.ja_participou==null?"":r.ja_participou?"Sim":"Não",r?.email||""]);
+    const csv="\uFEFF"+[cab,...rows].map(l=>l.map(cel).join(";")).join("\r\n");
+    const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"})),a=document.createElement("a");
+    a.href=url;a.download=(ev?.slug||"evento")+"_respostas.csv";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
+  };
+  const ind=(v,l,cor=C.acc)=><div style={{flex:"1 1 130px",background:C.s2,border:"1px solid "+C.bdr,borderRadius:12,padding:"12px 14px"}}><div style={{fontSize:22,fontWeight:800,color:cor}}>{v}</div><div style={{fontSize:11,color:C.txd,textTransform:"uppercase",letterSpacing:".04em",marginTop:2}}>{l}</div></div>;
+  if(eventos===null)return<div style={{display:"flex",gap:10,alignItems:"center",color:C.txm}}><Spin size={16}/> Carregando eventos…</div>;
+  return(
+    <div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",gap:12,flexWrap:"wrap"}}>
+        <div><div style={{fontSize:22,fontWeight:800,letterSpacing:"-.02em"}}>Eventos</div><div style={{fontSize:13,color:C.txm,marginTop:2}}>Inscrições por link — veja quem respondeu e quem falta</div></div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {eventos.length>1&&<select value={evId||""} onChange={e=>setEvId(Number(e.target.value))} style={{background:C.bgCard,border:"1px solid "+C.bdr,borderRadius:9,padding:"8px 12px",color:C.txt,fontSize:13}}>{eventos.map(e=><option key={e.id} value={e.id}>{e.nome}</option>)}</select>}
+          <Btn v="outline" onClick={()=>{setForm({nome:"",prazo:""});setErroForm("");setModal({modo:"novo"});}}>+ Novo evento</Btn>
+        </div>
+      </div>
+      {!ev?<Card><div style={{color:C.txd}}>Nenhum evento criado.</div></Card>:<>
+        <Card style={{padding:18}}>
+          <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",alignItems:"flex-start"}}>
+            <div style={{minWidth:0}}>
+              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}><span style={{fontWeight:800,fontSize:16}}>{ev.nome}</span><Chip label={ev.aberto&&!(ev.prazo&&hojeISO()>ev.prazo)?"Inscrições abertas":"Encerrado"} color={ev.aberto&&!(ev.prazo&&hojeISO()>ev.prazo)?C.grn:C.txd} dot/></div>
+              <div style={{fontSize:12,color:C.txm,marginTop:4}}>{ev.prazo?"Prazo: "+fd(ev.prazo):"Sem prazo"}</div>
+              <div style={{display:"flex",gap:8,alignItems:"center",marginTop:10,flexWrap:"wrap"}}>
+                <code style={{fontSize:12,background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"6px 10px",wordBreak:"break-all"}}>{link}</code>
+                <Btn sz="sm" onClick={copiar}>Copiar link</Btn>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <Btn sz="sm" v="outline" onClick={baixar}>⬇ Baixar planilha</Btn>
+              <Btn sz="sm" v="outline" onClick={()=>{setForm({nome:ev.nome,prazo:ev.prazo||""});setErroForm("");setModal({modo:"editar"});}}>Editar</Btn>
+              <Btn sz="sm" v={ev.aberto?"danger":"success"} onClick={async()=>{if(await salvar({id:ev.id,nome:ev.nome,prazo:ev.prazo,aberto:!ev.aberto}))showToast?.(ev.aberto?"Inscrições encerradas.":"Inscrições reabertas.","success");}}>{ev.aberto?"Encerrar inscrições":"Reabrir inscrições"}</Btn>
+            </div>
+          </div>
+        </Card>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+          {ind(`${resp.length}/${publico.length}`,"responderam")}{ind(publico.length-resp.length,"faltam",publico.length-resp.length?C.amb:C.grn)}
+          {ind(vao.length,"colaboradores vão",C.grn)}{ind(naoVao.length,"não vão",C.txd)}
+          {ind(totalPessoas,"pessoas no total")}
+        </div>
+        <div style={{fontSize:13,color:C.txm}}>Acompanhantes: <b>{soma("qtd_adultos")}</b> adultos (acima de 18) · <b>{soma("qtd_13_17")}</b> de 13 a 17 anos · <b>{soma("qtd_ate_12")}</b> crianças até 12</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+          <div style={{display:"flex",gap:3,background:C.s2,borderRadius:10,padding:3,border:"1px solid "+C.bdr}}>
+            {[["todos","Todos"],["faltam","Faltam responder"],["vao","Vão"],["naovao","Não vão"]].map(([k,l])=><button key={k} onClick={()=>setFiltro(k)} style={{padding:"6px 12px",borderRadius:8,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",background:filtro===k?C.acc:"transparent",color:filtro===k?"#fff":C.txm}}>{l}</button>)}
+          </div>
+          <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar nome..." style={{background:C.bgCard,border:"1px solid "+C.bdr,borderRadius:9,padding:"8px 12px",color:C.txt,fontSize:13,minWidth:200}}/>
+        </div>
+        {carregando?<Card><div style={{display:"flex",gap:10,alignItems:"center",color:C.txm}}><Spin size={14}/> Carregando respostas…</div></Card>:
+        <Card style={{padding:0,overflow:"hidden"}}>
+          {visiveis.length===0&&<div style={{padding:18,color:C.txd,fontSize:13}}>Ninguém nesta lista.</div>}
+          {visiveis.map(({u,r})=>{const sit=!r?["Não respondeu",C.amb]:r.vai_participar?["Vai",C.grn]:["Não vai",C.txd];const ab=aberto===u.id;return(
+            <div key={u.id} style={{borderBottom:"1px solid "+C.bdr}}>
+              <div onClick={()=>setAberto(ab?null:u.id)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"10px 16px",cursor:r?"pointer":"default",flexWrap:"wrap"}}>
+                <div style={{minWidth:0}}><div style={{fontWeight:600,fontSize:14}}>{u.name}</div><div style={{fontSize:12,color:C.txd}}>{SL[u.setor]||u.setor}{u.area?" · "+(AL[u.area]||u.area):""}</div></div>
+                <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                  {r?.vai_participar&&<span style={{fontSize:12,color:C.txm}}>+{(r.acompanhantes||[]).length} acompanhante{(r.acompanhantes||[]).length===1?"":"s"}</span>}
+                  {r&&<span style={{fontSize:11,color:C.txd}}>{new Date(r.atualizado_em).toLocaleDateString("pt-BR")}</span>}
+                  <Chip label={sit[0]} color={sit[1]} dot/>
+                </div>
+              </div>
+              {ab&&r&&<div style={{padding:"0 16px 14px",fontSize:13,color:C.txm,display:"flex",flexDirection:"column",gap:4}}>
+                <div>Tempo de empresa: {r.tempo_empresa||"—"} · Já participou de evento: {r.ja_participou==null?"—":r.ja_participou?"Sim":"Não"}{r.email?" · "+r.email:""}</div>
+                {(r.acompanhantes||[]).map((a,i)=><div key={i}>• {a.nome} — {a.idade} anos — {a.parentesco}</div>)}
+                {r.vai_participar&&<div>Adultos {r.qtd_adultos} · 13–17: {r.qtd_13_17} · até 12: {r.qtd_ate_12}</div>}
+              </div>}
+            </div>);})}
+        </Card>}
+      </>}
+      <Modal open={!!modal} onClose={()=>setModal(null)} title={modal?.modo==="novo"?"Novo evento":"Editar evento"}>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <Inp label="Nome do evento *" value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} placeholder="Ex: Confraternização Kalenborn 2026"/>
+          <Inp label="Prazo para responder (opcional)" type="date" value={form.prazo} onChange={e=>setForm({...form,prazo:e.target.value})}/>
+          {erroForm&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"9px 14px",color:C.red,fontSize:13}}>{erroForm}</div>}
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}><Btn v="outline" onClick={()=>setModal(null)}>Cancelar</Btn>
+            <Btn onClick={async()=>{if(await salvar(modal.modo==="novo"?{nome:form.nome,prazo:form.prazo}:{id:ev.id,nome:form.nome,prazo:form.prazo,aberto:ev.aberto})){setModal(null);showToast?.(modal.modo==="novo"?"Evento criado.":"Evento atualizado.","success");}}}>{modal?.modo==="novo"?"Criar evento":"Salvar"}</Btn></div>
+        </div>
+      </Modal>
+    </div>);
+}
+
 function CareerPortal({vagas,carregando=false,onBack,onSubmit,criarTarefaAuto}){
   const[erroEnvio,setErroEnvio]=useState("");
   const[step,setStep]=useState(1);const[vaga,setVaga]=useState(null);const[form,setForm]=useState({name:"",email:"",phone:"",pcd:false,salarioPret:""});const[ans,setAns]=useState(["","","",""]);const[cvFile,setCvFile]=useState(null);const[loading,setLoading]=useState(false);const[stepMsg,setStepMsg]=useState("");const fileRef=useRef();
@@ -4734,6 +4979,9 @@ export default function App(){
   if(!sbReady)return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,flexDirection:"column",gap:16}}><style>{CSS}</style><Spin size={36}/><div style={{fontSize:14,color:C.txd}}>Conectando ao banco...</div></div>;
   // Vagas abertas = ativas e dentro do prazo. É o que o portal, o upload e as demais telas enxergam.
   const vagasAbertas=vagas.filter(vagaAberta);
+  // Link público de evento (?evento=<slug>): formulário sem login, para quem não tem e-mail/senha no portal.
+  const eventoPublico=new URLSearchParams(window.location.search).get("evento");
+  if(eventoPublico)return<FormularioEvento slug={eventoPublico}/>;
   if(!user&&screen==="career")return<CareerPortal vagas={vagasAbertas} carregando={vagasCarregando} onBack={()=>setScreen("login")} onSubmit={c=>setCandidates(p=>[c,...p])} criarTarefaAuto={criarTarefaAuto}/>;
   if(!user)return<Login onLogin={handleLogin} onPortal={abrirPortalVagas}/>;
   if(loading&&users.length===0)return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,flexDirection:"column",gap:16}}><style>{CSS}</style><Spin size={36}/><div style={{fontSize:14,color:C.txd}}>Carregando dados...</div></div>;
@@ -4755,6 +5003,7 @@ export default function App(){
       case"chat":return<Chat {...props}/>;
       case"comunicados":return<Comunicados {...props}/>;
       case"colaboradores":return<Colaboradores users={users} setUsers={setUsers} currentUser={user}/>;
+      case"eventos":return<GestaoEventos {...props}/>;
       case"contratacao":return<Contratacao {...props}/>;
       case"movimentacoes":return<Movimentacoes {...props}/>;
       case"exames":return<Exames {...props}/>;
