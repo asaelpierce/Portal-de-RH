@@ -202,7 +202,7 @@ const Stat=({label,value,icon,color=C.acc})=>{
   useEffect(()=>{let s=0;const step=Math.max(1,Math.ceil(n/20));const t=setInterval(()=>{s+=step;if(s>=n){setV(n);clearInterval(t);}else setV(s);},28);return()=>clearInterval(t);},[n]);
   return <div style={{background:C.bgCard,border:"1px solid "+C.bdr,borderTop:"3px solid "+color,borderRadius:16,padding:"20px 24px",position:"relative",overflow:"hidden",boxShadow:"0 4px 12px rgba(0,0,0,.02)"}}>
     <div style={{fontSize:12,color:C.txm,fontWeight:700,letterSpacing:".05em",marginBottom:8}}>{label.toUpperCase()}</div>
-    <div style={{fontSize:32,fontWeight:800,color,fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}>{isNaN(parseInt(value))?value:v}</div>
+    <div style={{fontSize:32,fontWeight:800,color,fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}>{isNaN(parseInt(value))?value:typeof value==="number"&&!Number.isInteger(value)?String(value).replace(".",","):v}</div>{/* frações (ex.: 22,5 dias de férias) não podem virar inteiro na animação */}
     <div style={{position:"absolute",bottom:16,right:16,fontSize:28,opacity:.15}}>{icon}</div>
   </div>;
 };
@@ -315,39 +315,65 @@ function Login({onLogin,onPortal}){
 }
 
 // DASHBOARD
-function Dashboard({user,users,ferias,tarefas,comunicados,exames,candidates,setPage}){
+function Dashboard({user,users,ferias,tarefas,comunicados,exames,candidates,feedbacks=[],avaliacoes=[],setPage}){
   const ts=tod();
-  const totalC=users.filter(u=>u.role==="colaborador").length;
-  const deFerias=ferias.filter(f=>f.status==="aprovado"&&ts>=f.inicio&&ts<=f.fim);
-  const pendFerias=ferias.filter(f=>["pendente_lider","pendente_gestor","pendente_rh"].includes(f.status));
+  // Quem conta como colaborador: ativos que estão na folha (tem cadastro). Antes o card contava só o papel
+  // "colaborador" (deixava fora líderes, gestores e RH) e o headcount incluía a conta técnica Automação/Dev.
+  const daFolha=users.filter(u=>u.cadastro);
+  const totalC=daFolha.length;
+  const meuCad=users.find(u=>u.id===user.id)?.cadastro;
+
+  // Saldos calculados (mesma função das telas de Férias e do e-mail mensal) + quem a FOLHA marca em férias
+  // (situação 2) no último relatório importado.
+  const[saldoCalc,setSaldoCalc]=useState(null);const[folhaFerias,setFolhaFerias]=useState({data:null,lista:[]});
+  useEffect(()=>{(async()=>{
+    const sb=getSB();if(!sb){setSaldoCalc([]);return;}
+    const{data:imp}=await sb.from("ferias_importacoes").select("id,data_relatorio").order("id",{ascending:false}).limit(1).maybeSingle();
+    if(!imp){setSaldoCalc([]);return;}
+    const[{data:calc,error:e1},{data:sit2,error:e2}]=await Promise.all([
+      sb.rpc("ferias_saldo_atual",{p_hoje:hojeISO()}),
+      sb.from("ferias_saldos").select("cadastro,nome").eq("importacao_id",imp.id).eq("situacao","2")]);
+    if(e1||e2)console.error(e1||e2);
+    setSaldoCalc(calc||[]);
+    setFolhaFerias({data:imp.data_relatorio,lista:[...new Map((sit2||[]).map(x=>[x.cadastro,x])).values()]});
+  })();},[]);
+
+  // De férias = aprovadas no portal em curso + quem a folha marca "em férias" (sem repetir a mesma pessoa).
+  const deFeriasPortal=ferias.filter(f=>f.status==="aprovado"&&ts>=f.inicio&&ts<=f.fim&&users.some(u=>u.id===f.userId));
+  const cadsPortal=new Set(deFeriasPortal.map(f=>users.find(u=>u.id===f.userId)?.cadastro).filter(Boolean));
+  const deFerias=[
+    ...deFeriasPortal.map(f=>({id:"p"+f.id,nome:f.userName,u:users.find(x=>x.id===f.userId),fim:f.fim,fonte:"portal"})),
+    ...folhaFerias.lista.filter(x=>!cadsPortal.has(x.cadastro)).map(x=>({id:"f"+x.cadastro,nome:x.nome,u:users.find(u=>u.cadastro===x.cadastro),fim:null,fonte:"folha"}))
+      .filter(x=>x.u)];  // só quem continua ativo no portal
+  // Pendências só de quem está ativo (antes contava pedido de desligado).
+  const pendFerias=ferias.filter(f=>["pendente_lider","pendente_gestor","pendente_rh"].includes(f.status)&&users.some(u=>u.id===f.userId));
   const exHoje=exames.filter(e=>e.data===ts);
   const tkAtrasadas=tarefas.filter(t=>t.venc&&t.venc<ts&&t.coluna!=="concluido");
   const comFixados=comunicados.filter(c=>c.fixado).slice(0,3);
 
-  // ── FÉRIAS A VENCER — separa dado real da planilha (urgente) de estimativa (informativo) ──
-  const comPeriodoReal=ferias.filter(f=>f.periodoAq&&["pendente_lider","pendente_gestor","pendente_rh"].includes(f.status));
-  const venceuReal=comPeriodoReal.filter(f=>{
-    const dias=f.fim?Math.ceil((new Date(f.fim)-new Date(ts))/86400000):null;
-    return dias!==null&&dias<=30;
-  });
-  const idsComDadoReal=new Set(comPeriodoReal.map(f=>f.userId));
-  const semFeriasEstimado=users.filter(u=>{
-    if(idsComDadoReal.has(u.id))return false;
-    const m=Math.floor((new Date()-new Date(u.admissao))/(30.44*86400000));
-    if(m<24)return false; // só conta como alerta informativo depois de 2 anos sem registro
-    return !ferias.find(f=>f.userId===u.id&&f.status!=="rejeitado"&&new Date(f.fim)>new Date());
-  });
+  // ── PRAZOS DE FÉRIAS — pelos saldos reais (períodos já adquiridos com saldo e sem férias lançadas para eles).
+  // Antes: usava a data de TÉRMINO de pedidos pendentes e dizia "confirmado pela planilha" — gerava alarme falso.
+  const periodosAlerta=(saldoCalc||[]).filter(l=>Number(l.saldo)>0&&!l.em_aquisicao&&l.prazo_inicio).map(l=>({...l,
+    dias:diasEntre(hojeISO(),l.prazo_inicio),
+    lancada:ferias.some(f=>f.periodoInicio===l.periodo_inicio&&users.find(u=>u.id===f.userId)?.cadastro===l.cadastro&&["aprovado","pendente_lider","pendente_gestor","pendente_rh"].includes(f.status))
+  })).filter(l=>!l.lancada).sort((a,b)=>a.dias-b.dias);
+  const pessoasUnicas=arr=>[...new Map(arr.map(l=>[l.cadastro,l])).values()];
+  const urgentes30=pessoasUnicas(periodosAlerta.filter(l=>l.dias<=30));
+  const prox90=pessoasUnicas(periodosAlerta.filter(l=>l.dias>30&&l.dias<=90));
+  // Saldo do próprio usuário: dias em períodos já adquiridos (o que dá para tirar agora).
+  const meuSaldo=saldoCalc===null?null:meuCad?(saldoCalc.filter(l=>l.cadastro===meuCad&&!l.em_aquisicao).reduce((a,l)=>a+Number(l.saldo),0)):null;
 
   const candidatosNovos=candidates.filter(c=>{const d=new Date(c.createdAt||"");return(new Date()-d)<(7*86400000);}).length;
 
   const stats=can(user.role,"rh")?
     [{label:"Colaboradores",value:totalC,icon:"◉",color:C.acc},{label:"De Férias",value:deFerias.length,icon:"✈",color:C.grn},{label:"Aprovações Pend.",value:pendFerias.length,icon:"⏳",color:C.amb,alerta:pendFerias.length>0},{label:"Candidatos",value:candidates.length,icon:"⊕",color:C.blu,sub:candidatosNovos>0?candidatosNovos+" novos esta semana":null}]:
     can(user.role,"gestor")?
-    [{label:"Minha Equipe",value:users.filter(u=>u.gestorId===user.id).length,icon:"◈",color:C.acc},{label:"De Férias",value:deFerias.filter(f=>users.find(u=>u.id===f.userId&&u.gestorId===user.id)).length,icon:"✈",color:C.grn},{label:"Tarefas Atrasadas",value:tkAtrasadas.length,icon:"⚠",color:C.amb,alerta:tkAtrasadas.length>0},{label:"Exames Agendados",value:exames.filter(e=>e.status==="agendado").length,icon:"🏥",color:C.blu}]:
-    [{label:"Férias Disponíveis",value:30,icon:"✈",color:C.acc},{label:"Feedbacks",value:0,icon:"◆",color:C.pur},{label:"Avaliações",value:0,icon:"★",color:C.grn},{label:"Comunicados",value:comunicados.length,icon:"📢",color:C.blu}];
+    [{label:"Minha Equipe",value:users.filter(u=>u.gestorId===user.id).length,icon:"◈",color:C.acc},{label:"De Férias",value:deFerias.filter(f=>f.u?.gestorId===user.id).length,icon:"✈",color:C.grn},{label:"Tarefas Atrasadas",value:tkAtrasadas.length,icon:"⚠",color:C.amb,alerta:tkAtrasadas.length>0},{label:"Exames Agendados",value:exames.filter(e=>e.status==="agendado").length,icon:"🏥",color:C.blu}]:
+    // Antes: "Férias Disponíveis" fixo em 30 e Feedbacks/Avaliações fixos em 0, iguais para todos.
+    [{label:"Férias Disponíveis (dias)",value:meuSaldo===null?"—":meuSaldo,icon:"✈",color:C.acc},{label:"Feedbacks",value:feedbacks.filter(f=>f.toId===user.id).length,icon:"◆",color:C.pur},{label:"Avaliações",value:avaliacoes.filter(a=>a.avaliadoId===user.id).length,icon:"★",color:C.grn},{label:"Comunicados",value:comunicados.length,icon:"📢",color:C.blu}];
 
   // Prepara dados para os gráficos
-  const chartSetores = Object.entries(users.reduce((acc, u) => {
+  const chartSetores = Object.entries(daFolha.reduce((acc, u) => {
     const s = SL[u.setor] || u.setor || "Outros";
     acc[s] = (acc[s] || 0) + 1;
     return acc;
@@ -399,20 +425,22 @@ function Dashboard({user,users,ferias,tarefas,comunicados,exames,candidates,setP
       </div>
 
       {/* ── ALERTA PRINCIPAL — só o que é factual e urgente, com ação clara ── */}
-      {can(user.role,"rh")&&venceuReal.length>0&&(
+      {/* ── ALERTA — pelos saldos reais de férias (calculados pelo portal a partir da folha). ── */}
+      {can(user.role,"rh")&&urgentes30.length>0&&(
         <div style={{background:C.redBg,border:"1px solid "+C.red+"35",borderRadius:14,padding:"14px 18px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
           <span style={{fontSize:22}}>⚠</span>
-          <div style={{flex:1,minWidth:200}}>
-            <div style={{fontSize:14,fontWeight:700,color:C.red}}>{venceuReal.length} colaborador{venceuReal.length>1?"es":""} com prazo de férias vencendo em até 30 dias</div>
-            <div style={{fontSize:12,color:C.txm,marginTop:2}}>Dado confirmado pela planilha de RH — risco de pagamento em dobro conforme CLT</div>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:700,color:C.red}}>{urgentes30.length} colaborador{urgentes30.length>1?"es precisam":" precisa"} iniciar férias em até 30 dias</div>
+            <div style={{fontSize:12,color:C.txm,marginTop:2}}>{urgentes30.slice(0,4).map(l=>l.nome.split(" ").slice(0,2).join(" ")+" (até "+fd(l.prazo_inicio)+")").join(" · ")}{urgentes30.length>4?" …":""} — calculado pelo portal (base: folha de {fd(folhaFerias.data)}). Risco de pagamento em dobro (CLT art. 137).</div>
           </div>
-          <Btn v="danger" sz="sm" onClick={()=>setPage("ferias")}>Ver detalhes →</Btn>
+          <Btn v="danger" sz="sm" onClick={()=>setPage("ferias")}>Ver vencimentos →</Btn>
         </div>
       )}
-      {can(user.role,"rh")&&venceuReal.length===0&&semFeriasEstimado.length>0&&(
-        <div style={{background:C.ambBg,border:"1px solid "+C.amb+"30",borderRadius:14,padding:"12px 18px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+      {can(user.role,"rh")&&urgentes30.length===0&&prox90.length>0&&(
+        <div style={{display:"flex",alignItems:"center",gap:12,background:C.ambBg,border:"1px solid "+C.amb+"30",borderRadius:12,padding:"12px 16px"}}>
           <span style={{fontSize:18}}>ℹ</span>
-          <div style={{fontSize:13,color:C.txm}}><strong style={{color:C.amb}}>{semFeriasEstimado.length} colaboradores</strong> há 2+ anos sem registro de férias no sistema — vale confirmar na planilha de RH se já tiraram fora do portal.</div>
+          <div style={{flex:1,fontSize:13,color:C.txm}}><strong style={{color:C.amb}}>{prox90.length} colaborador{prox90.length>1?"es":""}</strong> com prazo para iniciar férias em até 90 dias: {prox90.slice(0,4).map(l=>l.nome.split(" ").slice(0,2).join(" ")+" (até "+fd(l.prazo_inicio)+")").join(" · ")}{prox90.length>4?" …":""}</div>
+          <Btn v="outline" sz="sm" onClick={()=>setPage("ferias")}>Ver →</Btn>
         </div>
       )}
 
@@ -428,7 +456,7 @@ function Dashboard({user,users,ferias,tarefas,comunicados,exames,candidates,setP
             <div style={{fontSize:14,fontWeight:700,marginBottom:4,color:C.txt,display:"flex",alignItems:"center",gap:8}}>
               <span style={{color:C.acc, fontSize: 16}}>📊</span> Headcount por Setor
             </div>
-            <div style={{fontSize:11,color:C.txd,marginBottom:16}}>{users.length} colaboradores no total</div>
+            <div style={{fontSize:11,color:C.txd,marginBottom:16}}>{daFolha.length} colaboradores no total</div>
             <div style={{display:"flex",flexDirection:"column",gap:9}}>
               {chartSetores.map((entry,index)=>{
                 const col=Object.values(SC)[index % Object.values(SC).length] || C.acc;
@@ -502,11 +530,11 @@ function Dashboard({user,users,ferias,tarefas,comunicados,exames,candidates,setP
             <span style={{marginLeft:"auto",fontSize:11,color:C.txd}}>{deFerias.length} pessoa{deFerias.length!==1?"s":""}</span>
           </div>
           {deFerias.length===0?<div style={{color:C.txd,fontSize:13,textAlign:"center",padding:"16px 0"}}>Ninguém de férias.</div>
-          :deFerias.slice(0,5).map(f=>{
-            const u=users.find(x=>x.id===f.userId);const col=SC[u?.setor]||C.acc;const ret=dU(f.fim);
+          :deFerias.slice(0,6).map(f=>{
+            const u=f.u;const col=SC[u?.setor]||C.acc;
             return <div key={f.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:"1px solid "+C.bdr}}>
-              <Av name={f.userName} size={28} color={col}/>
-              <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600}}>{f.userName.split(" ").slice(0,2).join(" ")}</div><div style={{fontSize:11,color:C.txd}}>Retorna em {ret}d · {fd(f.fim)}</div></div>
+              <Av name={f.nome} size={28} color={col}/>
+              <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600}}>{f.nome.split(" ").slice(0,2).join(" ")}</div><div style={{fontSize:11,color:C.txd}}>{f.fonte==="portal"?"Retorna em "+dU(f.fim)+"d · "+fd(f.fim):"Em férias segundo a folha de "+fd(folhaFerias.data)}</div></div>
               <Chip label={SL[u?.setor]||"—"} color={col}/>
             </div>;
           })}
