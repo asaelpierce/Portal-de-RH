@@ -299,7 +299,8 @@ function Login({onLogin,onPortal}){
       const sb=await initSB();if(!sb){setErr("Falha ao conectar.");setLoading(false);return;}
       // Login seguro: a comparação de senha (bcrypt) acontece dentro do Postgres via RPC,
       // a senha nunca é comparada em texto puro no cliente e o hash nunca volta pro navegador.
-      const{data,error}=await sb.rpc("verify_login",{p_email:e.trim(),p_password:(p||pass).trim()});
+      // E-mail em minúsculas: o banco compara letra a letra e o celular costuma pôr a 1ª letra maiúscula.
+      const{data,error}=await sb.rpc("verify_login",{p_email:e.trim().toLowerCase(),p_password:(p||pass).trim()});
       const row=Array.isArray(data)?data[0]:data;
       if(error||!row){setErr("E-mail ou senha incorretos.");setLoading(false);}else onLogin(mu(row));
     }catch(ex){setErr("Erro: "+ex.message);setLoading(false);}
