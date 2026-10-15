@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 // Portal: janelas e avisos são desenhados direto no <body>, fora das telas (ver Modal).
 import { createPortal } from "react-dom";
 import { gerarXlsx } from "./planilhaXlsx.js";
+import { DOCUMENTOS_ADMISSAO, preencherDocx, faltandoPara } from "./documentosAdmissao.js";
 // Leitura do relatório de saldos da folha BRIT e geração do formulário Word de férias (ver o arquivo para o porquê).
 import { lerRelatorioFerias, preencherFormularioFerias, OPCOES_FERIAS, addDias, diasEntre, addAnos, br as dataBR, emailFeriasAprovadasHtml } from "./feriasFolha.js";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Legend, ReferenceLine } from "recharts";
@@ -1953,6 +1954,34 @@ function Equipe({user,users,ferias}){
 function Colaboradores({users,setUsers,currentUser}){
   const[busca,setBusca]=useState("");const[fSetor,setFSetor]=useState("todos");const[fRole,setFRole]=useState("todos");const[fArea,setFArea]=useState("todas");const[sel,setSel]=useState(null);
   const[modalMov,setModalMov]=useState(null); // colaborador sendo movido
+  // Kit de admissão (RH): CTPS e endereço ficam em tabela protegida, lidos/gravados só por funções que exigem RH.
+  const[modalDocs,setModalDocs]=useState(null);
+  const[docs,setDocs]=useState({ctps:"",endereco:"",carregando:false,salvando:false,gerando:"",erro:"",ok:"",salvoEm:null});
+  const ehRH=can(currentUser.role,"rh");
+  const abrirDocs=async(u,e)=>{
+    e?.stopPropagation();setModalDocs(u);setDocs({ctps:"",endereco:"",carregando:true,salvando:false,gerando:"",erro:"",ok:"",salvoEm:null});
+    const{data,error}=await getSB().rpc("dados_documentos",{p_usuario_id:u.id,p_pedido_por:currentUser.id});
+    const r=Array.isArray(data)?data[0]:data;
+    setDocs(d=>({...d,carregando:false,ctps:r?.ctps||"",endereco:r?.endereco||"",salvoEm:r?.atualizado_em||null,erro:error?(error.message||"Não foi possível carregar os dados."):""}));
+  };
+  const salvarDadosDocs=async()=>{
+    setDocs(d=>({...d,salvando:true,erro:"",ok:""}));
+    const{data,error}=await getSB().rpc("salvar_dados_documentos",{p_pedido_por:currentUser.id,p_usuario_id:modalDocs.id,p_ctps:docs.ctps,p_endereco:docs.endereco});
+    setDocs(d=>({...d,salvando:false,erro:error?(error.message||"Não foi possível salvar."):"",ok:error?"":"Dados salvos.",salvoEm:error?d.salvoEm:data}));
+  };
+  const dadosDoc=u=>({nome:u?.name||"",cargo:u?.cargo||"",admissao:u?.admissao||"",ctps:docs.ctps.trim(),endereco:docs.endereco.trim()});
+  const ROTULO_FALTA={nome:"nome",cargo:"cargo",admissao:"data de admissão",ctps:"CTPS",endereco:"endereço"};
+  const baixarDoc=async doc=>{
+    setDocs(d=>({...d,gerando:doc.id,erro:"",ok:""}));
+    try{
+      const resp=await fetch(doc.modelo);if(!resp.ok)throw new Error("Modelo do documento não encontrado no portal.");
+      const out=await preencherDocx(await resp.arrayBuffer(),doc.trocas(dadosDoc(modalDocs)));
+      const blob=out instanceof Blob?out:new Blob([out],{type:"application/vnd.openxmlformats-officedocument.wordprocessingml.document"});
+      const url=URL.createObjectURL(blob),a=document.createElement("a");
+      a.href=url;a.download=`${doc.titulo} - ${modalDocs.name}.docx`.replace(/[\\/:*?"<>|]/g,"-");document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
+      setDocs(d=>({...d,gerando:"",ok:`"${doc.titulo}" gerado.`}));
+    }catch(err){setDocs(d=>({...d,gerando:"",erro:err.message||"Não foi possível gerar o documento."}));}
+  };
   // Por quê: a tela mostrava também os desligados (ex.: Ademar), porque não filtrava por situação.
   // Padrão: só ativos. O RH pode ver os desligados marcando a opção.
   const[verDesligados,setVerDesligados]=useState(false);
@@ -2011,12 +2040,42 @@ function Colaboradores({users,setUsers,currentUser}){
               <span>📧 {u.email||"sem e-mail"}</span><span>📅 {fd(u.admissao)}</span>
               <div style={{gridColumn:"1/-1",display:"flex",alignItems:"center",gap:8}}>Senioridade:<div style={{flex:1,height:4,background:C.s3,borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:u.senioridade+"%",background:col,borderRadius:3}}/></div><span style={{color:col,fontFamily:"'JetBrains Mono',monospace",fontSize:11}}>{u.senioridade}%</span></div>
               {u.skills.length>0&&<div style={{gridColumn:"1/-1",display:"flex",gap:4,flexWrap:"wrap"}}>{u.skills.map(sk=><Chip key={sk} label={sk} color={col}/>)}</div>}
-              {podeMovimentar&&<div style={{gridColumn:"1/-1",marginTop:4}}><Btn sz="sm" v="outline" onClick={e=>abrirMovimentacao(u,e)}>⇄ Movimentar setor/área</Btn></div>}
+              {(podeMovimentar||ehRH)&&<div style={{gridColumn:"1/-1",marginTop:4,display:"flex",gap:8,flexWrap:"wrap"}}>
+                {podeMovimentar&&<Btn sz="sm" v="outline" onClick={e=>abrirMovimentacao(u,e)}>⇄ Movimentar setor/área</Btn>}
+                {ehRH&&<Btn sz="sm" v="outline" title="Gerar carta de boas-vindas, termo de conduta e acordo de banco de horas já preenchidos" onClick={e=>abrirDocs(u,e)}>📄 Documentos de admissão</Btn>}
+              </div>}
             </div>}
           </Card>
         );})}
       </div>
 
+      <Modal open={!!modalDocs} onClose={()=>setModalDocs(null)} title={"Documentos de admissão — "+(modalDocs?.name||"")} width={560}>
+        {modalDocs&&<div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <div style={{fontSize:13,color:C.txm,background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"8px 12px"}}>
+            {modalDocs.cargo||"Cargo não informado"} · admissão {modalDocs.admissao?fd(modalDocs.admissao):"não informada"}{modalDocs.cadastro?" · cad. "+modalDocs.cadastro:""}
+          </div>
+          {docs.carregando?<div style={{display:"flex",gap:8,alignItems:"center",color:C.txm,fontSize:13}}><Spin size={14}/> Carregando dados…</div>:<>
+            <div style={{fontSize:12,color:C.txd}}>CTPS e endereço são usados no Acordo de banco de horas. Ficam guardados no cadastro, visíveis só para o RH.</div>
+            <Inp label="CTPS (número e série)" value={docs.ctps} onChange={e=>setDocs({...docs,ctps:e.target.value,ok:""})} placeholder="Ex.: 1234567 série 0010-MG"/>
+            <Inp label="Endereço completo" value={docs.endereco} onChange={e=>setDocs({...docs,endereco:e.target.value,ok:""})} placeholder="Rua, número, bairro, cidade/UF, CEP"/>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <span style={{fontSize:11,color:C.txd}}>{docs.salvoEm?"Salvo em "+new Date(docs.salvoEm).toLocaleString("pt-BR"):"Ainda não salvo"}</span>
+              <Btn sz="sm" v="outline" onClick={salvarDadosDocs} disabled={docs.salvando}>{docs.salvando?<Spin size={12}/>:null} Salvar dados</Btn>
+            </div>
+            <div style={{borderTop:"1px solid "+C.bdr,paddingTop:12,display:"flex",flexDirection:"column",gap:8}}>
+              {DOCUMENTOS_ADMISSAO.map(doc=>{const falta=faltandoPara(doc,dadosDoc(modalDocs));return(
+                <div key={doc.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  <div style={{minWidth:0}}><div style={{fontSize:14,fontWeight:600}}>{doc.titulo}</div>
+                    {falta.length>0&&<div style={{fontSize:12,color:C.amb}}>Falta: {falta.map(k=>ROTULO_FALTA[k]).join(", ")}</div>}</div>
+                  <Btn sz="sm" onClick={()=>baixarDoc(doc)} disabled={falta.length>0||!!docs.gerando} title={falta.length?"Preencha os dados que faltam":"Baixar o documento preenchido (Word)"}>{docs.gerando===doc.id?<Spin size={12} color="#fff"/>:"⬇"} Baixar</Btn>
+                </div>);})}
+              <div style={{fontSize:12,color:C.txd}}>Termo de uso de imagem: aguardando o modelo do RH.</div>
+            </div>
+          </>}
+          {docs.erro&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"9px 14px",color:C.red,fontSize:13}}>{docs.erro}</div>}
+          {docs.ok&&<div style={{background:C.grnBg,border:"1px solid "+C.grn+"25",borderRadius:8,padding:"9px 14px",color:C.grn,fontSize:13}}>{docs.ok}</div>}
+        </div>}
+      </Modal>
       <Modal open={!!modalMov} onClose={()=>setModalMov(null)} title={"Movimentar — "+(modalMov?.name||"")} width={440}>
         {modalMov&&(
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
