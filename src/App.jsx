@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 // Portal: janelas e avisos são desenhados direto no <body>, fora das telas (ver Modal).
 import { createPortal } from "react-dom";
+import { gerarXlsx } from "./planilhaXlsx.js";
 // Leitura do relatório de saldos da folha BRIT e geração do formulário Word de férias (ver o arquivo para o porquê).
 import { lerRelatorioFerias, preencherFormularioFerias, OPCOES_FERIAS, addDias, diasEntre, addAnos, br as dataBR, emailFeriasAprovadasHtml } from "./feriasFolha.js";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Legend, ReferenceLine } from "recharts";
@@ -150,10 +151,10 @@ const Spin=({size=20,color=C.acc})=><div style={{width:size,height:size,borderRa
 
 const Chip=({label,color=C.acc,dot=false})=><span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"4px 10px",borderRadius:20,background:color+"1f",color,fontSize:12,fontWeight:700,border:"1px solid "+color+"40",whiteSpace:"nowrap"}}>{dot&&<span style={{width:6,height:6,borderRadius:"50%",background:color,flexShrink:0}}/>}{label}</span>;
 
-const Btn=({children,onClick,v="primary",sz="md",disabled=false,full=false,style={}})=>{
+const Btn=({children,onClick,v="primary",sz="md",disabled=false,full=false,style={},title})=>{
   const vs={primary:{background:"linear-gradient(135deg,"+C.acc+","+C.accDk+")",color:"#fff",border:"none",boxShadow:"0 2px 8px "+C.acc+"35"},outline:{background:"transparent",color:C.txt,border:"1px solid "+C.bdrHi},ghost:{background:"transparent",color:C.txm,border:"none"},danger:{background:C.redBg,color:C.red,border:"1px solid "+C.red+"30"},success:{background:C.grnBg,color:C.grn,border:"1px solid "+C.grn+"30"},amb:{background:C.ambBg,color:C.amb,border:"1px solid "+C.amb+"30"}};
   const ss={sm:{padding:"6px 14px",fontSize:13,borderRadius:8},md:{padding:"10px 18px",fontSize:14,borderRadius:10},lg:{padding:"12px 24px",fontSize:15,borderRadius:12}};
-  return <button onClick={onClick} disabled={disabled} style={{...vs[v],...ss[sz],fontWeight:600,cursor:disabled?"not-allowed":"pointer",opacity:disabled?.5:1,display:"inline-flex",alignItems:"center",gap:8,transition:"all .15s",width:full?"100%":undefined,justifyContent:full?"center":undefined,...style}}>{children}</button>;
+  return <button onClick={onClick} disabled={disabled} title={title} style={{...vs[v],...ss[sz],fontWeight:600,cursor:disabled?"not-allowed":"pointer",opacity:disabled?.5:1,display:"inline-flex",alignItems:"center",gap:8,transition:"all .15s",width:full?"100%":undefined,justifyContent:full?"center":undefined,...style}}>{children}</button>;
 };
 
 const Card=({children,style={},onClick})=><div onClick={onClick} style={{background:C.bgCard,border:"1px solid "+C.bdr,borderRadius:16,padding:24,...style,cursor:onClick?"pointer":"auto"}}>{children}</div>;
@@ -4595,7 +4596,7 @@ const faixas=acs=>({ad:acs.filter(x=>Number(x.idade)>=18).length,ado:acs.filter(
 function FormularioEvento({slug}){
   const[ev,setEv]=useState(undefined);const[pessoas,setPessoas]=useState([]);
   const[busca,setBusca]=useState("");const[pessoa,setPessoa]=useState(null);const[jaRespondeu,setJaRespondeu]=useState(null);
-  const[vai,setVai]=useState(null);const[acs,setAcs]=useState([]);const[jaParticipou,setJaParticipou]=useState(null);const[email,setEmail]=useState("");
+  const[vai,setVai]=useState(null);const[levaAc,setLevaAc]=useState(null);const[acs,setAcs]=useState([]);const[jaParticipou,setJaParticipou]=useState(null);const[email,setEmail]=useState("");
   const[enviando,setEnviando]=useState(false);const[erro,setErro]=useState("");const[feito,setFeito]=useState(null);
   useEffect(()=>{(async()=>{
     const sb=await initSB();if(!sb){setEv(null);return;}
@@ -4613,16 +4614,24 @@ function FormularioEvento({slug}){
     const r=Array.isArray(data)?data[0]:data;if(r?.respondido_em)setJaRespondeu(r);
   };
   const f=faixas(acs);
+  // Regra do RH (15/10/2026): no máximo 1 acompanhante menor de 18 anos, e só filho(a) ou enteado(a).
+  // O banco valida a mesma regra; aqui é para avisar na hora.
+  const menores=acs.filter(a=>a.idade!==""&&Number(a.idade)<18);
+  const erroRegraMenor=menores.length>1?"É permitido levar no máximo 1 acompanhante menor de 18 anos (filho ou enteado)."
+    :menores.some(a=>a.parentesco&&!["Filho(a)","Enteado(a)"].includes(a.parentesco))?"Menores de 18 anos só podem ir se forem filho(a) ou enteado(a).":"";
   const enviar=async()=>{
     setErro("");
     if(vai===null){setErro("Responda se você vai participar.");return;}
     if(vai){
+      if(levaAc===null){setErro("Responda se vai levar acompanhantes.");return;}
+      if(levaAc&&!acs.length){setErro("Adicione os acompanhantes ou marque que vai sozinho(a).");return;}
       if(acs.some(a=>a.nome.trim().length<3||a.idade===""||!a.parentesco)){setErro("Preencha nome completo, idade e parentesco de cada acompanhante.");return;}
+      if(erroRegraMenor){setErro(erroRegraMenor);return;}
       if(jaParticipou===null){setErro("Responda se você já participou de um evento da Kalenborn.");return;}
     }
     setEnviando(true);
     const{data,error}=await getSB().rpc("responder_evento",{p_slug:slug,p_usuario_id:pessoa.id,p_vai:vai,p_email:email.trim()||null,
-      p_ja_participou:vai?jaParticipou:null,p_acompanhantes:vai?acs.map(a=>({nome:a.nome.trim(),idade:Number(a.idade),parentesco:a.parentesco})):[]});
+      p_ja_participou:vai?jaParticipou:null,p_acompanhantes:vai&&levaAc?acs.map(a=>({nome:a.nome.trim(),idade:Number(a.idade),parentesco:a.parentesco})):[]});
     setEnviando(false);
     if(error){setErro(error.message||"Não foi possível enviar. Tente novamente.");return;}
     setFeito({primeira:(Array.isArray(data)?data[0]:data)?.primeira_vez!==false});
@@ -4678,18 +4687,24 @@ function FormularioEvento({slug}){
         <>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
             <div><div style={{fontWeight:800,fontSize:16}}>{pessoa.name}</div><div style={{fontSize:13,color:C.txm}}>{tempoEmpresa(pessoa.admissao)} de empresa</div></div>
-            <button onClick={()=>{setPessoa(null);setVai(null);setAcs([]);setJaParticipou(null);setEmail("");setErro("");}} style={{background:"none",border:"none",color:C.accLt,fontSize:12,cursor:"pointer",textDecoration:"underline",whiteSpace:"nowrap"}}>Não sou eu</button>
+            <button onClick={()=>{setPessoa(null);setVai(null);setLevaAc(null);setAcs([]);setJaParticipou(null);setEmail("");setErro("");}} style={{background:"none",border:"none",color:C.accLt,fontSize:12,cursor:"pointer",textDecoration:"underline",whiteSpace:"nowrap"}}>Não sou eu</button>
           </div>
           {jaRespondeu&&<div style={{background:C.ambBg,border:"1px solid "+C.amb+"30",borderRadius:8,padding:"9px 12px",color:C.amb,fontSize:13}}>Você já respondeu em {new Date(jaRespondeu.atualizado_em).toLocaleDateString("pt-BR")}. Se enviar de novo, sua resposta anterior será substituída.</div>}
           <div><div style={{fontSize:15,fontWeight:700,marginBottom:8}}>Você vai participar?</div>{botaoSimNao(vai,v=>{setVai(v);setErro("");},"Sim, vou","Não vou")}</div>
           {vai&&<>
             <div>
+              <div style={{fontSize:15,fontWeight:700,marginBottom:8}}>Vai levar acompanhantes?</div>
+              {botaoSimNao(levaAc,v=>{setLevaAc(v);setErro("");if(v&&!acs.length)setAcs([{nome:"",idade:"",parentesco:""}]);if(!v)setAcs([]);},"Sim","Não, vou sozinho(a)")}
+            </div>
+            {levaAc&&<div>
               <div style={{fontSize:15,fontWeight:700}}>Pessoas da sua família que irão participar</div>
-              <div style={{fontSize:12,color:C.txd,margin:"2px 0 10px"}}>Nome completo, idade e parentesco de cada uma. Deixe vazio se for sozinho(a).</div>
+              <div style={{fontSize:12,color:C.txd,margin:"2px 0 6px"}}>Nome completo, idade e parentesco de cada uma.</div>
+              <div style={{fontSize:12,color:C.txm,background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"7px 10px",marginBottom:10}}>Regra do evento: no máximo <b>1 acompanhante menor de 18 anos</b>, e só se for <b>filho(a) ou enteado(a)</b>.</div>
               <div style={{display:"flex",flexDirection:"column",gap:10}}>{acs.map(linhaAc)}</div>
+              {erroRegraMenor&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"8px 12px",color:C.red,fontSize:13,marginTop:10}}>{erroRegraMenor}</div>}
               {acs.length<15&&<Btn v="outline" sz="sm" onClick={()=>setAcs([...acs,{nome:"",idade:"",parentesco:""}])} style={{marginTop:10}}>+ Adicionar acompanhante</Btn>}
               {acs.length>0&&<div style={{fontSize:13,color:C.txm,marginTop:10}}>Adultos (acima de 18): <b>{f.ad}</b> · 13 a 17 anos: <b>{f.ado}</b> · Crianças até 12: <b>{f.cr}</b></div>}
-            </div>
+            </div>}
             <div><div style={{fontSize:15,fontWeight:700,marginBottom:8}}>Você já participou de um evento da Kalenborn?</div>{botaoSimNao(jaParticipou,setJaParticipou)}</div>
           </>}
           <Inp label="Seu e-mail (opcional — para o RH mandar avisos)" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="nome@email.com"/>
@@ -4736,16 +4751,54 @@ function GestaoEventos({user,users,showToast}){
     const novo=Array.isArray(data)?data[0]:data;await carregarEventos();if(novo?.id)setEvId(novo.id);return true;
   };
   const copiar=async()=>{try{await navigator.clipboard.writeText(link);showToast?.("Link copiado.","success");}catch{showToast?.("Copie o link manualmente: "+link,"error");}};
-  // Planilha no formato do Forms (abre no Excel). ";" e BOM para acentos e colunas certas no Excel em português.
+  // Relatório final em Excel (pedido do RH, 15/10/2026): uma aba para cada parte — Resumo (totais para buffet),
+  // Convidados (1 linha por pessoa, com coluna de presença para a portaria), Por setor, Não responderam (com líder
+  // e gestor para cobrar) e Respostas (formato do antigo Forms).
   const baixar=()=>{
-    const cel=v=>{const s=String(v??"");return/[;"\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
-    const cab=["Carimbo de data/hora","Nome completo","Tempo de empresa","Setor","Situação","Acompanhantes (nome – idade – parentesco)","Qtde acompanhantes adulto (acima 18 anos)","Qtde acompanhantes 13 a 17 anos","Qtde crianças até 12 anos","Já participou de evento da Kalenborn?","E-mail"];
-    const rows=linhas.map(({u,r})=>[r?new Date(r.atualizado_em).toLocaleString("pt-BR"):"",u.name,r?.tempo_empresa||tempoEmpresa(u.admissao),SL[u.setor]||u.setor||"",
-      !r?"Não respondeu":r.vai_participar?"Vai participar":"Não vai",(r?.acompanhantes||[]).map(a=>`${a.nome} – ${a.idade} – ${a.parentesco}`).join(" | "),
-      r?r.qtd_adultos:"",r?r.qtd_13_17:"",r?r.qtd_ate_12:"",r?.ja_participou==null?"":r.ja_participou?"Sim":"Não",r?.email||""]);
-    const csv="\uFEFF"+[cab,...rows].map(l=>l.map(cel).join(";")).join("\r\n");
-    const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"})),a=document.createElement("a");
-    a.href=url;a.download=(ev?.slug||"evento")+"_respostas.csv";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
+    const nomeU=id=>users.find(u=>u.id===id)?.name||"";
+    const setorDe=u=>SL[u.setor]||u.setor||"—";
+    const faixa=idade=>Number(idade)>=18?"Adulto (18+)":Number(idade)>=13?"13 a 17 anos":"Até 12 anos";
+    const agora=new Date();
+    const cab=t=>({v:t,estilo:"negrito"});
+    // 1) Resumo
+    const acAdultos=soma("qtd_adultos"),acAdolesc=soma("qtd_13_17"),acCriancas=soma("qtd_ate_12");
+    const resumo=[[{v:ev.nome,estilo:"titulo"}],["Gerado em "+agora.toLocaleString("pt-BR")+(ev.prazo?" · prazo: "+fd(ev.prazo):"")],[],
+      [cab("Inscrições")],["Colaboradores ativos (folha)",publico.length],["Responderam",resp.length],["Vão participar",vao.length],["Não vão",naoVao.length],["Faltam responder",publico.length-resp.length],[],
+      [cab("Para o buffet / fornecedor")],["Colaboradores que vão",vao.length],["Acompanhantes adultos (18 anos ou mais)",acAdultos],["Acompanhantes de 13 a 17 anos",acAdolesc],["Crianças até 12 anos",acCriancas],
+      [cab("Total de pessoas"),{v:vao.length+acAdultos+acAdolesc+acCriancas,estilo:"negrito"}],[],
+      ["Obs.: a idade do colaborador não é perguntada no formulário; colaboradores aparecem à parte das faixas de idade."]];
+    // 2) Convidados — colaborador seguido dos seus acompanhantes
+    const conv=[["Nº","Nome","Tipo","Idade","Faixa","Parentesco","Colaborador responsável","Setor","Presença"]];let n=0;
+    for(const{u,r}of linhas.filter(x=>x.r?.vai_participar)){
+      conv.push([++n,u.name,"Colaborador","","Colaborador","","",setorDe(u),""]);
+      for(const ac of r.acompanhantes||[])conv.push([++n,ac.nome,"Acompanhante",Number(ac.idade),faixa(ac.idade),ac.parentesco,u.name,setorDe(u),""]);
+    }
+    // 3) Por setor
+    const setores=[...new Set(publico.map(setorDe))].sort();
+    const ps=[["Setor","Colaboradores ativos","Responderam","Vão","Não vão","Faltam","Acomp. adultos (18+)","Acomp. 13 a 17","Crianças até 12","Total de pessoas"]];
+    const tot=Array(9).fill(0);
+    for(const st of setores){
+      const ls=linhas.filter(x=>setorDe(x.u)===st),v=ls.filter(x=>x.r?.vai_participar).map(x=>x.r);
+      const lin=[ls.length,ls.filter(x=>x.r).length,v.length,ls.filter(x=>x.r&&!x.r.vai_participar).length,ls.filter(x=>!x.r).length,
+        v.reduce((s2,r)=>s2+r.qtd_adultos,0),v.reduce((s2,r)=>s2+r.qtd_13_17,0),v.reduce((s2,r)=>s2+r.qtd_ate_12,0),0];
+      lin[8]=lin[2]+lin[5]+lin[6]+lin[7];lin.forEach((x,k)=>tot[k]+=x);ps.push([st,...lin]);
+    }
+    ps.push([cab("TOTAL"),...tot.map(x=>({v:x,estilo:"negrito"}))]);
+    // 4) Não responderam — com líder e gestor para cobrar
+    const nr=[["Nome","Setor","Área","Líder imediato","Gestor"],...linhas.filter(x=>!x.r).map(({u})=>[u.name,setorDe(u),AL[u.area]||u.area||"",nomeU(u.liderId),nomeU(u.gestorId)])];
+    // 5) Respostas no formato do Forms
+    const fr=[["Carimbo de data/hora","Nome completo","Tempo de empresa","Setor","Situação","Acompanhantes (nome – idade – parentesco)","Qtde acompanhantes adulto (acima 18 anos)","Qtde acompanhantes 13 a 17 anos","Qtde crianças até 12 anos","Já participou de evento da Kalenborn?","E-mail"],
+      ...linhas.filter(x=>x.r).map(({u,r})=>[new Date(r.atualizado_em).toLocaleString("pt-BR"),u.name,r.tempo_empresa||tempoEmpresa(u.admissao),setorDe(u),r.vai_participar?"Vai participar":"Não vai",
+        (r.acompanhantes||[]).map(x=>`${x.nome} – ${x.idade} – ${x.parentesco}`).join(" | "),r.qtd_adultos,r.qtd_13_17,r.qtd_ate_12,r.ja_participou==null?"":r.ja_participou?"Sim":"Não",r.email||""])];
+    const bytes=gerarXlsx([
+      {nome:"Resumo",larguras:[44,14],linhas:resumo},
+      {nome:"Convidados",larguras:[6,38,14,7,15,24,34,16,12],cabecalho:0,linhas:conv},
+      {nome:"Por setor",larguras:[18,12,12,8,9,9,14,13,13,13],cabecalho:0,linhas:ps},
+      {nome:"Não responderam",larguras:[38,16,22,32,32],cabecalho:0,linhas:nr},
+      {nome:"Respostas",larguras:[20,36,18,16,15,60,14,14,14,16,30],cabecalho:0,linhas:fr},
+    ]);
+    const url=URL.createObjectURL(new Blob([bytes],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})),el=document.createElement("a");
+    el.href=url;el.download=`${ev?.slug||"evento"}_relatorio_${hojeISO()}.xlsx`;document.body.appendChild(el);el.click();el.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
   };
   const ind=(v,l,cor=C.acc)=><div style={{flex:"1 1 130px",background:C.s2,border:"1px solid "+C.bdr,borderRadius:12,padding:"12px 14px"}}><div style={{fontSize:22,fontWeight:800,color:cor}}>{v}</div><div style={{fontSize:11,color:C.txd,textTransform:"uppercase",letterSpacing:".04em",marginTop:2}}>{l}</div></div>;
   if(eventos===null)return<div style={{display:"flex",gap:10,alignItems:"center",color:C.txm}}><Spin size={16}/> Carregando eventos…</div>;
@@ -4770,7 +4823,7 @@ function GestaoEventos({user,users,showToast}){
               </div>
             </div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-              <Btn sz="sm" v="outline" onClick={baixar}>⬇ Baixar planilha</Btn>
+              <Btn sz="sm" v="outline" onClick={baixar} title="Excel com Resumo, Convidados, Por setor, Não responderam e Respostas">⬇ Baixar relatório (Excel)</Btn>
               <Btn sz="sm" v="outline" onClick={()=>{setForm({nome:ev.nome,prazo:ev.prazo||""});setErroForm("");setModal({modo:"editar"});}}>Editar</Btn>
               <Btn sz="sm" v={ev.aberto?"danger":"success"} onClick={async()=>{if(await salvar({id:ev.id,nome:ev.nome,prazo:ev.prazo,aberto:!ev.aberto}))showToast?.(ev.aberto?"Inscrições encerradas.":"Inscrições reabertas.","success");}}>{ev.aberto?"Encerrar inscrições":"Reabrir inscrições"}</Btn>
             </div>
