@@ -46,6 +46,16 @@ async function callProxy(action, payload){
   }
 }
 
+// Função "curriculos" do servidor: lê PDF/Word/foto com IA, guarda o arquivo e grava o candidato (ver supabase/functions/curriculos).
+async function callCurriculos(payload){
+  try{
+    const r=await fetch(`${SB_URL}/functions/v1/curriculos`,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+SB_KEY},body:JSON.stringify(payload)});
+    return await r.json();
+  }catch(e){console.error(e);return{ok:false,error:"Falha de rede: "+e.message};}
+}
+// Função (e não objeto): as cores C são definidas mais abaixo no arquivo; um objeto aqui quebraria o carregamento.
+const sugestaoIA=s=>({aprovado:["Sugestão da IA: aprovar",C.grn],revisao:["Sugestão da IA: revisar",C.amb],rejeitado:["Sugestão da IA: não avançar",C.red]})[s];
+
 async function gpt(msgs,sys="Analista de RH Kalenborn. Responda em português."){
   const d=await callProxy("gpt",{msgs,sys});
   return d.ok?d.text:"";
@@ -125,7 +135,10 @@ const mf=f=>({id:f.id,userId:f.user_id,userName:f.user_name,setor:f.setor,tipo:f
 const mfb=fb=>({id:fb.id,fromId:fb.from_id,fromName:fb.from_name,fromRole:fb.from_role,toId:fb.to_id,toName:fb.to_name,toRole:fb.to_role,tipo:fb.tipo,texto:fb.texto,sigiloso:fb.sigiloso,createdAt:fb.created_at});
 const mch=m=>({id:m.id,fromId:m.from_id,fromName:m.from_name,toId:m.to_id,toName:m.to_name,texto:m.texto,lido:m.lido,createdAt:m.created_at});
 const mav=a=>({id:a.id,avaliadoId:a.avaliado_id,avaliadoName:a.avaliado_name,avaliadorId:a.avaliador_id,avaliadorName:a.avaliador_name,periodo:a.periodo,status:a.status,notas:{qualidade:a.nota_qualidade,produtividade:a.nota_produtividade,trabalhoEquipe:a.nota_trabalho_equipe,pontualidade:a.nota_pontualidade,iniciativa:a.nota_iniciativa},comentario:a.comentario,createdAt:a.created_at});
-const mc=c=>({id:c.id,name:c.name,role:c.role,vaga:"#"+(c.vaga_id||""),email:c.email||"",phone:c.phone||"",score:c.score??null,tech:c.tech??null,behavior:c.behavior??null,status:c.status||"pendente",salarioPret:c.salario_pret||"",pcd:c.pcd,resumo:c.resumo||"",habilidades:c.habilidades||[],emailEnviado:c.email_enviado,noBanco:c.no_banco_talentos,experienciaAnos:c.experiencia_anos??null,formacao:c.formacao||"",certificacoes:c.certificacoes||[],areaSugerida:c.area_sugerida||"",vagaSugeridaConfianca:c.vaga_sugerida_confianca||""});
+const mc=c=>({id:c.id,name:c.name,role:c.role,vaga:"#"+(c.vaga_id||""),email:c.email||"",phone:c.phone||"",score:c.score??null,tech:c.tech??null,behavior:c.behavior??null,status:c.status||"pendente",salarioPret:c.salario_pret||"",pcd:c.pcd,resumo:c.resumo||"",habilidades:c.habilidades||[],emailEnviado:c.email_enviado,noBanco:c.no_banco_talentos,experienciaAnos:c.experiencia_anos??null,formacao:c.formacao||"",certificacoes:c.certificacoes||[],areaSugerida:c.area_sugerida||"",vagaSugeridaConfianca:c.vaga_sugerida_confianca||"",
+  // Captura nova (15/10/2026): dados extraídos do currículo, arquivo original e SUGESTÃO da IA (o RH decide o status).
+  cidade:c.cidade||"",linkedin:c.linkedin||"",experiencias:c.experiencias||[],idiomas:c.idiomas||[],cnh:c.cnh||"",
+  arquivoNome:c.arquivo_nome||"",origem:c.origem||"",sugestaoIa:c.sugestao_ia||"",analiseIa:c.analise_ia||null});
 const mv=v=>({id:v.id,title:v.title,area:v.area,local:v.local,tipo:v.tipo,desc:v.descricao,salario:v.salario||"",requisitos:v.requisitos||"",prazoEncerramento:v.prazo_encerramento,ativa:v.ativa,movimentacaoId:v.movimentacao_id});
 const mtal=t=>({id:t.id,cId:t.candidato_id,name:t.name,email:t.email||"",phone:t.phone||"",role:t.role||"",vagaId:t.vaga_id||"",score:t.score??null,habs:t.habilidades||[],resumo:t.resumo||"",motivo:t.motivo_arquivo||"",tags:t.tags||[],createdAt:t.created_at});
 const mcom=c=>({id:c.id,titulo:c.titulo,corpo:c.corpo,autorId:c.autor_id,autorName:c.autor_name,tipo:c.tipo,setores:c.setores||[],fixado:c.fixado,createdAt:c.created_at});
@@ -1685,17 +1698,24 @@ function Recrutamento({user,candidates,setCandidates,talentos,setTalentos,vagas:
               <div className="fadeIn" style={{marginTop:14,paddingTop:14,borderTop:"1px solid "+C.bdr}}>
                 <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:10,marginBottom:12,fontSize:12,color:C.txm}}>
                   <span>📧 {c.email||"—"}</span><span>📱 {c.phone||"—"}</span>
+                  {c.cidade&&<span>📍 {c.cidade}</span>}{c.cnh&&<span>🚗 CNH {c.cnh}</span>}
                   <span>💰 {c.salarioPret||"—"}</span><span>♿ PcD: {c.pcd?"Sim":"Não"}</span>
                   {c.experienciaAnos!=null&&<span>⏱ {c.experienciaAnos} anos de experiência</span>}
                   {c.formacao&&<span>🎓 {c.formacao}</span>}
                 </div>
                 {c.certificacoes?.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:10}}>{c.certificacoes.map(cert=><Chip key={cert} label={"📜 "+cert} color={C.blu}/>)}</div>}
+                {(c.sugestaoIa||c.origem)&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+                  {sugestaoIA(c.sugestaoIa)&&<Chip label={sugestaoIA(c.sugestaoIa)[0]} color={sugestaoIA(c.sugestaoIa)[1]}/>}
+                  {c.origem&&<Chip label={c.origem==="email"?"Chegou pelo e-mail do RH":"Enviado pelo portal"} color={C.txd}/>}</div>}
+                {c.experiencias?.length>0&&<div style={{fontSize:12,color:C.txm,marginBottom:10,display:"flex",flexDirection:"column",gap:2}}>
+                  {c.experiencias.map((x,i)=><div key={i}>💼 {[x.cargo,x.empresa].filter(Boolean).join(" — ")}{x.periodo?" ("+x.periodo+")":""}</div>)}</div>}
                 {c.resumo&&<div style={{fontSize:12,color:C.txm,marginBottom:12,lineHeight:1.5}}>{c.resumo}</div>}
                 {c.habilidades?.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:14}}>{c.habilidades.map(h=><Chip key={h} label={h} color={C.acc}/>)}</div>}
                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                   {["aprovado","revisao","rejeitado"].map(s=><Btn key={s} sz="sm" v={s==="aprovado"?"success":s==="rejeitado"?"danger":"outline"} onClick={e=>{e.stopPropagation();updStatus(c.id,s);}}>{s==="aprovado"?"✓ Aprovar":s==="rejeitado"?"✗ Rejeitar":"↺ Revisão"}</Btn>)}
                   {c.status==="aprovado"&&onIniciarAdmissao&&can(user.role,"rh")&&<Btn sz="sm" title="Contratar: gera o link da ficha de registro para o candidato preencher" onClick={e=>{e.stopPropagation();onIniciarAdmissao(c);}}>📋 Iniciar admissão</Btn>}
                   <Btn sz="sm" v="outline" onClick={e=>{e.stopPropagation();setEmailModal(c);setEmailTxt("");gerarEmail(c,c.status);}}>✉ Gerar Email</Btn>
+                  {c.arquivoNome&&<Btn sz="sm" v="outline" title={"Abrir o arquivo original: "+c.arquivoNome} onClick={async e=>{e.stopPropagation();const w=window.open("","_blank");const r=await callCurriculos({acao:"url",pedido_por:user.id,candidato_id:c.id});if(r?.ok&&w)w.location=r.url;else{w?.close();showToast?.(r?.error||"Não foi possível abrir o currículo.","error");}}}>📄 Ver currículo</Btn>}
                   {c.status==="rejeitado"&&!c.noBanco&&<Btn sz="sm" v="ghost" onClick={e=>{e.stopPropagation();moverBanco(c);}}>♦ Banco</Btn>}
                 </div>
               </div>
@@ -4582,147 +4602,138 @@ function Contratacao(props){
       {tab==="recrutamento"&&<Recrutamento {...props} onIniciarAdmissao={iniciarAdmissao}/>}
       {tab==="admissoes"&&<GestaoAdmissoes user={props.user} showToast={props.showToast} destaque={destaqueAdm}/>}
       {tab==="talentos"&&<BancoTalentos {...props}/>}
-      {tab==="upload_cvs"&&<UploadCVs vagas={props.vagas} setCandidates={props.setCandidates} setTalentos={props.setTalentos} criarTarefaAuto={props.criarTarefaAuto}/>}
+      {tab==="upload_cvs"&&<UploadCVs user={props.user} vagas={props.vagas} setCandidates={props.setCandidates} setTalentos={props.setTalentos} criarTarefaAuto={props.criarTarefaAuto}/>}
     </div>
   );
 }
 
 
 // UPLOAD CVs
-function UploadCVs({vagas,setCandidates,setTalentos,criarTarefaAuto}){
+// Captura de currículos (15/10/2026): arrastar PDF, Word ou foto → função "curriculos" no servidor (a mesma usada pelo
+// Power Automate do e-mail do RH). A IA lê o arquivo direto (inclusive escaneado), extrai os dados e SUGERE; o
+// candidato entra como "pendente" e quem decide é o RH. Antes: só PDF com texto, nome vinha do nome do arquivo,
+// sem e-mail/telefone, texto enviado a um extrator externo e a IA aprovava/rejeitava sozinha.
+const ACEITOS=".pdf,.docx,.jpg,.jpeg,.png,.webp";
+function UploadCVs({user,vagas,setCandidates,setTalentos,criarTarefaAuto}){
   const[uploads,setUploads]=useState([]);const[vagaSel,setVagaSel]=useState("auto");const fileRef=useRef();
-
   const processar=async up=>{
-    const id=up.id;const upd=p=>setUploads(prev=>prev.map(u=>u.id===id?{...u,...p}:u));
-    upd({status:"extraindo",progress:20});
-    const txt=await extractPDF(up.file);
-    // Por quê: antes, sem texto do PDF a IA "avaliava" só o nome do arquivo e dava nota mesmo assim.
-    if(!txt||!txt.trim()){upd({status:"erro",progress:100,erro:"Não foi possível ler o texto do PDF (pode ser imagem escaneada)."});return;}
-    upd({progress:45,status:"analisando"});
-
+    const upd=p=>setUploads(prev=>prev.map(u=>u.id===up.id?{...u,...p}:u));
+    if(up.file.size>10*1024*1024){upd({status:"erro",progress:100,erro:"Arquivo maior que 10 MB."});return;}
+    upd({status:"enviando",progress:20});
+    let b64;try{b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(",")[1]||"");r.onerror=rej;r.readAsDataURL(up.file);});}
+    catch{upd({status:"erro",progress:100,erro:"Não foi possível ler o arquivo."});return;}
+    upd({status:"analisando",progress:55});
     const modoAuto=up.vaga==="auto";
-    const listaVagas=vagas.map(v=>`- id:"${v.id}" | ${v.title} (${v.area||""}) — ${(v.desc||"").substring(0,200)}`).join("\n");
-
-    const prompt=`Atue como um Recrutador Sênior muito criterioso da Kalenborn.
-${modoAuto
-  ? `Nenhuma vaga foi pré-selecionada. Analise o currículo abaixo e escolha, dentre as vagas ativas listadas, a que MAIS combina com o perfil do candidato. Se nenhuma vaga combinar bem (aderência fraca), retorne "vaga_id_sugerida": null e "area_sugerida" com a área mais provável do candidato (ex: Produção, Engenharia, Expedição, Comercial, etc.) mesmo sem vaga aberta — ele poderá ir para o Banco de Talentos.
-
-Vagas ativas:
-${listaVagas || "(nenhuma vaga ativa no momento)"}`
-  : `Vaga: ${vagas.find(x=>x.id===up.vaga)?.title||""} (${vagas.find(x=>x.id===up.vaga)?.desc||""}).`
-}
-
-Faça uma triagem rigorosa. Avalie a aderência técnica, estabilidade nas empresas anteriores e clareza. Seja rigoroso no score (0 a 100).
-Extraia também dados estruturados do currículo: anos de experiência total (número, estimado se necessário), formação principal (curso + instituição, texto curto) e certificações relevantes (lista curta).
-
-CV:
-${txt.substring(0,6000)}
-
-Retorne APENAS um JSON válido, sem markdown:
-{"score":0,"tech":0,"behavior":0,"resumo":"Resumo crítico (prós e contras)","pontosFort":["..."],"pontosAtencao":["..."],"decisao":"aprovado|revisao|rejeitado","experienciaAnos":0,"formacao":"","certificacoes":["..."],"vaga_id_sugerida":${modoAuto ? "null ou o id de uma das vagas listadas" : `"${up.vaga}"`},"area_sugerida":"","confianca_sugestao":"alta|media|baixa"}`;
-
-    try{
-      const resp=await gpt([{role:"user",content:prompt}]);
-      const a=lerAnaliseIA(resp);
-      // Sem análise válida: mostra erro e não grava (o RH reenvia). Antes entrava nota 50/50/50 inventada.
-      if(!a){upd({status:"erro",progress:100,erro:"A IA não devolveu uma análise válida. Envie o arquivo de novo."});return;}
-
-      // Só aceita vaga sugerida que exista entre as ativas (a IA pode devolver um id inexistente).
-      const sugerida=a.vaga_id_sugerida==null?null:String(a.vaga_id_sugerida);
-      const vagaFinalId = modoAuto ? (vagas.some(x=>x.id===sugerida)?sugerida:null) : up.vaga;
-      const v = vagas.find(x=>x.id===vagaFinalId);
-      upd({progress:85,resultado:a,vagaDetectada:v||null});
-
-      const sb=getSB();if(!sb){upd({status:"erro",progress:100,erro:"Sem conexão com o banco."});return;}
-      const{data,error}=await sb.from("candidatos").insert([{
-        name:up.file.name.replace(/\.pdf$/i,"").replace(/_/g," "),
-        role:v?.title||a.area_sugerida||"A definir",
-        // Por quê: "" violava a chave estrangeira candidatos.vaga_id → vagas e o candidato não era gravado.
-        vaga_id:vagaFinalId||null,
-        score:a.score,tech:a.tech,behavior:a.behavior,
-        status:STATUS_CANDIDATO.includes(a.decisao)?a.decisao:"pendente",
-        resumo:a.resumo,habilidades:a.pontosFort||[],pcd:false,salario_pret:"A definir",
-        experiencia_anos:a.experienciaAnos??null,formacao:a.formacao||"",
-        certificacoes:a.certificacoes||[],area_sugerida:a.area_sugerida||"",
-        vaga_sugerida_confianca:modoAuto?(a.confianca_sugestao||"baixa"):null,
-        no_banco_talentos:false,
-      }]).select().single();
-      // Só marca "Concluído" se o banco gravou (antes marcava antes de gravar e ignorava o erro).
-      if(error||!data){upd({status:"erro",progress:100,erro:"Análise feita, mas não foi possível salvar o candidato."});console.error(error);return;}
-      let cand=mc(data);
-
-      // Sem vaga compatível: inclui de fato no Banco de Talentos (antes só marcava a flag, sem registro).
-      if(modoAuto&&!vagaFinalId){
-        const{data:tal,error:eTal}=await sb.from("banco_talentos").insert([{candidato_id:data.id,name:data.name,email:data.email,phone:data.phone,role:data.role,vaga_id:null,score:data.score,habilidades:data.habilidades,resumo:data.resumo,motivo_arquivo:"Sem vaga ativa compatível (upload de CV)"}]).select().single();
-        if(tal){
-          setTalentos?.(p=>[mtal(tal),...p]);
-          const{error:eFlag}=await sb.from("candidatos").update({no_banco_talentos:true}).eq("id",data.id);
-          if(!eFlag)cand={...cand,noBanco:true};
-        } else console.error(eTal);
-      }
-      setCandidates(p=>[...p,cand]);
-      upd({status:"concluido",progress:100});
-      if(criarTarefaAuto) criarTarefaAuto(`Decidir: ${data.name}`, `${v?"Vaga: "+v.title:"Sem vaga ativa compatível · Área sugerida: "+(a.area_sugerida||"—")}\nPontuação IA: ${a.score}\nResumo: ${a.resumo}`, a.score>=70?"baixa":a.score>=40?"media":"alta", ["recrutamento"], "candidatos", data.id);
-    }catch(e){upd({status:"erro",progress:100,erro:"Erro na análise IA."});}
+    const r=await callCurriculos({pedido_por:user?.id,nome_arquivo:up.file.name,mime:up.file.type,arquivo_base64:b64,vaga_id:modoAuto?null:up.vaga});
+    if(!r?.ok){upd({status:"erro",progress:100,erro:r?.error||"Falha ao analisar o currículo."});return;}
+    const data=r.candidato;let cand=mc(data);
+    const v=vagas.find(x=>String(x.id)===String(data.vaga_id))||null;
+    // Sem vaga compatível (modo automático, currículo novo): entra também no Banco de Talentos.
+    if(modoAuto&&!data.vaga_id&&!r.duplicado){
+      const sb=getSB();
+      const{data:tal,error:eTal}=await sb.from("banco_talentos").insert([{candidato_id:data.id,name:data.name,email:data.email,phone:data.phone,role:data.role,vaga_id:null,score:data.score,habilidades:data.habilidades,resumo:data.resumo,origem:"Upload de CV — sem vaga compatível"}]).select().single();
+      if(tal){setTalentos?.(p=>[mtal(tal),...p]);const{error:eF}=await sb.from("candidatos").update({no_banco_talentos:true}).eq("id",data.id);if(!eF)cand={...cand,noBanco:true};}
+      else console.error(eTal);
+    }
+    setCandidates(p=>r.duplicado?p.map(c=>c.id===cand.id?cand:c):[...p,cand]);
+    upd({status:"concluido",progress:100,resultado:data,duplicado:!!r.duplicado,vagaDetectada:v});
+    if(criarTarefaAuto&&!r.duplicado)criarTarefaAuto(`Decidir: ${data.name}`,`${v?"Vaga: "+v.title:"Sem vaga ativa compatível · Área sugerida: "+(data.area_sugerida||"—")}\nPontuação sugerida pela IA: ${data.score??"—"}\nResumo: ${data.resumo||""}`,(data.score??0)>=70?"baixa":"media");
   };
-
   const addFiles=files=>{const novos=Array.from(files).map(f=>({id:Date.now()+Math.random(),file:f,vaga:vagaSel,status:"aguardando",progress:0,resultado:null,vagaDetectada:null}));setUploads(p=>[...p,...novos]);novos.forEach(processar);};
-  const sCfg={aguardando:{l:"Aguardando",c:C.txd},extraindo:{l:"Extraindo PDF",c:C.blu},analisando:{l:"Analisando IA",c:C.acc},concluido:{l:"Concluído",c:C.grn},erro:{l:"Erro",c:C.red}};
-
+  const sCfg={aguardando:{l:"Aguardando",c:C.txd},enviando:{l:"Enviando",c:C.blu},analisando:{l:"IA lendo o currículo",c:C.acc},concluido:{l:"Concluído",c:C.grn},erro:{l:"Erro",c:C.red}};
   return(
     <div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:20}}>
-      <div><div style={{fontSize:22,fontWeight:800,letterSpacing:"-.02em"}}>Upload de Currículos</div><div style={{fontSize:13,color:C.txm,marginTop:2}}>Análise automática via GPT-4o · detecta a vaga/área ideal sozinha, se preferir</div></div>
+      <div><div style={{fontSize:22,fontWeight:800,letterSpacing:"-.02em"}}>Upload de Currículos</div>
+        <div style={{fontSize:13,color:C.txm,marginTop:2}}>PDF, Word ou foto. A IA lê o currículo (inclusive escaneado), extrai nome, contato, experiências e formação, e sugere uma avaliação. Quem aprova ou rejeita é o RH.</div></div>
       <Card>
         <div style={{marginBottom:14}}><Sel label="Vaga" value={vagaSel} onChange={e=>setVagaSel(e.target.value)} options={[{value:"auto",label:"🤖 Detectar automaticamente"},...vagas.map(v=>({value:v.id,label:"#"+v.id+" — "+v.title}))]}/></div>
-        {vagaSel==="auto"&&<div style={{background:C.accBg,borderRadius:9,padding:"10px 14px",fontSize:12,color:C.accLt,marginBottom:14}}>🤖 A IA vai ler cada currículo e escolher sozinha a vaga ativa que mais combina — ou sugerir a área, caso nenhuma vaga aberta seja compatível (o candidato vai direto pro Banco de Talentos).</div>}
-        <div onClick={()=>fileRef.current?.click()} onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=C.acc;}} onDragLeave={e=>e.currentTarget.style.borderColor=C.bdr} onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor=C.bdr;addFiles(e.dataTransfer.files);}} style={{border:"2px dashed "+C.bdr,borderRadius:12,padding:36,textAlign:"center",cursor:"pointer",transition:"all .2s"}} onMouseEnter={e=>e.currentTarget.style.borderColor=C.acc} onMouseLeave={e=>e.currentTarget.style.borderColor=C.bdr}>
-          <input ref={fileRef} type="file" accept=".pdf" multiple style={{display:"none"}} onChange={e=>addFiles(e.target.files)}/>
-          <div style={{fontSize:32,marginBottom:8}}>⇧</div><div style={{fontWeight:600,marginBottom:4}}>Arraste PDFs ou clique</div><div style={{fontSize:12,color:C.txd}}>Múltiplos arquivos · Análise em background</div>
+        {vagaSel==="auto"&&<div style={{background:C.accBg,borderRadius:9,padding:"10px 14px",fontSize:12,color:C.accLt,marginBottom:14}}>🤖 A IA sugere a vaga ativa que mais combina com cada currículo. Sem vaga compatível, o candidato vai também para o Banco de Talentos.</div>}
+        <div role="button" tabIndex={0} onKeyDown={e=>{if(e.key==="Enter"||e.key===" ")fileRef.current?.click();}} onClick={()=>fileRef.current?.click()} onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=C.acc;}} onDragLeave={e=>e.currentTarget.style.borderColor=C.bdr} onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor=C.bdr;addFiles(e.dataTransfer.files);}}
+          style={{border:"2px dashed "+C.bdr,borderRadius:12,padding:"28px 16px",textAlign:"center",cursor:"pointer"}}>
+          <input ref={fileRef} type="file" accept={ACEITOS} multiple style={{display:"none"}} onChange={e=>{addFiles(e.target.files);e.target.value="";}}/>
+          <div style={{fontSize:32,marginBottom:8}}>⇧</div><div style={{fontWeight:600,marginBottom:4}}>Arraste os currículos aqui ou clique para escolher</div>
+          <div style={{fontSize:12,color:C.txd}}>PDF, Word (.docx) ou foto (JPG/PNG) · vários de uma vez · até 10 MB cada</div>
         </div>
+        <div style={{fontSize:12,color:C.txd,marginTop:10}}>Os currículos que chegam no e-mail do RH entram sozinhos pelo Power Automate (Configurações › Captura de currículos por e-mail).</div>
       </Card>
-      {uploads.map(u=>{const cfg=sCfg[u.status]||sCfg.aguardando;const vagaMostrar=u.vaga==="auto"?u.vagaDetectada:vagas.find(x=>x.id===u.vaga);return(
+      {uploads.map(u=>{const cfg=sCfg[u.status]||sCfg.aguardando;const r=u.resultado;const vagaMostrar=u.vaga==="auto"?u.vagaDetectada:vagas.find(x=>x.id===u.vaga);const sug=r&&sugestaoIA(r.sugestao_ia);return(
         <Card key={u.id}>
           <div style={{display:"flex",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
-            <div>
-              <div style={{fontWeight:600,fontSize:13}}>{u.file.name}</div>
-              <div style={{fontSize:11,color:C.txd}}>
-                {u.vaga==="auto"
-                  ? (u.status==="concluido" ? (vagaMostrar?"🤖 Detectada: "+vagaMostrar.title:"🤖 Sem vaga compatível · Banco de Talentos"+(u.resultado?.area_sugerida?" · Área: "+u.resultado.area_sugerida:"")) : "🤖 Detectando vaga/área...")
-                  : (vagaMostrar?.title||"")
-                } · {(u.file.size/1024).toFixed(0)}KB
-              </div>
+            <div style={{minWidth:0}}>
+              <div style={{fontWeight:600,fontSize:13}}>{r?.name||u.file.name}{u.duplicado&&<span style={{marginLeft:8}}><Chip label="Já cadastrado — dados atualizados" color={C.blu}/></span>}</div>
+              <div style={{fontSize:11,color:C.txd}}>{u.file.name} · {(u.file.size/1024).toFixed(0)} KB{u.status==="concluido"?(vagaMostrar?" · Vaga: "+vagaMostrar.title:" · Sem vaga compatível"+(r?.area_sugerida?" · Área: "+r.area_sugerida:"")):""}</div>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:8}}>{u.status!=="concluido"&&u.status!=="erro"&&<Spin size={14} color={cfg.c}/>}<Chip label={cfg.l} color={cfg.c} dot/></div>
           </div>
-          <div style={{height:3,background:C.s3,borderRadius:3,overflow:"hidden",marginBottom:u.resultado?12:0}}><div style={{height:"100%",width:u.progress+"%",borderRadius:3,background:u.status==="erro"?C.red:C.acc,transition:"width .4s ease"}}/></div>
-          {u.resultado&&<div className="fadeIn" style={{display:"flex",flexDirection:"column",gap:8}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{fontSize:12,color:C.txm}}>{u.resultado.resumo}</div><span style={{fontSize:22,fontWeight:700,color:u.resultado.score>=80?C.grn:u.resultado.score>=60?C.amb:C.red,fontFamily:"'JetBrains Mono',monospace"}}>{u.resultado.score}</span></div>
-            <div style={{display:"flex",gap:12,flexWrap:"wrap",fontSize:11,color:C.txm}}>
-              {u.resultado.experienciaAnos!=null&&<span>⏱ {u.resultado.experienciaAnos} anos de experiência</span>}
-              {u.resultado.formacao&&<span>🎓 {u.resultado.formacao}</span>}
+          <div style={{height:3,background:C.s3,borderRadius:3,overflow:"hidden",marginBottom:r?12:0}}><div style={{height:"100%",width:u.progress+"%",borderRadius:3,background:u.status==="erro"?C.red:C.acc,transition:"width .3s"}}/></div>
+          {r&&<div className="fadeIn" style={{display:"flex",flexDirection:"column",gap:8}}>
+            <div style={{display:"flex",gap:14,flexWrap:"wrap",fontSize:12,color:C.txm}}>
+              <span>📧 {r.email||"sem e-mail no currículo"}</span><span>📱 {r.phone||"sem telefone no currículo"}</span>{r.cidade&&<span>📍 {r.cidade}</span>}
+              {r.experiencia_anos!=null&&<span>⏱ {r.experiencia_anos} anos de experiência</span>}{r.formacao&&<span>🎓 {r.formacao}</span>}
             </div>
-            {u.resultado.certificacoes?.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{u.resultado.certificacoes.map(c=><Chip key={c} label={"📜 "+c} color={C.blu}/>)}</div>}
-            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{u.resultado.pontosFort?.map(p=><Chip key={p} label={p} color={C.grn}/>)}{u.resultado.pontosAtencao?.map(p=><Chip key={p} label={p} color={C.amb}/>)}</div>
+            {r.analise_ia?.nome_do_arquivo&&<div style={{fontSize:12,color:C.amb}}>O nome não estava legível no currículo; usei o nome do arquivo. Confira no cadastro.</div>}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <div style={{fontSize:12,color:C.txm,flex:1,minWidth:200}}>{r.resumo}</div>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>{sug&&<Chip label={sug[0]} color={sug[1]}/>}<span title="Pontuação sugerida pela IA" style={{fontSize:22,fontWeight:700,color:(r.score??0)>=80?C.grn:(r.score??0)>=60?C.amb:C.red}}>{r.score??"—"}</span></div>
+            </div>
+            {r.certificacoes?.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{r.certificacoes.map(c=><Chip key={c} label={"📜 "+c} color={C.blu}/>)}</div>}
+            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{(r.analise_ia?.pontos_fortes||[]).map(p=><Chip key={p} label={p} color={C.grn}/>)}{(r.analise_ia?.pontos_atencao||[]).map(p=><Chip key={p} label={p} color={C.amb}/>)}</div>
           </div>}
           {u.erro&&<div style={{fontSize:12,color:C.red}}>{u.erro}</div>}
-        </Card>
-      );})}
-    </div>
-  );
+        </Card>);})}
+    </div>);
 }
 
 // CONFIG
+// Captura de currículos pelo e-mail do RH: o Power Automate envia cada anexo para a função "curriculos".
+// A chave só aparece quando o RH clica em "Mostrar" (é a senha da integração; quem tem a chave consegue enviar currículos).
+function IntegracaoCurriculos({user}){
+  const[chave,setChave]=useState("");const[erro,setErro]=useState("");
+  const url=`${SB_URL}/functions/v1/curriculos`;
+  const mostrar=async()=>{const{data,error}=await getSB().rpc("integracao_curriculos",{p_pedido_por:user.id});const r=Array.isArray(data)?data[0]:data;if(error||!r?.chave){setErro(error?.message||"Não foi possível obter a chave.");return;}setChave(r.chave);};
+  // O navegador pode negar acesso à área de transferência: avisa em vez de falhar calado.
+  const copiar=async t=>{try{await navigator.clipboard.writeText(t);setErro("");}catch{setErro("O navegador não permitiu copiar. Selecione o texto e copie com Ctrl+C.");}};
+  const codigo={fontFamily:"'JetBrains Mono',monospace",fontSize:12,background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"8px 10px",overflowX:"auto",whiteSpace:"pre"};
+  const corpo=`{
+  "nome_arquivo": "@{items('Aplicar_a_cada')?['name']}",
+  "mime": "@{items('Aplicar_a_cada')?['contentType']}",
+  "arquivo_base64": "@{items('Aplicar_a_cada')?['contentBytes']}"
+}`;
+  return(
+    <Card><div style={{fontSize:14,fontWeight:700,marginBottom:6}}>Captura de currículos por e-mail (Power Automate)</div>
+      <div style={{fontSize:13,color:C.txm,marginBottom:12}}>Cada currículo anexado num e-mail do RH (PDF, Word ou foto) entra sozinho em Vagas e candidatos, com o mesmo processamento do upload: a IA lê, extrai os dados e sugere; o RH decide.</div>
+      <div style={{display:"flex",flexDirection:"column",gap:10,fontSize:13}}>
+        <div><b>Endereço</b><div style={{display:"flex",gap:8,alignItems:"center",marginTop:4}}><div style={{...codigo,flex:1}}>{url}</div><Btn sz="sm" v="outline" onClick={()=>copiar(url)}>Copiar</Btn></div></div>
+        <div><b>Chave</b> <span style={{fontSize:12,color:C.txd}}>(cabeçalho <code>x-segredo</code>; não compartilhe)</span>
+          <div style={{display:"flex",gap:8,alignItems:"center",marginTop:4}}>{chave?<><div style={{...codigo,flex:1}}>{chave}</div><Btn sz="sm" v="outline" onClick={()=>copiar(chave)}>Copiar</Btn></>:<Btn sz="sm" v="outline" onClick={mostrar}>Mostrar chave</Btn>}</div>
+</div>
+        <div><b>Passo a passo no Power Automate</b>
+          <ol style={{margin:"6px 0 0 18px",padding:0,color:C.txm,lineHeight:1.7}}>
+            <li>Gatilho <b>"Quando um novo e-mail chegar (V3)"</b> (Outlook), na caixa do RH, com <b>Somente com anexos = Sim</b> e <b>Incluir anexos = Sim</b>.</li>
+            <li>Ação <b>"Aplicar a cada"</b> sobre <b>Anexos</b>.</li>
+            <li>Dentro dela, ação <b>HTTP</b>: método <b>POST</b>, o endereço acima, cabeçalhos <code>Content-Type: application/json</code> e <code>x-segredo: (a chave)</code>, e este corpo:</li>
+          </ol>
+          <div style={{...codigo,marginTop:6}}>{corpo}</div>
+          {erro&&<div style={{color:C.red,fontSize:12,marginTop:6}}>{erro}</div>}
+          <div style={{fontSize:12,color:C.txd,marginTop:6}}>A ação HTTP é um conector "Premium" do Power Automate. Assinaturas de e-mail e imagens pequenas são recusadas sozinhas (não são currículos) e não viram candidato.</div>
+        </div>
+      </div>
+    </Card>);
+}
+
 function Config({user}){
   return(
     <div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:20}}>
       <div style={{fontSize:22,fontWeight:800,letterSpacing:"-.02em"}}>Configurações</div>
       <Card><div style={{fontSize:14,fontWeight:700,marginBottom:14}}>Integrações</div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-          {[{l:"Supabase",d:"Banco de dados"},{l:"OpenAI GPT-4o",d:"Análise de CVs e emails"},{l:"Claude AI",d:"Chat e sugestões"},{l:"Render PDF API",d:"Extração de currículos"}].map(x=>(
-            <div key={x.l} style={{background:C.grnBg,border:"1px solid "+C.grn+"25",borderRadius:10,padding:"12px 16px",flex:1,minWidth:160}}><div style={{fontSize:12,color:C.grn,fontWeight:700}}>✓ {x.l}</div><div style={{fontSize:11,color:C.txd,marginTop:2}}>{x.d}</div></div>
+          {/* Antes: todos com "✓" fixo (inclusive Claude, com chave inválida, e o extrator externo de PDF, que saiu). */}
+          {[{l:"Supabase",d:"Banco de dados, arquivos e funções"},{l:"OpenAI GPT-4o",d:"Leitura e análise de currículos"},{l:"Power Automate",d:"Envio de e-mails e captura de currículos do e-mail do RH"}].map(x=>(
+            <div key={x.l} style={{background:C.s1,border:"1px solid "+C.bdr,borderRadius:10,padding:"12px 16px",flex:1,minWidth:160}}><div style={{fontSize:12,color:C.txt,fontWeight:700}}>{x.l}</div><div style={{fontSize:11,color:C.txd,marginTop:2}}>{x.d}</div></div>
           ))}
         </div>
       </Card>
+      {can(user.role,"rh")&&<IntegracaoCurriculos user={user}/>}
       <Card><div style={{fontSize:14,fontWeight:700,marginBottom:10}}>Ambiente</div><div style={{fontSize:12,color:C.txm,display:"flex",flexDirection:"column",gap:6}}><span>🗄 {SB_URL}</span><span>👤 {user.name} ({user.role})</span><span>📋 K.RH v2.0 — Kalenborn International</span></div></Card>
     </div>
   );
