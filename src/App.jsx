@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 // Portal: janelas e avisos são desenhados direto no <body>, fora das telas (ver Modal).
 import { createPortal } from "react-dom";
 import { gerarXlsx } from "./planilhaXlsx.js";
-import { DOCUMENTOS_ADMISSAO, preencherDocx, faltandoPara } from "./documentosAdmissao.js";
+import { DOCUMENTOS_ADMISSAO, preencherDocx, faltandoPara, TIPOS_AVISO, TIPOS_RESCISAO, SUGESTAO_RESCISAO, DESCONTOS_MARCAR, MODELO_RESCISAO, trocasRescisao } from "./documentosAdmissao.js";
 // Leitura do relatório de saldos da folha BRIT e geração do formulário Word de férias (ver o arquivo para o porquê).
 import { lerRelatorioFerias, preencherFormularioFerias, OPCOES_FERIAS, addDias, diasEntre, addAnos, br as dataBR, emailFeriasAprovadasHtml } from "./feriasFolha.js";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Legend, ReferenceLine } from "recharts";
@@ -1956,21 +1956,26 @@ function Colaboradores({users,setUsers,currentUser}){
   const[modalMov,setModalMov]=useState(null); // colaborador sendo movido
   // Kit de admissão (RH): CTPS e endereço ficam em tabela protegida, lidos/gravados só por funções que exigem RH.
   const[modalDocs,setModalDocs]=useState(null);
-  const[docs,setDocs]=useState({ctps:"",endereco:"",carregando:false,salvando:false,gerando:"",erro:"",ok:"",salvoEm:null});
+  const DOC_VAZIO={ctps:"",endereco:"",rg:"",cpf:"",data_nascimento:"",naturalidade:"",estado_civil:""};
+  const[docs,setDocs]=useState({...DOC_VAZIO,carregando:false,salvando:false,gerando:"",erro:"",ok:"",salvoEm:null});
   const ehRH=can(currentUser.role,"rh");
   const abrirDocs=async(u,e)=>{
-    e?.stopPropagation();setModalDocs(u);setDocs({ctps:"",endereco:"",carregando:true,salvando:false,gerando:"",erro:"",ok:"",salvoEm:null});
+    e?.stopPropagation();setModalDocs(u);setDocs({...DOC_VAZIO,carregando:true,salvando:false,gerando:"",erro:"",ok:"",salvoEm:null});
     const{data,error}=await getSB().rpc("dados_documentos",{p_usuario_id:u.id,p_pedido_por:currentUser.id});
     const r=Array.isArray(data)?data[0]:data;
-    setDocs(d=>({...d,carregando:false,ctps:r?.ctps||"",endereco:r?.endereco||"",salvoEm:r?.atualizado_em||null,erro:error?(error.message||"Não foi possível carregar os dados."):""}));
+    setDocs(d=>({...d,carregando:false,ctps:r?.ctps||"",endereco:r?.endereco||"",rg:r?.rg||"",cpf:r?.cpf||"",data_nascimento:r?.data_nascimento||"",
+      naturalidade:r?.naturalidade||"",estado_civil:r?.estado_civil||"",salvoEm:r?.atualizado_em||null,erro:error?(error.message||"Não foi possível carregar os dados."):""}));
   };
   const salvarDadosDocs=async()=>{
     setDocs(d=>({...d,salvando:true,erro:"",ok:""}));
-    const{data,error}=await getSB().rpc("salvar_dados_documentos",{p_pedido_por:currentUser.id,p_usuario_id:modalDocs.id,p_ctps:docs.ctps,p_endereco:docs.endereco});
+    // Envia SEMPRE todos os campos: a função grava o conjunto completo (campo omitido ficaria em branco).
+    const{data,error}=await getSB().rpc("salvar_dados_documentos",{p_pedido_por:currentUser.id,p_usuario_id:modalDocs.id,p_ctps:docs.ctps,p_endereco:docs.endereco,
+      p_rg:docs.rg,p_cpf:docs.cpf,p_data_nascimento:docs.data_nascimento||null,p_naturalidade:docs.naturalidade,p_estado_civil:docs.estado_civil});
     setDocs(d=>({...d,salvando:false,erro:error?(error.message||"Não foi possível salvar."):"",ok:error?"":"Dados salvos.",salvoEm:error?d.salvoEm:data}));
   };
-  const dadosDoc=u=>({nome:u?.name||"",cargo:u?.cargo||"",admissao:u?.admissao||"",ctps:docs.ctps.trim(),endereco:docs.endereco.trim()});
-  const ROTULO_FALTA={nome:"nome",cargo:"cargo",admissao:"data de admissão",ctps:"CTPS",endereco:"endereço"};
+  const dadosDoc=u=>({nome:u?.name||"",cargo:u?.cargo||"",admissao:u?.admissao||"",ctps:docs.ctps.trim(),endereco:docs.endereco.trim(),
+    rg:docs.rg.trim(),cpf:docs.cpf.trim(),data_nascimento:docs.data_nascimento||"",naturalidade:docs.naturalidade.trim(),estado_civil:docs.estado_civil});
+  const ROTULO_FALTA={nome:"nome",cargo:"cargo",admissao:"data de admissão",ctps:"CTPS",endereco:"endereço",rg:"RG",cpf:"CPF",data_nascimento:"data de nascimento",naturalidade:"local de nascimento",estado_civil:"estado civil"};
   const baixarDoc=async doc=>{
     setDocs(d=>({...d,gerando:doc.id,erro:"",ok:""}));
     try{
@@ -2055,8 +2060,15 @@ function Colaboradores({users,setUsers,currentUser}){
             {modalDocs.cargo||"Cargo não informado"} · admissão {modalDocs.admissao?fd(modalDocs.admissao):"não informada"}{modalDocs.cadastro?" · cad. "+modalDocs.cadastro:""}
           </div>
           {docs.carregando?<div style={{display:"flex",gap:8,alignItems:"center",color:C.txm,fontSize:13}}><Spin size={14}/> Carregando dados…</div>:<>
-            <div style={{fontSize:12,color:C.txd}}>CTPS e endereço são usados no Acordo de banco de horas. Ficam guardados no cadastro, visíveis só para o RH.</div>
-            <Inp label="CTPS (número e série)" value={docs.ctps} onChange={e=>setDocs({...docs,ctps:e.target.value,ok:""})} placeholder="Ex.: 1234567 série 0010-MG"/>
+            <div style={{fontSize:12,color:C.txd}}>Dados usados no Acordo de banco de horas e no Termo de uso de imagem. Ficam guardados no cadastro, visíveis só para o RH.</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:10}}>
+              <Inp label="CTPS (número e série)" value={docs.ctps} onChange={e=>setDocs({...docs,ctps:e.target.value,ok:""})} placeholder="Ex.: 1234567 série 0010-MG"/>
+              <Inp label="CPF" value={docs.cpf} onChange={e=>setDocs({...docs,cpf:e.target.value,ok:""})} placeholder="000.000.000-00"/>
+              <Inp label="RG (identidade)" value={docs.rg} onChange={e=>setDocs({...docs,rg:e.target.value,ok:""})} placeholder="Ex.: MG-12.345.678"/>
+              <Inp label="Data de nascimento" type="date" value={docs.data_nascimento} onChange={e=>setDocs({...docs,data_nascimento:e.target.value,ok:""})}/>
+              <Inp label="Local de nascimento" value={docs.naturalidade} onChange={e=>setDocs({...docs,naturalidade:e.target.value,ok:""})} placeholder="Cidade/UF"/>
+              <Sel label="Estado civil" value={docs.estado_civil} onChange={e=>setDocs({...docs,estado_civil:e.target.value,ok:""})} options={[{value:"",label:"Selecione..."},...["solteiro(a)","casado(a)","em união estável","divorciado(a)","separado(a)","viúvo(a)"].map(v=>({value:v,label:v}))]}/>
+            </div>
             <Inp label="Endereço completo" value={docs.endereco} onChange={e=>setDocs({...docs,endereco:e.target.value,ok:""})} placeholder="Rua, número, bairro, cidade/UF, CEP"/>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
               <span style={{fontSize:11,color:C.txd}}>{docs.salvoEm?"Salvo em "+new Date(docs.salvoEm).toLocaleString("pt-BR"):"Ainda não salvo"}</span>
@@ -2069,7 +2081,6 @@ function Colaboradores({users,setUsers,currentUser}){
                     {falta.length>0&&<div style={{fontSize:12,color:C.amb}}>Falta: {falta.map(k=>ROTULO_FALTA[k]).join(", ")}</div>}</div>
                   <Btn sz="sm" onClick={()=>baixarDoc(doc)} disabled={falta.length>0||!!docs.gerando} title={falta.length?"Preencha os dados que faltam":"Baixar o documento preenchido (Word)"}>{docs.gerando===doc.id?<Spin size={12} color="#fff"/>:"⬇"} Baixar</Btn>
                 </div>);})}
-              <div style={{fontSize:12,color:C.txd}}>Termo de uso de imagem: aguardando o modelo do RH.</div>
             </div>
           </>}
           {docs.erro&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"9px 14px",color:C.red,fontSize:13}}>{docs.erro}</div>}
@@ -3355,8 +3366,23 @@ function GestBeneficios({user,users,benCatalogo,setBenCatalogo,benUsuarios,setBe
 
 
 // MOVIMENTAÇÕES — Admissão e Demissão (escala Líder → Gestor → RH)
-function Movimentacoes({user,users,movs,setMovs,setUsers,vagas,setVagas}){
+function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,setVagas}){
   const[tab,setTab]=useState("pendentes");
+  // Solicitação de rescisão (modelo da BRIT): o RH escolhe aviso/tipo e informa os valores; o portal preenche o Word.
+  const RESC_VAZIA={dataAviso:"",tipoAviso:"",tipoRescisao:"",horasExtras:"",premio:"",comissoes:"",adicionalNoturno:"",outrosProventos:"",descontos:[],faltas:"",dsr:"",atrasos:"",outrosDescontos:""};
+  const[modalResc,setModalResc]=useState(null);const[resc,setResc]=useState(RESC_VAZIA);const[rescMsg,setRescMsg]=useState({erro:"",ok:"",gerando:false});
+  const abrirRescisao=mov=>{setModalResc(mov);setResc({...RESC_VAZIA,dataAviso:hojeISO(),tipoRescisao:SUGESTAO_RESCISAO[mov.tipoDemissao]||""});setRescMsg({erro:"",ok:"",gerando:false});};
+  const gerarRescisao=async()=>{
+    setRescMsg({erro:"",ok:"",gerando:true});
+    try{
+      const pessoa=todosUsuarios.find(u=>u.id===modalResc.userId)||users.find(u=>u.id===modalResc.userId);
+      const resp=await fetch(MODELO_RESCISAO);if(!resp.ok)throw new Error("Modelo da rescisão não encontrado no portal.");
+      const out=await preencherDocx(await resp.arrayBuffer(),trocasRescisao({...resc,nome:modalResc.nome||pessoa?.name||"",cadastro:pessoa?.cadastro||""}));
+      const url=URL.createObjectURL(out),a=document.createElement("a");
+      a.href=url;a.download=`Solicitação de rescisão - ${modalResc.nome||pessoa?.name||"colaborador"}.docx`.replace(/[\\/:*?"<>|]/g,"-");document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
+      setRescMsg({erro:"",ok:"Solicitação de rescisão gerada.",gerando:false});
+    }catch(err){setRescMsg({erro:err.message||"Não foi possível gerar.",ok:"",gerando:false});}
+  };
   const[modalNova,setModalNova]=useState(null); // "admissao" | "demissao" | null
   const[modalDecisao,setModalDecisao]=useState(null); // movimentação selecionada
   const[saving,setSaving]=useState(false);
@@ -3567,15 +3593,55 @@ function Movimentacoes({user,users,movs,setMovs,setUsers,vagas,setVagas}){
                     {mov.vagaCriadaId&&<Chip label={"📋 Vaga #"+mov.vagaCriadaId+" criada"} color={C.pur}/>}
                   </div>
 
-                  {acao&&<Btn sz="sm" onClick={()=>abrirModalDecisao(mov)}>
-                    {mov.status==="pendente_gestor"?"Detalhar e enviar →":mov.status==="pendente_rh"?"Decidir →":"Avaliar →"}
-                  </Btn>}
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                    {acao&&<Btn sz="sm" onClick={()=>abrirModalDecisao(mov)}>
+                      {mov.status==="pendente_gestor"?"Detalhar e enviar →":mov.status==="pendente_rh"?"Decidir →":"Avaliar →"}
+                    </Btn>}
+                    {isRH&&mov.tipo==="demissao"&&mov.status!=="rejeitado"&&<Btn sz="sm" v="outline" title="Gerar o formulário de solicitação de rescisão da BRIT preenchido (Word)" onClick={()=>abrirRescisao(mov)}>📄 Solicitação de rescisão</Btn>}
+                  </div>
                 </div>
               </div>
             </Card>
           );
         })}
       </div>
+
+      <Modal open={!!modalResc} onClose={()=>setModalResc(null)} title={"Solicitação de rescisão — "+(modalResc?.nome||"")} width={640}>
+        {modalResc&&<div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{fontSize:13,color:C.txm,background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"8px 12px"}}>
+            {TIPO_DEM[modalResc.tipoDemissao]||"Desligamento"}{modalResc.ultimoDia?" · último dia "+fd(modalResc.ultimoDia):""}{SUGESTAO_RESCISAO[modalResc.tipoDemissao]?" · tipo de rescisão sugerido pelo portal (confira)":""}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:10}}>
+            <Inp label="Data do aviso prévio *" type="date" value={resc.dataAviso} onChange={e=>setResc({...resc,dataAviso:e.target.value})}/>
+            <Sel label="Tipo de aviso *" value={resc.tipoAviso} onChange={e=>setResc({...resc,tipoAviso:e.target.value})} options={[{value:"",label:"Selecione..."},...TIPOS_AVISO.map(v=>({value:v,label:v.charAt(0)+v.slice(1).toLowerCase()}))]}/>
+          </div>
+          <Sel label="Tipo de rescisão *" value={resc.tipoRescisao} onChange={e=>setResc({...resc,tipoRescisao:e.target.value})} options={[{value:"",label:"Selecione..."},...TIPOS_RESCISAO.map(v=>({value:v,label:v.charAt(0)+v.slice(1).toLowerCase()}))]}/>
+          <div style={{fontSize:13,fontWeight:700,marginTop:4}}>Proventos <span style={{fontWeight:400,color:C.txd,fontSize:12}}>(opcional — deixe em branco o que não houver)</span></div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:10}}>
+            <Inp label="Horas extras a 65%" value={resc.horasExtras} onChange={e=>setResc({...resc,horasExtras:e.target.value})} placeholder="Ex.: 12h"/>
+            <Inp label="Prêmio" value={resc.premio} onChange={e=>setResc({...resc,premio:e.target.value})}/>
+            <Inp label="Comissões" value={resc.comissoes} onChange={e=>setResc({...resc,comissoes:e.target.value})}/>
+            <Inp label="Adicional noturno" value={resc.adicionalNoturno} onChange={e=>setResc({...resc,adicionalNoturno:e.target.value})}/>
+            <Inp label="Outros (abono de férias CCT)" value={resc.outrosProventos} onChange={e=>setResc({...resc,outrosProventos:e.target.value})}/>
+          </div>
+          <div style={{fontSize:13,fontWeight:700,marginTop:4}}>Descontos</div>
+          <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
+            {DESCONTOS_MARCAR.map(d=><label key={d} style={{display:"flex",gap:6,alignItems:"center",fontSize:13,cursor:"pointer"}}><input type="checkbox" checked={resc.descontos.includes(d)} onChange={e=>setResc({...resc,descontos:e.target.checked?[...resc.descontos,d]:resc.descontos.filter(x=>x!==d)})}/>{d}</label>)}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:10}}>
+            <Inp label="Faltas" value={resc.faltas} onChange={e=>setResc({...resc,faltas:e.target.value})}/>
+            <Inp label="DSR" value={resc.dsr} onChange={e=>setResc({...resc,dsr:e.target.value})}/>
+            <Inp label="Atrasos" value={resc.atrasos} onChange={e=>setResc({...resc,atrasos:e.target.value})}/>
+          </div>
+          <Inp label="Outros descontos (VT não utilizado, contribuição sindical, plano de saúde, farmácia...)" value={resc.outrosDescontos} onChange={e=>setResc({...resc,outrosDescontos:e.target.value})}/>
+          {rescMsg.erro&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"9px 14px",color:C.red,fontSize:13}}>{rescMsg.erro}</div>}
+          {rescMsg.ok&&<div style={{background:C.grnBg,border:"1px solid "+C.grn+"25",borderRadius:8,padding:"9px 14px",color:C.grn,fontSize:13}}>{rescMsg.ok}</div>}
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+            <Btn v="outline" onClick={()=>setModalResc(null)}>Fechar</Btn>
+            <Btn onClick={gerarRescisao} disabled={!resc.dataAviso||!resc.tipoAviso||!resc.tipoRescisao||rescMsg.gerando} title={!resc.tipoAviso||!resc.tipoRescisao?"Escolha o tipo de aviso e o tipo de rescisão":"Baixar o formulário preenchido (Word)"}>{rescMsg.gerando?<Spin size={14} color="#fff"/>:"⬇"} Gerar solicitação</Btn>
+          </div>
+        </div>}
+      </Modal>
 
       {/* MODAL: Líder pede Admissão — só justificativa, sem cargo/salário */}
       <Modal open={modalNova==="admissao"} onClose={()=>setModalNova(null)} title="Pedir Admissão" width={640}>
@@ -5062,26 +5128,31 @@ export default function App(){
   const loadAll=async()=>{
     setLoading(true);const sb=await initSB();if(!sb){setLoading(false);return;}
     try{
-      const[uR,fR,fbR,cR,aR,cadR,vR,tR,comR,exR,tkR,plR,npsR,bcR,buR,bsR,movR]=await Promise.all([
-        sb.from("usuarios").select("id,name,email,role,setor,area,cargo,admissao,gestor_id,lider_id,skills,senioridade,telefone,foto_url,status,data_desligamento,cadastro").order("id"),
-        sb.from("ferias").select("*").order("created_at",{ascending:false}),
-        sb.from("feedbacks").select("*").is("arquivado_em",null).order("created_at",{ascending:false}), // arquivados não aparecem
-        sb.from("chat").select("*").order("created_at"),
-        sb.from("avaliacoes").select("*").order("created_at",{ascending:false}),
-        sb.from("candidatos").select("*").order("created_at",{ascending:false}),
-        // Todas as vagas (a aba Vagas precisa das encerradas); as outras telas recebem só as abertas (vagasAbertas).
-      sb.from("vagas").select("*"),
-        sb.from("banco_talentos").select("*").order("created_at",{ascending:false}),
-        sb.from("comunicados").select("*").order("created_at",{ascending:false}),
-        sb.from("exames").select("*").order("created_at",{ascending:false}),
-        sb.from("tarefas").select("*").order("ordem"),
-        sb.from("clima_pulses").select("*").order("created_at",{ascending:false}),
-        sb.from("clima_nps").select("*").order("created_at",{ascending:false}),
-        sb.from("movimentacoes").select("*").order("created_at",{ascending:false}),
-        sb.from("beneficios_catalogo").select("*").order("id"),
-        sb.from("beneficios_usuarios").select("*,beneficio:beneficios_catalogo(*)").order("created_at"),
-        sb.from("beneficios_solicitacoes").select("*,beneficio:beneficios_catalogo(*)").order("created_at",{ascending:false}),
-      ]);
+      // Cada consulta fica junto do nome que recebe o resultado. Antes era uma lista posicional
+      // [uR,fR,...]=await Promise.all([...]) que ficou desalinhada em 27/07/2026: movimentações caíam no catálogo de
+      // benefícios e vice-versa (tela Benefícios com catálogo vazio; pedidos de admissão/demissão sumiam ao recarregar).
+      // vR traz todas as vagas (a aba Vagas precisa das encerradas); as outras telas recebem só as abertas (vagasAbertas).
+      const consultas={
+        uR:sb.from("usuarios").select("id,name,email,role,setor,area,cargo,admissao,gestor_id,lider_id,skills,senioridade,telefone,foto_url,status,data_desligamento,cadastro").order("id"),
+        fR:sb.from("ferias").select("*").order("created_at",{ascending:false}),
+        fbR:sb.from("feedbacks").select("*").is("arquivado_em",null).order("created_at",{ascending:false}), // arquivados não aparecem
+        cR:sb.from("chat").select("*").order("created_at"),
+        aR:sb.from("avaliacoes").select("*").order("created_at",{ascending:false}),
+        cadR:sb.from("candidatos").select("*").order("created_at",{ascending:false}),
+        vR:sb.from("vagas").select("*"),
+        tR:sb.from("banco_talentos").select("*").order("created_at",{ascending:false}),
+        comR:sb.from("comunicados").select("*").order("created_at",{ascending:false}),
+        exR:sb.from("exames").select("*").order("created_at",{ascending:false}),
+        tkR:sb.from("tarefas").select("*").order("ordem"),
+        plR:sb.from("clima_pulses").select("*").order("created_at",{ascending:false}),
+        npsR:sb.from("clima_nps").select("*").order("created_at",{ascending:false}),
+        movR:sb.from("movimentacoes").select("*").order("created_at",{ascending:false}),
+        bcR:sb.from("beneficios_catalogo").select("*").order("id"),
+        buR:sb.from("beneficios_usuarios").select("*,beneficio:beneficios_catalogo(*)").order("created_at"),
+        bsR:sb.from("beneficios_solicitacoes").select("*,beneficio:beneficios_catalogo(*)").order("created_at",{ascending:false}),
+      };
+      const resultados=await Promise.all(Object.values(consultas));
+      const{uR,fR,fbR,cR,aR,cadR,vR,tR,comR,exR,tkR,plR,npsR,movR,bcR,buR,bsR}=Object.fromEntries(Object.keys(consultas).map((k,n)=>[k,resultados[n]]));
       if(uR.data)setUsers(uR.data.map(mu));
       if(fR.data)setFerias(fR.data.map(mf));
       if(fbR.data)setFeedbacks(fbR.data.map(mfb));

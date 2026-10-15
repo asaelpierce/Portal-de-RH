@@ -38,20 +38,34 @@ export function substituirNoParagrafo(p, procura, novo) {
   return out + p.slice(ultimo);
 }
 
+// Texto visível de um parágrafo (para achar a opção a marcar).
+const textoParagrafo = (p) => [...p.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].map((m) => desesc(m[1])).join("");
+// Normaliza o rótulo de uma opção "( ) TEXTO;" → "TEXTO" (espaços comuns ou não separáveis, ponto e vírgula/ponto final).
+const normOpcao = (t) => t.replace(/^\s*\(\s*X?\s*\)\s*/i, "").replace(/[\s\u00a0]+/g, " ").replace(/[;.\s]+$/, "").trim().toUpperCase();
+
 // Aplica as trocas no document.xml; cada troca precisa ser encontrada (senão erro com o nome do campo).
+// Tipos de troca:  { procura, novo }  troca texto  ·  { marcar: "RÓTULO DA OPÇÃO" }  marca "( )" → "(X)" no parágrafo
+// cuja opção é exatamente esse rótulo  ·  opcional: true  não acusa erro se não achar (campo não obrigatório).
 export async function preencherDocx(modeloBuf, trocas) {
   const arq = await zipLer(modeloBuf);
   let xml = new TextDecoder().decode(arq.get("word/document.xml"));
   const faltou = [];
-  for (const { procura, novo, rotulo } of trocas) {
+  for (const t of trocas) {
     let achou = false;
     xml = xml.replace(/<w:p[ >][\s\S]*?<\/w:p>/g, (p) => {
       if (achou) return p;
-      const r = substituirNoParagrafo(p, procura, novo);
+      if (t.marcar) {
+        const txt = textoParagrafo(p);
+        if (normOpcao(txt) !== normOpcao(t.marcar)) return p;
+        const caixa = txt.match(/\(\s*\)/); if (!caixa) return p;     // já marcada ou sem caixa
+        const r = substituirNoParagrafo(p, caixa[0], "(X)"); if (r === null) return p;
+        achou = true; return r;
+      }
+      const r = substituirNoParagrafo(p, t.procura, t.novo);
       if (r === null) return p;
       achou = true; return r;
     });
-    if (!achou) faltou.push(rotulo || procura);
+    if (!achou && !t.opcional) faltou.push(t.rotulo || t.marcar || t.procura);
   }
   if (faltou.length) throw new Error("O modelo mudou; campos não encontrados: " + faltou.join(", "));
   arq.set("word/document.xml", new TextEncoder().encode(xml));
@@ -62,6 +76,7 @@ export async function preencherDocx(modeloBuf, trocas) {
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 export const dataExtenso = (iso) => { const [a, m, d] = iso.split("-").map(Number); return `${d} de ${MESES[m - 1]} de ${a}`; };
 const dataBR = (iso) => iso.split("-").reverse().join("/");
+const cpfFormatado = (c) => { const d = String(c || "").replace(/\D/g, ""); return d.length === 11 ? `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}` : String(c || ""); };
 
 // Documentos do kit. "precisa" = dados obrigatórios para gerar.
 export const DOCUMENTOS_ADMISSAO = [
@@ -78,4 +93,49 @@ export const DOCUMENTOS_ADMISSAO = [
       { procura: "Data de admissão", novo: dataExtenso(c.admissao), rotulo: "data (Vespasiano, …)" },
       { procura: "Nome completo colaborador", novo: c.nome, rotulo: "nome (assinatura)" }] },
 ];
+DOCUMENTOS_ADMISSAO.push({ id: "imagem", titulo: "Termo de autorização de uso de imagem", modelo: "/modelos/termo_uso_imagem.docx",
+  precisa: ["nome", "admissao", "cargo", "endereco", "rg", "cpf", "data_nascimento", "naturalidade", "estado_civil"],
+  trocas: (c) => [
+    { procura: "[NOME COMPLETO]", novo: c.nome, rotulo: "nome" },
+    { procura: "[LOCAL DE NASCIMENTO]", novo: c.naturalidade, rotulo: "local de nascimento" },
+    { procura: "[Data de nascimento] [estado civil]", novo: `${dataBR(c.data_nascimento)}, ${c.estado_civil}`, rotulo: "data de nascimento e estado civil" },
+    { procura: "[cargo]", novo: c.cargo, rotulo: "cargo" },
+    { procura: "[nº da identidade]", novo: c.rg, rotulo: "RG" },
+    { procura: "[nº do CPF]", novo: cpfFormatado(c.cpf), rotulo: "CPF" },
+    { procura: "[ENDEREÇO COMPLETO]", novo: c.endereco, rotulo: "endereço" },
+    { procura: "Data de admissão", novo: dataExtenso(c.admissao), rotulo: "data (Vespasiano/MG, …)" },
+    { procura: "Nome completo do colaborador", novo: c.nome, rotulo: "nome (assinatura)" },
+    { procura: "CPF do colaborador", novo: "CPF " + cpfFormatado(c.cpf), rotulo: "CPF (assinatura)" }] });
+
 export const faltandoPara = (doc, c) => doc.precisa.filter((k) => !String(c[k] ?? "").trim());
+
+// ── Solicitação de rescisão (modelo da BRIT). Gerada no fluxo de desligamento, com as opções escolhidas pelo RH.
+export const TIPOS_AVISO = ["TÉRMINO DE CONTRATO DE EXPERIÊNCIA", "INDENIZADO", "TRABALHADO", "OUTROS – PEDIDO DE DEMISSÃO"];
+export const TIPOS_RESCISAO = ["TÉRMINO DE CONTRATO EXPERIÊNCIA, EMPREGADO", "TÉRMINO DE CONTRATO EXPERIÊNCIA, ANTECIPADO, EMPREGADO",
+  "TÉRMINO DE CONTRATO EXPERIÊNCIA, EMPREGADOR", "TÉRMINO DE CONTRATO EXPERIÊNCIA, ANTECIPADO, EMPREGADOR", "DISPENSA SEM JUSTA CAUSA",
+  "DISPENSA COM JUSTA CAUSA", "PEDIDO DE DISPENSA SEM JUSTA CAUSA", "PEDIDO DE DISPENSA COM JUSTA CAUSA", "MORTE EMPREGADO", "TERMINO ESTÁGIO", "TERMINO APRENDIZAGEM"];
+// Sugestão a partir do tipo de desligamento do portal (só quando a correspondência é inequívoca; o RH confirma).
+export const SUGESTAO_RESCISAO = { sem_justa_causa: "DISPENSA SEM JUSTA CAUSA", justa_causa: "DISPENSA COM JUSTA CAUSA" };
+export const DESCONTOS_MARCAR = ["Vale Transporte", "Vale Refeição", "Aviso Prévio"];
+export const MODELO_RESCISAO = "/modelos/solicitacao_rescisao.docx";
+// r = { nome, cadastro, dataAviso, tipoAviso, tipoRescisao, horasExtras, premio, comissoes, adicionalNoturno, outrosProventos,
+//       descontos: ["Vale Transporte", ...], faltas, dsr, atrasos, outrosDescontos }
+export const trocasRescisao = (r) => {
+  const com = (rotulo, valor, novo) => (String(valor ?? "").trim() ? [{ procura: rotulo, novo: novo(String(valor).trim()), rotulo }] : []);
+  return [
+    { procura: "COLABORADOR: ", novo: `COLABORADOR: ${r.nome}${r.cadastro ? " (cadastro " + r.cadastro + ")" : ""}`, rotulo: "colaborador" },
+    { procura: "[Data da admissão]", novo: dataBR(r.dataAviso), rotulo: "data do aviso prévio" },
+    { marcar: r.tipoAviso, rotulo: "tipo de aviso" },
+    { marcar: r.tipoRescisao, rotulo: "tipo de rescisão" },
+    ...com("a) Horas Extras: a 65 % :", r.horasExtras, (v) => "a) Horas Extras: a 65 % : " + v),
+    ...com("b) Prêmio:", r.premio, (v) => "b) Prêmio: " + v),
+    ...com("c) Comissões", r.comissoes, (v) => "c) Comissões: " + v),
+    ...com("d) Adional Noturno", r.adicionalNoturno, (v) => "d) Adional Noturno: " + v),
+    ...com("e) Outros: Abono de férias (cct)", r.outrosProventos, (v) => "e) Outros: Abono de férias (cct): " + v),
+    ...(r.descontos || []).map((d) => ({ marcar: d, rotulo: "desconto " + d })),
+    ...com("Faltas:", r.faltas, (v) => "Faltas: " + v),
+    ...com("DSR:", r.dsr, (v) => "DSR: " + v),
+    ...com("Atrasos:", r.atrasos, (v) => "Atrasos: " + v),
+    ...com("Outros : ", r.outrosDescontos, (v) => "Outros : " + v + " — "),
+  ];
+};
