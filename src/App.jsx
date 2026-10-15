@@ -1956,7 +1956,7 @@ function Colaboradores({users,setUsers,currentUser}){
   const[modalMov,setModalMov]=useState(null); // colaborador sendo movido
   // Kit de admissão (RH): CTPS e endereço ficam em tabela protegida, lidos/gravados só por funções que exigem RH.
   const[modalDocs,setModalDocs]=useState(null);
-  const DOC_VAZIO={ctps:"",endereco:"",rg:"",cpf:"",data_nascimento:"",naturalidade:"",estado_civil:""};
+  const DOC_VAZIO={ctps:"",endereco:"",rg:"",cpf:"",data_nascimento:"",naturalidade:"",estado_civil:"",sexo:""};
   const[docs,setDocs]=useState({...DOC_VAZIO,carregando:false,salvando:false,gerando:"",erro:"",ok:"",salvoEm:null});
   const ehRH=can(currentUser.role,"rh");
   const abrirDocs=async(u,e)=>{
@@ -1964,18 +1964,18 @@ function Colaboradores({users,setUsers,currentUser}){
     const{data,error}=await getSB().rpc("dados_documentos",{p_usuario_id:u.id,p_pedido_por:currentUser.id});
     const r=Array.isArray(data)?data[0]:data;
     setDocs(d=>({...d,carregando:false,ctps:r?.ctps||"",endereco:r?.endereco||"",rg:r?.rg||"",cpf:r?.cpf||"",data_nascimento:r?.data_nascimento||"",
-      naturalidade:r?.naturalidade||"",estado_civil:r?.estado_civil||"",salvoEm:r?.atualizado_em||null,erro:error?(error.message||"Não foi possível carregar os dados."):""}));
+      naturalidade:r?.naturalidade||"",estado_civil:r?.estado_civil||"",sexo:(r?.sexo||"").trim(),salvoEm:r?.atualizado_em||null,erro:error?(error.message||"Não foi possível carregar os dados."):""}));
   };
   const salvarDadosDocs=async()=>{
     setDocs(d=>({...d,salvando:true,erro:"",ok:""}));
     // Envia SEMPRE todos os campos: a função grava o conjunto completo (campo omitido ficaria em branco).
     const{data,error}=await getSB().rpc("salvar_dados_documentos",{p_pedido_por:currentUser.id,p_usuario_id:modalDocs.id,p_ctps:docs.ctps,p_endereco:docs.endereco,
-      p_rg:docs.rg,p_cpf:docs.cpf,p_data_nascimento:docs.data_nascimento||null,p_naturalidade:docs.naturalidade,p_estado_civil:docs.estado_civil});
+      p_rg:docs.rg,p_cpf:docs.cpf,p_data_nascimento:docs.data_nascimento||null,p_naturalidade:docs.naturalidade,p_estado_civil:docs.estado_civil,p_sexo:docs.sexo||null});
     setDocs(d=>({...d,salvando:false,erro:error?(error.message||"Não foi possível salvar."):"",ok:error?"":"Dados salvos.",salvoEm:error?d.salvoEm:data}));
   };
   const dadosDoc=u=>({nome:u?.name||"",cargo:u?.cargo||"",admissao:u?.admissao||"",ctps:docs.ctps.trim(),endereco:docs.endereco.trim(),
-    rg:docs.rg.trim(),cpf:docs.cpf.trim(),data_nascimento:docs.data_nascimento||"",naturalidade:docs.naturalidade.trim(),estado_civil:docs.estado_civil});
-  const ROTULO_FALTA={nome:"nome",cargo:"cargo",admissao:"data de admissão",ctps:"CTPS",endereco:"endereço",rg:"RG",cpf:"CPF",data_nascimento:"data de nascimento",naturalidade:"local de nascimento",estado_civil:"estado civil"};
+    rg:docs.rg.trim(),cpf:docs.cpf.trim(),data_nascimento:docs.data_nascimento||"",naturalidade:docs.naturalidade.trim(),estado_civil:docs.estado_civil,sexo:docs.sexo});
+  const ROTULO_FALTA={nome:"nome",cargo:"cargo",admissao:"data de admissão",ctps:"CTPS",endereco:"endereço",rg:"RG",cpf:"CPF",data_nascimento:"data de nascimento",naturalidade:"local de nascimento",estado_civil:"estado civil",sexo:"sexo"};
   const baixarDoc=async doc=>{
     setDocs(d=>({...d,gerando:doc.id,erro:"",ok:""}));
     try{
@@ -2067,6 +2067,7 @@ function Colaboradores({users,setUsers,currentUser}){
               <Inp label="RG (identidade)" value={docs.rg} onChange={e=>setDocs({...docs,rg:e.target.value,ok:""})} placeholder="Ex.: MG-12.345.678"/>
               <Inp label="Data de nascimento" type="date" value={docs.data_nascimento} onChange={e=>setDocs({...docs,data_nascimento:e.target.value,ok:""})}/>
               <Inp label="Local de nascimento" value={docs.naturalidade} onChange={e=>setDocs({...docs,naturalidade:e.target.value,ok:""})} placeholder="Cidade/UF"/>
+              <Sel label="Sexo" value={docs.sexo} onChange={e=>setDocs({...docs,sexo:e.target.value,ok:""})} options={[{value:"",label:"Selecione..."},{value:"M",label:"Masculino"},{value:"F",label:"Feminino"}]}/>
               <Sel label="Estado civil" value={docs.estado_civil} onChange={e=>setDocs({...docs,estado_civil:e.target.value,ok:""})} options={[{value:"",label:"Selecione..."},...["solteiro(a)","casado(a)","em união estável","divorciado(a)","separado(a)","viúvo(a)"].map(v=>({value:v,label:v}))]}/>
             </div>
             <Inp label="Endereço completo" value={docs.endereco} onChange={e=>setDocs({...docs,endereco:e.target.value,ok:""})} placeholder="Rua, número, bairro, cidade/UF, CEP"/>

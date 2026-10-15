@@ -88,15 +88,20 @@ export const DOCUMENTOS_ADMISSAO = [
       { procura: "Nome completo colaborador", novo: c.nome, rotulo: "nome (assinatura)" }] },
   { id: "acordo", titulo: "Acordo individual de compensação de jornada (banco de horas)", modelo: "/modelos/acordo_banco_de_horas.docx", precisa: ["nome", "admissao", "cargo", "ctps", "endereco"],
     trocas: (c) => [
-      { procura: "nome completo, cargo, ctps , endereço completo", novo: `${c.nome}, ${c.cargo}, CTPS nº ${c.ctps}, residente e domiciliado(a) em ${c.endereco}`, rotulo: "qualificação do empregado" },
+      { procura: "nome completo, cargo, ctps , endereço completo", novo: `${c.nome}, ${c.cargo}, CTPS nº ${c.ctps}, residente e ${c.sexo === "F" ? "domiciliada" : c.sexo === "M" ? "domiciliado" : "domiciliado(a)"} em ${c.endereco}`, rotulo: "qualificação do empregado" },
       { procura: "data de admissão", novo: dataBR(c.admissao), rotulo: "data da cláusula primeira" },
       { procura: "Data de admissão", novo: dataExtenso(c.admissao), rotulo: "data (Vespasiano, …)" },
       { procura: "Nome completo colaborador", novo: c.nome, rotulo: "nome (assinatura)" }] },
 ];
 DOCUMENTOS_ADMISSAO.push({ id: "imagem", titulo: "Termo de autorização de uso de imagem", modelo: "/modelos/termo_uso_imagem.docx",
-  precisa: ["nome", "admissao", "cargo", "endereco", "rg", "cpf", "data_nascimento", "naturalidade", "estado_civil"],
+  precisa: ["nome", "admissao", "cargo", "endereco", "rg", "cpf", "data_nascimento", "naturalidade", "estado_civil", "sexo"],
   trocas: (c) => [
     { procura: "[NOME COMPLETO]", novo: c.nome, rotulo: "nome" },
+    // O modelo está escrito só no masculino; para colaboradoras, concorda no feminino.
+    ...(c.sexo === "F" ? [
+      { procura: "brasileiro, nascido em", novo: "brasileira, nascida em", rotulo: "concordância (brasileira, nascida)" },
+      { procura: "portador da Cédula", novo: "portadora da Cédula", rotulo: "concordância (portadora)" },
+      { procura: "inscrito no CPF", novo: "inscrita no CPF", rotulo: "concordância (inscrita)" }] : []),
     { procura: "[LOCAL DE NASCIMENTO]", novo: c.naturalidade, rotulo: "local de nascimento" },
     { procura: "[Data de nascimento] [estado civil]", novo: `${dataBR(c.data_nascimento)}, ${c.estado_civil}`, rotulo: "data de nascimento e estado civil" },
     { procura: "[cargo]", novo: c.cargo, rotulo: "cargo" },
