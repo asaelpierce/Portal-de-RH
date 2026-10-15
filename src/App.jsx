@@ -5006,7 +5006,7 @@ export default function App(){
       const[uR,fR,fbR,cR,aR,cadR,vR,tR,comR,exR,tkR,plR,npsR,bcR,buR,bsR,movR]=await Promise.all([
         sb.from("usuarios").select("id,name,email,role,setor,area,cargo,admissao,gestor_id,lider_id,skills,senioridade,telefone,foto_url,status,data_desligamento,cadastro").order("id"),
         sb.from("ferias").select("*").order("created_at",{ascending:false}),
-        sb.from("feedbacks").select("*").order("created_at",{ascending:false}),
+        sb.from("feedbacks").select("*").is("arquivado_em",null).order("created_at",{ascending:false}), // arquivados não aparecem
         sb.from("chat").select("*").order("created_at"),
         sb.from("avaliacoes").select("*").order("created_at",{ascending:false}),
         sb.from("candidatos").select("*").order("created_at",{ascending:false}),
