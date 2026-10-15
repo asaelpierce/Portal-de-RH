@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useId } from "react";
 // Portal: janelas e avisos são desenhados direto no <body>, fora das telas (ver Modal).
 import { createPortal } from "react-dom";
 import { gerarXlsx } from "./planilhaXlsx.js";
+import { gerarFichaBrit, dadosKitDaAdmissao } from "./fichaBrit.js";
 import { DOCUMENTOS_ADMISSAO, preencherDocx, faltandoPara, TIPOS_AVISO, TIPOS_RESCISAO, SUGESTAO_RESCISAO, DESCONTOS_MARCAR, MODELO_RESCISAO, trocasRescisao } from "./documentosAdmissao.js";
 // Leitura do relatório de saldos da folha BRIT e geração do formulário Word de férias (ver o arquivo para o porquê).
 import { lerRelatorioFerias, preencherFormularioFerias, OPCOES_FERIAS, addDias, diasEntre, addAnos, br as dataBR, emailFeriasAprovadasHtml } from "./feriasFolha.js";
@@ -160,28 +161,40 @@ const Btn=({children,onClick,v="primary",sz="md",disabled=false,full=false,style
 
 const Card=({children,style={},onClick})=><div onClick={onClick} style={{background:C.bgCard,border:"1px solid "+C.bdr,borderRadius:16,padding:24,...style,cursor:onClick?"pointer":"auto"}}>{children}</div>;
 
-const Inp=({label,value,onChange,placeholder,type="text",style={}})=>(
+const Inp=({label,value,onChange,placeholder,type="text",style={}})=>{
+  // Rótulo ligado ao campo (htmlFor/id): leitores de tela anunciam o nome e clicar no rótulo foca o campo.
+  const id=useId();
+  return(
   <div style={{display:"flex",flexDirection:"column",gap:6}}>
-    {label&&<label style={{fontSize:12,color:C.txm,fontWeight:600,letterSpacing:".02em",textTransform:"uppercase"}}>{label}</label>}
-    <input type={type} value={value} onChange={onChange} placeholder={placeholder} style={{background:C.s1,border:"1px solid "+C.bdr,borderRadius:10,padding:"10px 14px",color:C.txt,fontSize:14,width:"100%",boxSizing:"border-box",...style}}/>
+    {label&&<label htmlFor={id} style={{fontSize:12,color:C.txm,fontWeight:600,letterSpacing:".02em",textTransform:"uppercase"}}>{label}</label>}
+    <input id={id} type={type} value={value} onChange={onChange} placeholder={placeholder} style={{background:C.s1,border:"1px solid "+C.bdr,borderRadius:10,padding:"10px 14px",color:C.txt,fontSize:14,width:"100%",boxSizing:"border-box",...style}}/>
   </div>
-);
+  );
+};
 
-const Sel=({label,value,onChange,options,style={}})=>(
+const Sel=({label,value,onChange,options,style={}})=>{
+  // Rótulo ligado ao campo (htmlFor/id): leitores de tela anunciam o nome e clicar no rótulo foca o campo.
+  const id=useId();
+  return(
   <div style={{display:"flex",flexDirection:"column",gap:6}}>
-    {label&&<label style={{fontSize:12,color:C.txm,fontWeight:600,letterSpacing:".02em",textTransform:"uppercase"}}>{label}</label>}
-    <select value={value} onChange={onChange} style={{background:C.s1,border:"1px solid "+C.bdr,borderRadius:10,padding:"10px 14px",color:C.txt,fontSize:14,width:"100%",boxSizing:"border-box",...style}}>
+    {label&&<label htmlFor={id} style={{fontSize:12,color:C.txm,fontWeight:600,letterSpacing:".02em",textTransform:"uppercase"}}>{label}</label>}
+    <select id={id} value={value} onChange={onChange} style={{background:C.s1,border:"1px solid "+C.bdr,borderRadius:10,padding:"10px 14px",color:C.txt,fontSize:14,width:"100%",boxSizing:"border-box",...style}}>
       {options.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
   </div>
-);
+  );
+};
 
-const Tex=({label,value,onChange,placeholder,rows=3,style={}})=>(
+const Tex=({label,value,onChange,placeholder,rows=3,style={}})=>{
+  // Rótulo ligado ao campo (htmlFor/id): leitores de tela anunciam o nome e clicar no rótulo foca o campo.
+  const id=useId();
+  return(
   <div style={{display:"flex",flexDirection:"column",gap:6}}>
-    {label&&<label style={{fontSize:12,color:C.txm,fontWeight:600,letterSpacing:".02em",textTransform:"uppercase"}}>{label}</label>}
-    <textarea value={value} onChange={onChange} placeholder={placeholder} rows={rows} style={{background:C.s1,border:"1px solid "+C.bdr,borderRadius:10,padding:"10px 14px",color:C.txt,fontSize:14,resize:"vertical",width:"100%",boxSizing:"border-box",...style}}/>
+    {label&&<label htmlFor={id} style={{fontSize:12,color:C.txm,fontWeight:600,letterSpacing:".02em",textTransform:"uppercase"}}>{label}</label>}
+    <textarea id={id} value={value} onChange={onChange} placeholder={placeholder} rows={rows} style={{background:C.s1,border:"1px solid "+C.bdr,borderRadius:10,padding:"10px 14px",color:C.txt,fontSize:14,resize:"vertical",width:"100%",boxSizing:"border-box",...style}}/>
   </div>
-);
+  );
+};
 
 // Janela (pop-up). Por quê o portal: as telas usam a animação .fadeUp (transform); com ela ativa, o navegador
 // posiciona elementos "fixed" em relação à TELA ANIMADA e não à janela do navegador — o pop-up abria no meio da
@@ -1601,7 +1614,7 @@ function BancoTalentos({user,talentos,setTalentos,candidates,setCandidates,showT
 }
 
 // RECRUTAMENTO
-function Recrutamento({user,candidates,setCandidates,talentos,setTalentos,vagas:vagasAbertasRec,vagasTodas,showToast}){
+function Recrutamento({user,candidates,setCandidates,talentos,setTalentos,vagas:vagasAbertasRec,vagasTodas,showToast,onIniciarAdmissao}){
   // Por quê: candidatos de vagas encerradas continuam aqui, então o filtro precisa listar todas as vagas.
   const vagas=vagasTodas||vagasAbertasRec;
   const[fVaga,setFVaga]=useState("todos");const[fStatus,setFStatus]=useState("todos");const[sel,setSel]=useState(null);const[emailModal,setEmailModal]=useState(null);const[emailTxt,setEmailTxt]=useState("");const[genLoad,setGenLoad]=useState(false);const[sendingEmail,setSendingEmail]=useState(false);
@@ -1681,6 +1694,7 @@ function Recrutamento({user,candidates,setCandidates,talentos,setTalentos,vagas:
                 {c.habilidades?.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:14}}>{c.habilidades.map(h=><Chip key={h} label={h} color={C.acc}/>)}</div>}
                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                   {["aprovado","revisao","rejeitado"].map(s=><Btn key={s} sz="sm" v={s==="aprovado"?"success":s==="rejeitado"?"danger":"outline"} onClick={e=>{e.stopPropagation();updStatus(c.id,s);}}>{s==="aprovado"?"✓ Aprovar":s==="rejeitado"?"✗ Rejeitar":"↺ Revisão"}</Btn>)}
+                  {c.status==="aprovado"&&onIniciarAdmissao&&can(user.role,"rh")&&<Btn sz="sm" title="Contratar: gera o link da ficha de registro para o candidato preencher" onClick={e=>{e.stopPropagation();onIniciarAdmissao(c);}}>📋 Iniciar admissão</Btn>}
                   <Btn sz="sm" v="outline" onClick={e=>{e.stopPropagation();setEmailModal(c);setEmailTxt("");gerarEmail(c,c.status);}}>✉ Gerar Email</Btn>
                   {c.status==="rejeitado"&&!c.noBanco&&<Btn sz="sm" v="ghost" onClick={e=>{e.stopPropagation();moverBanco(c);}}>♦ Banco</Btn>}
                 </div>
@@ -4540,11 +4554,21 @@ function GestaoVagas({vagasTodas=[],setVagas,candidates=[],showToast}){
 
 function Contratacao(props){
   const[tab,setTab]=useState("recrutamento");
+  const[destaqueAdm,setDestaqueAdm]=useState(null);
+  // Candidato aprovado → pré-admissão com link da ficha de registro (aba Admissões).
+  const iniciarAdmissao=async c=>{
+    const vaga=(props.vagasTodas||[]).find(v=>"#"+v.id===c.vaga);
+    const{data,error}=await getSB().rpc("admissao_criar",{p_pedido_por:props.user.id,p_candidato_id:c.id,p_nome:c.name,p_email:c.email||null,p_telefone:c.phone||null,p_cargo:vaga?.title||c.role||null});
+    if(error){props.showToast?.(error.message||"Não foi possível iniciar a admissão.","error");return;}
+    const r=Array.isArray(data)?data[0]:data;setDestaqueAdm(r?.id||null);setTab("admissoes");
+    props.showToast?.("Admissão iniciada. Copie ou envie o link da ficha ao candidato.","success");
+  };
   const TABS=[
     {id:"vagas",l:"Vagas",count:props.vagas?.length},
     {id:"recrutamento",l:"Candidatos",count:props.candidates?.filter(c=>c.status!=="rejeitado").length},
     {id:"talentos",l:"Banco de Talentos",count:props.talentos?.length},
     {id:"upload_cvs",l:"Upload de CVs"},
+    ...(can(props.user?.role,"rh")?[{id:"admissoes",l:"Admissões"}]:[]),
   ];
   return(
     <div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:18}}>
@@ -4555,7 +4579,8 @@ function Contratacao(props){
         </button>)}
       </div>
       {tab==="vagas"&&<GestaoVagas vagasTodas={props.vagasTodas} setVagas={props.setVagas} candidates={props.candidates} showToast={props.showToast}/>}
-      {tab==="recrutamento"&&<Recrutamento {...props}/>}
+      {tab==="recrutamento"&&<Recrutamento {...props} onIniciarAdmissao={iniciarAdmissao}/>}
+      {tab==="admissoes"&&<GestaoAdmissoes user={props.user} showToast={props.showToast} destaque={destaqueAdm}/>}
       {tab==="talentos"&&<BancoTalentos {...props}/>}
       {tab==="upload_cvs"&&<UploadCVs vagas={props.vagas} setCandidates={props.setCandidates} setTalentos={props.setTalentos} criarTarefaAuto={props.criarTarefaAuto}/>}
     </div>
@@ -5000,6 +5025,262 @@ function GestaoEventos({user,users,showToast}){
     </div>);
 }
 
+// ── ADMISSÕES (ficha de registro pelo link) ──────────────────────────────────
+// Pedido do Asael (15/10/2026): o candidato aprovado recebe um link individual para preencher a ficha de registro
+// (mesmos campos da "DADOS CADASTRAIS" da BRIT). O RH confere, completa o vínculo e gera a ficha da BRIT (Excel) e o
+// kit de admissão. Dados pessoais ficam na tabela protegida "admissoes" (só funções do banco leem/gravam).
+const OP_SEXO=[{value:"",label:"Selecione..."},{value:"M",label:"Masculino"},{value:"F",label:"Feminino"}];
+const OP_RACA=["Branca","Preta","Parda","Amarela","Indígena","Prefiro não informar"];
+const OP_ESCOL=["Fundamental incompleto","Fundamental completo","Médio incompleto","Médio completo","Técnico","Superior incompleto","Superior completo","Pós-graduação"];
+const OP_ECIVIL=["solteiro(a)","casado(a)","em união estável","divorciado(a)","separado(a)","viúvo(a)"];
+const opts=l=>[{value:"",label:"Selecione..."},...l.map(v=>({value:v,label:v}))];
+const ST_ADM={aguardando:["Aguardando o candidato",C.amb],preenchida:["Ficha preenchida — conferir",C.blu],conferida:["Conferida",C.grn],cancelada:["Cancelada",C.txd]};
+const linkAdmissao=t=>`${window.location.origin}${window.location.pathname}?admissao=${t}`;
+
+function FichaAdmissao({token}){
+  const[info,setInfo]=useState(undefined);const[d,setD]=useState({dependentes:[]});const[ciente,setCiente]=useState(false);
+  const[enviando,setEnviando]=useState(false);const[erro,setErro]=useState("");const[feito,setFeito]=useState(false);
+  useEffect(()=>{(async()=>{
+    const sb=await initSB();if(!sb){setInfo(null);return;}
+    const{data,error}=await sb.rpc("admissao_ficha",{p_token:token});
+    const r=Array.isArray(data)?data[0]:data;
+    if(error||!r){setInfo(null);return;}
+    setInfo(r);setD({nome:r.nome||"",email:r.email||"",telefone:r.telefone||"",dependentes:[],...(r.dados_candidato||{})});
+  })();},[token]);
+  const campo=(k,label,props={})=><Inp label={label} value={d[k]||""} onChange={e=>setD({...d,[k]:e.target.value})} {...props}/>;
+  const sel=(k,label,options)=><Sel label={label} value={d[k]||""} onChange={e=>setD({...d,[k]:e.target.value})} options={options}/>;
+  const secao=(t,sub)=><div style={{marginTop:6}}><div style={{fontSize:15,fontWeight:800}}>{t}</div>{sub&&<div style={{fontSize:12,color:C.txd,marginTop:2}}>{sub}</div>}</div>;
+  const grade={display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:10};
+  const enviar=async()=>{
+    setErro("");
+    const obrig={nome:"nome completo",sexo:"sexo",raca:"raça/cor",mae:"nome da mãe",nascimento:"data de nascimento",escolaridade:"escolaridade",estado_civil:"estado civil",naturalidade:"naturalidade",telefone:"telefone",logradouro:"endereço (rua)",numero:"número",bairro:"bairro",cep:"CEP",cidade:"cidade",rg:"RG",cpf:"CPF"};
+    const falta=Object.entries(obrig).filter(([k])=>!String(d[k]||"").trim()).map(([,l])=>l);
+    if(falta.length){setErro("Preencha: "+falta.join(", ")+".");return;}
+    if((d.dependentes||[]).some(x=>(x.nome||"").trim().length<3||!(x.vinculo||"").trim())){setErro("Informe nome e vínculo de cada dependente.");return;}
+    if(!ciente){setErro("Marque a declaração no final da ficha.");return;}
+    setEnviando(true);
+    const{error}=await getSB().rpc("admissao_enviar",{p_token:token,p_dados:d,p_consentimento:true});
+    setEnviando(false);
+    if(error){setErro(error.message||"Não foi possível enviar. Tente novamente.");return;}
+    setFeito(true);window.scrollTo(0,0);
+  };
+  const moldura=conteudo=>(
+    <div style={{minHeight:"100vh",background:C.bg,display:"flex",justifyContent:"center",padding:"24px 12px"}}>
+      <style>{CSS}</style>
+      <div style={{width:"100%",maxWidth:720}}>
+        <div style={{textAlign:"center",marginBottom:18}}>
+          <div style={{fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:C.txd}}>Kalenborn do Brasil · Recursos Humanos</div>
+          <div style={{fontSize:22,fontWeight:800,marginTop:4}}>Ficha de registro para admissão</div>
+          {info?.cargo&&<div style={{fontSize:13,color:C.txm,marginTop:4}}>{info.cargo}</div>}
+        </div>
+        <Card style={{padding:20}}>{conteudo}</Card>
+      </div>
+    </div>);
+  if(info===undefined)return moldura(<div style={{display:"flex",gap:10,alignItems:"center",color:C.txm}}><Spin size={16}/> Carregando…</div>);
+  if(info===null)return moldura(<div style={{color:C.txm}}>Link inválido. Confira o link com o RH.</div>);
+  if(info.status==="cancelada")return moldura(<div style={{color:C.txm}}>Este link não está mais ativo. Fale com o RH.</div>);
+  if(info.status==="conferida")return moldura(<div style={{color:C.txm}}>Sua ficha já foi conferida pelo RH. Se precisar alterar algo, fale com o RH.</div>);
+  if(new Date(info.token_expira_em)<new Date())return moldura(<div style={{color:C.txm}}>Este link expirou. Peça um novo link ao RH.</div>);
+  if(feito)return moldura(<div style={{textAlign:"center",padding:"10px 0"}}><div style={{fontSize:40}}>✅</div>
+    <div style={{fontSize:18,fontWeight:800,marginTop:6}}>Ficha enviada!</div>
+    <div style={{fontSize:14,color:C.txm,marginTop:8}}>Obrigado, {String(d.nome).split(" ")[0]}. O RH vai conferir seus dados e entrar em contato.</div>
+    <div style={{fontSize:12,color:C.txd,marginTop:14}}>Se precisar corrigir algo, abra o link de novo até {new Date(info.token_expira_em).toLocaleDateString("pt-BR")} (enquanto o RH não conferir).</div></div>);
+  return moldura(
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{fontSize:13,color:C.txm,background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"10px 12px"}}>
+        Olá, <b>{String(info.nome).split(" ")[0]}</b>! Preencha seus dados para a admissão. Tenha em mãos: RG, CPF, CTPS, PIS, título de eleitor, comprovante de residência, dados bancários e documentos dos dependentes. Campos com * são obrigatórios.
+        {info.status==="preenchida"&&<div style={{marginTop:6,color:C.amb}}>Você já enviou esta ficha. Se enviar de novo, os dados anteriores serão substituídos.</div>}
+      </div>
+      {secao("Dados pessoais")}
+      <div style={grade}>
+        {campo("nome","Nome completo *")}{sel("sexo","Sexo *",OP_SEXO)}{sel("raca","Raça/cor *",opts(OP_RACA))}
+        {campo("nascimento","Data de nascimento *",{type:"date"})}{campo("naturalidade","Naturalidade (cidade/UF) *",{placeholder:"Ex.: Belo Horizonte/MG"})}
+        {sel("estado_civil","Estado civil *",opts(OP_ECIVIL))}{sel("escolaridade","Escolaridade *",opts(OP_ESCOL))}
+        {campo("mae","Nome da mãe *")}{campo("pai","Nome do pai")}
+        {campo("telefone","Telefone *",{placeholder:"(31) 99999-0000"})}{campo("email","E-mail particular",{type:"email"})}
+      </div>
+      {secao("Endereço")}
+      <div style={grade}>
+        {campo("logradouro","Rua / avenida *")}{campo("numero","Número *")}{campo("complemento","Complemento")}
+        {campo("bairro","Bairro *")}{campo("cidade","Cidade/UF *",{placeholder:"Ex.: Vespasiano/MG"})}{campo("cep","CEP *",{placeholder:"00000-000"})}
+      </div>
+      {secao("Documentos","Se tiver CTPS digital, informe só o número do CPF no campo CTPS.")}
+      <div style={grade}>
+        {campo("cpf","CPF *",{placeholder:"000.000.000-00"})}{campo("rg","RG (identidade) *")}{campo("rg_emissao","Emissão do RG",{type:"date"})}
+        {campo("ctps","CTPS (número)")}{campo("ctps_serie_uf","CTPS série/UF")}{campo("ctps_emissao","Emissão da CTPS",{type:"date"})}
+        {campo("pis","PIS/PASEP/NIT")}{campo("pis_data","Data de cadastro do PIS",{type:"date"})}{campo("cnh","CNH (número e categoria)")}
+        {campo("titulo","Título de eleitor")}{campo("titulo_zona","Zona")}{campo("titulo_secao","Seção")}
+      </div>
+      {secao("Dependentes","Filhos, cônjuge ou outros dependentes (até 4). Marque IRRF se for dependente para o Imposto de Renda.")}
+      {(d.dependentes||[]).map((x,i)=>(
+        <div key={i} style={{display:"grid",gridTemplateColumns:"minmax(0,2fr) minmax(0,1fr) auto auto",gap:8,alignItems:"end"}}>
+          <Inp label={"Nome do dependente "+(i+1)} value={x.nome||""} onChange={e=>setD({...d,dependentes:d.dependentes.map((y,j)=>j===i?{...y,nome:e.target.value}:y)})}/>
+          <Inp label="Vínculo" value={x.vinculo||""} placeholder="Filho(a), cônjuge..." onChange={e=>setD({...d,dependentes:d.dependentes.map((y,j)=>j===i?{...y,vinculo:e.target.value}:y)})}/>
+          <label style={{display:"flex",gap:6,alignItems:"center",fontSize:13,paddingBottom:10}}><input type="checkbox" checked={!!x.irrf} onChange={e=>setD({...d,dependentes:d.dependentes.map((y,j)=>j===i?{...y,irrf:e.target.checked}:y)})}/>IRRF</label>
+          <button onClick={()=>setD({...d,dependentes:d.dependentes.filter((_,j)=>j!==i)})} title="Remover dependente" aria-label="Remover dependente" style={{background:"none",border:"none",color:C.red,cursor:"pointer",paddingBottom:10}}>✕</button>
+        </div>))}
+      {(d.dependentes||[]).length<4&&<Btn v="outline" sz="sm" onClick={()=>setD({...d,dependentes:[...(d.dependentes||[]),{nome:"",vinculo:"",irrf:false}]})}>+ Adicionar dependente</Btn>}
+      {secao("Dados bancários","Conta para receber o salário.")}
+      <div style={grade}>{campo("banco","Banco")}{campo("agencia","Agência")}{campo("conta","Conta")}{sel("tipo_conta","Tipo de conta",opts(["Corrente","Poupança","Salário"]))}</div>
+      <label style={{display:"flex",gap:10,alignItems:"flex-start",fontSize:13,color:C.txm,background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"10px 12px",marginTop:6,cursor:"pointer"}}>
+        <input type="checkbox" checked={ciente} onChange={e=>setCiente(e.target.checked)} style={{marginTop:3}}/>
+        <span>Declaro que as informações são verdadeiras e estou ciente de que a Kalenborn do Brasil usará estes dados, e os dos meus dependentes, para a minha admissão e para cumprir obrigações trabalhistas, previdenciárias e fiscais (LGPD, art. 7º, II e V). *</span>
+      </label>
+      {erro&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"9px 14px",color:C.red,fontSize:13}}>{erro}</div>}
+      <Btn onClick={enviar} disabled={enviando} full>{enviando?<Spin size={14} color="#fff"/>:null} {info.status==="preenchida"?"Reenviar ficha":"Enviar ficha"}</Btn>
+    </div>);
+}
+
+function GestaoAdmissoes({user,showToast,destaque}){
+  const[lista,setLista]=useState(null);const[aberta,setAberta]=useState(null);const[emp,setEmp]=useState({});
+  const[msg,setMsg]=useState({erro:"",ok:""});const[ocupado,setOcupado]=useState("");const[nova,setNova]=useState(null);
+  const carregar=async()=>{
+    const{data,error}=await getSB().rpc("admissao_listar",{p_pedido_por:user.id});
+    if(error){showToast?.(error.message||"Não foi possível carregar as admissões.","error");setLista([]);return;}
+    setLista(data||[]);
+    if(aberta){const a=(data||[]).find(x=>x.id===aberta.id);if(a)setAberta(a);}
+  };
+  useEffect(()=>{carregar();},[]);
+  useEffect(()=>{if(destaque&&lista){const a=lista.find(x=>x.id===destaque);if(a)abrir(a);}},[destaque,lista?.length]);
+  const abrir=a=>{setAberta(a);setEmp({experiencia_dias:"45",prorrogacao_dias:"45",tipo_vinculo:"CLT",funcao:a.cargo||"",...(a.dados_empresa||{})});setMsg({erro:"",ok:""});};
+  const atualizar=async(a,{dados,status,renovar})=>{
+    const{data,error}=await getSB().rpc("admissao_atualizar",{p_pedido_por:user.id,p_id:a.id,p_dados_empresa:dados??null,p_status:status??null,p_renovar_link:!!renovar});
+    if(error){setMsg({erro:error.message||"Não foi possível salvar.",ok:""});showToast?.(error.message,"error");return null;}
+    await carregar();return Array.isArray(data)?data[0]:data;
+  };
+  const copiar=async a=>{try{await navigator.clipboard.writeText(linkAdmissao(a.token));showToast?.("Link copiado.","success");}catch{showToast?.("Copie o link: "+linkAdmissao(a.token),"error");}};
+  const enviarEmail=async a=>{
+    if(!a.email){showToast?.("Este candidato não tem e-mail. Copie o link e envie por WhatsApp.","error");return;}
+    setOcupado("email"+a.id);
+    const ate=new Date(a.token_expira_em).toLocaleDateString("pt-BR");
+    const r=await sendPAEmail(a.email,"Kalenborn — ficha de registro para sua admissão",
+      `Olá, ${a.nome.split(" ")[0]}!\n\nParabéns! Para darmos andamento à sua admissão${a.cargo?" como "+a.cargo:""} na Kalenborn do Brasil, preencha sua ficha de registro neste link (válido até ${ate}):\n\n${linkAdmissao(a.token)}\n\nTenha em mãos: RG, CPF, CTPS, PIS, título de eleitor, comprovante de residência, dados bancários e documentos dos dependentes.\n\nQualquer dúvida, fale com o RH.\n\nRecursos Humanos — Kalenborn do Brasil`);
+    setOcupado("");
+    showToast?.(r?.ok?"E-mail enviado para "+a.email+".":"Não foi possível enviar o e-mail. Copie o link e envie por WhatsApp.",r?.ok?"success":"error");
+  };
+  const baixar=(blob,nome)=>{const url=URL.createObjectURL(blob),el=document.createElement("a");el.href=url;el.download=nome.replace(/[\\\\/:*?"<>|]/g,"-");document.body.appendChild(el);el.click();el.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);};
+  const baixarFicha=async a=>{
+    setOcupado("ficha");setMsg({erro:"",ok:""});
+    try{const r=await fetch("/modelos/ficha_registro_brit.xlsx");if(!r.ok)throw new Error("Modelo da ficha não encontrado no portal.");
+      baixar(await gerarFichaBrit(await r.arrayBuffer(),a.dados_candidato||{},{...(a.dados_empresa||{}),...emp}),`Ficha de registro - ${a.nome}.xlsx`);
+      setMsg({erro:"",ok:"Ficha da BRIT gerada."});}catch(e){setMsg({erro:e.message,ok:""});}
+    setOcupado("");
+  };
+  const baixarDoc=async(a,doc)=>{
+    setOcupado(doc.id);setMsg({erro:"",ok:""});
+    try{const r=await fetch(doc.modelo);if(!r.ok)throw new Error("Modelo não encontrado no portal.");
+      baixar(await preencherDocx(await r.arrayBuffer(),doc.trocas(dadosKitDaAdmissao({...a,dados_empresa:{...(a.dados_empresa||{}),...emp}}))),`${doc.titulo} - ${a.nome}.docx`);
+      setMsg({erro:"",ok:`"${doc.titulo}" gerado.`});}catch(e){setMsg({erro:e.message,ok:""});}
+    setOcupado("");
+  };
+  const H=(dia,k)=>((emp.horarios||{})[dia]||{})[k]||"";
+  const setH=(dia,k,v)=>setEmp({...emp,horarios:{...(emp.horarios||{}),[dia]:{...((emp.horarios||{})[dia]||{}),[k]:v}}});
+  // Turno da produção confirmado pelo Asael (13/10/2026): seg–qui 7h–17h, sex 7h–16h, 1h de almoço.
+  const turnoProducao=()=>setEmp({...emp,jornada_semanal:"44h",jornada_mensal:"220h",dsr:emp.dsr||"Domingo",horarios:{
+    seg:{entrada:"07:00",saida:"17:00",intervalo_ini:"12:00",intervalo_fim:"13:00"},ter:{entrada:"07:00",saida:"17:00",intervalo_ini:"12:00",intervalo_fim:"13:00"},
+    qua:{entrada:"07:00",saida:"17:00",intervalo_ini:"12:00",intervalo_fim:"13:00"},qui:{entrada:"07:00",saida:"17:00",intervalo_ini:"12:00",intervalo_fim:"13:00"},
+    sex:{entrada:"07:00",saida:"16:00",intervalo_ini:"12:00",intervalo_fim:"13:00"},sab:{}}});
+  const E=(k,label,props={})=><Inp label={label} value={emp[k]||""} onChange={e=>setEmp({...emp,[k]:e.target.value})} {...props}/>;
+  const ES=(k,label)=><Sel label={label} value={emp[k]===true?"SIM":emp[k]===false?"NÃO":""} onChange={e=>setEmp({...emp,[k]:e.target.value===""?undefined:e.target.value==="SIM"})} options={[{value:"",label:"—"},{value:"SIM",label:"Sim"},{value:"NÃO",label:"Não"}]}/>;
+  const grade={display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10};
+  const linhaDado=(l,v)=>v?<div style={{fontSize:13}}><span style={{color:C.txd}}>{l}: </span>{v}</div>:null;
+  if(lista===null)return<div style={{display:"flex",gap:10,alignItems:"center",color:C.txm}}><Spin size={16}/> Carregando admissões…</div>;
+  const c=aberta?.dados_candidato||{};const kit=aberta?dadosKitDaAdmissao({...aberta,dados_empresa:{...(aberta.dados_empresa||{}),...emp}}):{};
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <div style={{fontSize:13,color:C.txm}}>Inicie a admissão pelo candidato aprovado (aba Candidatos › "📋 Iniciar admissão") ou cadastre aqui.</div>
+        <Btn sz="sm" v="outline" onClick={()=>setNova({nome:"",email:"",telefone:"",cargo:""})}>+ Nova admissão</Btn>
+      </div>
+      {lista.length===0&&<Card><div style={{color:C.txd,fontSize:13}}>Nenhuma admissão ainda.</div></Card>}
+      {lista.map(a=>{const[st,cor]=ST_ADM[a.status]||[a.status,C.txd];const vencido=new Date(a.token_expira_em)<new Date()&&a.status==="aguardando";return(
+        <Card key={a.id} style={{padding:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+            <div style={{minWidth:0}}><div style={{fontWeight:700}}>{a.nome}</div>
+              <div style={{fontSize:12,color:C.txd}}>{a.cargo||"Cargo a definir"} · criada em {new Date(a.criado_em).toLocaleDateString("pt-BR")}{a.preenchida_em?" · ficha enviada em "+new Date(a.preenchida_em).toLocaleDateString("pt-BR"):""}{a.status==="aguardando"?" · link "+(vencido?"VENCIDO":"válido até "+new Date(a.token_expira_em).toLocaleDateString("pt-BR")):""}</div></div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+              <Chip label={st} color={cor} dot/>
+              {a.status!=="cancelada"&&a.status!=="conferida"&&!vencido&&<><Btn sz="sm" v="outline" onClick={()=>copiar(a)} title="Copiar o link para enviar por WhatsApp">Copiar link</Btn>
+                <Btn sz="sm" v="outline" onClick={()=>enviarEmail(a)} disabled={!a.email||ocupado==="email"+a.id} title={a.email?"Enviar o link para "+a.email:"Sem e-mail cadastrado"}>✉ Enviar por e-mail</Btn></>}
+              {vencido&&<Btn sz="sm" v="outline" onClick={()=>atualizar(a,{renovar:true})}>Renovar link</Btn>}
+              <Btn sz="sm" onClick={()=>abrir(a)}>{a.status==="aguardando"?"Abrir":"Conferir ficha"}</Btn>
+            </div>
+          </div>
+        </Card>);})}
+
+      <Modal open={!!nova} onClose={()=>setNova(null)} title="Nova admissão" width={520}>
+        {nova&&<div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <Inp label="Nome do candidato *" value={nova.nome} onChange={e=>setNova({...nova,nome:e.target.value})}/>
+          <Inp label="Cargo" value={nova.cargo} onChange={e=>setNova({...nova,cargo:e.target.value})}/>
+          <Inp label="E-mail (para enviar o link)" type="email" value={nova.email} onChange={e=>setNova({...nova,email:e.target.value})}/>
+          <Inp label="Telefone" value={nova.telefone} onChange={e=>setNova({...nova,telefone:e.target.value})}/>
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}><Btn v="outline" onClick={()=>setNova(null)}>Cancelar</Btn>
+            <Btn disabled={nova.nome.trim().length<3} onClick={async()=>{const{data,error}=await getSB().rpc("admissao_criar",{p_pedido_por:user.id,p_candidato_id:null,p_nome:nova.nome,p_email:nova.email,p_telefone:nova.telefone,p_cargo:nova.cargo});
+              if(error){showToast?.(error.message,"error");return;}setNova(null);await carregar();showToast?.("Admissão criada. Copie ou envie o link ao candidato.","success");}}>Criar e gerar link</Btn></div>
+        </div>}
+      </Modal>
+
+      <Modal open={!!aberta} onClose={()=>setAberta(null)} title={"Admissão — "+(aberta?.nome||"")} width={860}>
+        {aberta&&<div style={{display:"flex",flexDirection:"column",gap:14}}>
+          {aberta.status==="aguardando"&&<div style={{fontSize:13,color:C.amb,background:C.ambBg,border:"1px solid "+C.amb+"30",borderRadius:8,padding:"9px 12px"}}>O candidato ainda não preencheu a ficha. Você já pode completar os dados do vínculo.</div>}
+          {aberta.status!=="aguardando"&&<div>
+            <div style={{fontSize:14,fontWeight:800,marginBottom:6}}>Ficha preenchida pelo candidato</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(230px,1fr))",gap:"4px 16px",background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"10px 12px"}}>
+              {linhaDado("Nome",c.nome)}{linhaDado("Sexo",c.sexo==="F"?"Feminino":c.sexo==="M"?"Masculino":"")}{linhaDado("Raça/cor",c.raca)}
+              {linhaDado("Nascimento",c.nascimento&&fd(c.nascimento))}{linhaDado("Naturalidade",c.naturalidade)}{linhaDado("Estado civil",c.estado_civil)}
+              {linhaDado("Escolaridade",c.escolaridade)}{linhaDado("Mãe",c.mae)}{linhaDado("Pai",c.pai)}{linhaDado("Telefone",c.telefone)}{linhaDado("E-mail",c.email)}
+              {linhaDado("Endereço",kit.endereco)}{linhaDado("CPF",c.cpf)}{linhaDado("RG",c.rg)}{linhaDado("CTPS",kit.ctps)}{linhaDado("PIS",c.pis)}
+              {linhaDado("Título",[c.titulo,c.titulo_zona&&"zona "+c.titulo_zona,c.titulo_secao&&"seção "+c.titulo_secao].filter(Boolean).join(" · "))}{linhaDado("CNH",c.cnh)}
+              {linhaDado("Banco",[c.banco,c.agencia&&"ag. "+c.agencia,c.conta&&"conta "+c.conta,c.tipo_conta].filter(Boolean).join(" · "))}
+              {linhaDado("Dependentes",(c.dependentes||[]).map(x=>`${x.nome} (${x.vinculo}${x.irrf?", IRRF":""})`).join("; "))}
+              {linhaDado("Ciência LGPD",aberta.consentimento_em&&new Date(aberta.consentimento_em).toLocaleString("pt-BR"))}
+            </div></div>}
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:6}}>
+              <div style={{fontSize:14,fontWeight:800}}>Dados do vínculo (RH)</div>
+              <Btn sz="sm" v="outline" onClick={turnoProducao} title="Seg–qui 7h–17h, sex 7h–16h, almoço 12h–13h, 44h semanais">Usar turno da produção</Btn>
+            </div>
+            <div style={grade}>
+              {E("filial","Filial")}{E("centro_custo","Centro de custo")}{E("departamento","Departamento")}{E("tipo_vinculo","Tipo de vínculo")}
+              {E("data_admissao","Data de admissão",{type:"date"})}{E("funcao","Função")}{E("salario","Salário",{placeholder:"R$ 0,00"})}
+              {E("experiencia_dias","Experiência (dias)")}{E("prorrogacao_dias","Prorrogação (dias)")}
+              {ES("contribuicao_sindical","Pagou contrib. sindical no ano?")}{E("sindicato","Sindicato")}
+              {E("dsr","Dia do DSR")}{E("jornada_semanal","Jornada semanal")}{E("jornada_mensal","Jornada mensal")}
+              {ES("adiantamento","Adiantamento?")}{E("adiantamento_pct","% adiantamento")}
+              {ES("vale_refeicao","Vale-refeição?")}{E("vr_valor","VR valor")}{E("vr_qtd","VR qtd. diária")}
+              {ES("vale_transporte","Vale-transporte?")}{E("vt_tarifa","VT tarifa")}{E("vt_qtd","VT qtd. diária")}
+              {ES("vale_transporte2","2º vale-transporte?")}{E("vt2_tarifa","2º VT tarifa")}{E("vt2_qtd","2º VT qtd. diária")}
+            </div>
+            <div style={{overflowX:"auto",marginTop:10}}>
+              <table style={{borderCollapse:"collapse",fontSize:12,minWidth:520}}><thead><tr>{["Dia","Entrada","Saída","Intervalo início","Intervalo fim"].map(h=><th key={h} style={{textAlign:"left",padding:"4px 6px",color:C.txd}}>{h}</th>)}</tr></thead>
+                <tbody>{[["seg","Seg"],["ter","Ter"],["qua","Qua"],["qui","Qui"],["sex","Sex"],["sab","Sáb"]].map(([k,l])=><tr key={k}><td style={{padding:"3px 6px",fontWeight:600}}>{l}</td>
+                  {["entrada","saida","intervalo_ini","intervalo_fim"].map(f=><td key={f} style={{padding:"3px 6px"}}><input type="time" value={H(k,f)} onChange={e=>setH(k,f,e.target.value)} style={{background:C.s1,border:"1px solid "+C.bdr,borderRadius:6,padding:"4px 6px",color:C.txt}}/></td>)}</tr>)}</tbody></table>
+            </div>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:10,flexWrap:"wrap"}}>
+              <Btn sz="sm" v="outline" onClick={async()=>{const r=await atualizar(aberta,{dados:emp});if(r)setMsg({erro:"",ok:"Dados do vínculo salvos."});}}>Salvar dados do vínculo</Btn>
+              {aberta.status==="preenchida"&&<Btn sz="sm" v="success" onClick={async()=>{const r=await atualizar(aberta,{dados:emp,status:"conferida"});if(r)setMsg({erro:"",ok:"Ficha conferida. O candidato não pode mais alterar."});}}>✓ Marcar como conferida</Btn>}
+              {aberta.status!=="cancelada"&&aberta.status!=="conferida"&&<Btn sz="sm" v="danger" onClick={async()=>{if(!window.confirm("Cancelar esta admissão? O link deixa de funcionar."))return;const r=await atualizar(aberta,{status:"cancelada"});if(r)setAberta(null);}}>Cancelar admissão</Btn>}
+            </div>
+          </div>
+          {aberta.status!=="aguardando"&&<div style={{borderTop:"1px solid "+C.bdr,paddingTop:12,display:"flex",flexDirection:"column",gap:8}}>
+            <div style={{fontSize:14,fontWeight:800}}>Documentos</div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <div><div style={{fontSize:14,fontWeight:600}}>Ficha de registro da BRIT (Excel)</div><div style={{fontSize:12,color:C.txd}}>Preenche a planilha "Dados cadastrais para admissão" da BRIT.</div></div>
+              <Btn sz="sm" onClick={()=>baixarFicha(aberta)} disabled={ocupado==="ficha"}>{ocupado==="ficha"?<Spin size={12} color="#fff"/>:"⬇"} Baixar</Btn>
+            </div>
+            {DOCUMENTOS_ADMISSAO.map(doc=>{const falta=faltandoPara(doc,kit);return(
+              <div key={doc.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                <div><div style={{fontSize:14,fontWeight:600}}>{doc.titulo}</div>{falta.length>0&&<div style={{fontSize:12,color:C.amb}}>Falta: {falta.map(k=>({admissao:"data de admissão",cargo:"função",ctps:"CTPS",endereco:"endereço",rg:"RG",cpf:"CPF",data_nascimento:"nascimento",naturalidade:"naturalidade",estado_civil:"estado civil",sexo:"sexo",nome:"nome"}[k]||k)).join(", ")}</div>}</div>
+                <Btn sz="sm" onClick={()=>baixarDoc(aberta,doc)} disabled={falta.length>0||ocupado===doc.id}>{ocupado===doc.id?<Spin size={12} color="#fff"/>:"⬇"} Baixar</Btn>
+              </div>);})}
+          </div>}
+          {msg.erro&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"9px 14px",color:C.red,fontSize:13}}>{msg.erro}</div>}
+          {msg.ok&&<div style={{background:C.grnBg,border:"1px solid "+C.grn+"25",borderRadius:8,padding:"9px 14px",color:C.grn,fontSize:13}}>{msg.ok}</div>}
+        </div>}
+      </Modal>
+    </div>);
+}
+
 function CareerPortal({vagas,carregando=false,onBack,onSubmit,criarTarefaAuto}){
   const[erroEnvio,setErroEnvio]=useState("");
   const[step,setStep]=useState(1);const[vaga,setVaga]=useState(null);const[form,setForm]=useState({name:"",email:"",phone:"",pcd:false,salarioPret:""});const[ans,setAns]=useState(["","","",""]);const[cvFile,setCvFile]=useState(null);const[loading,setLoading]=useState(false);const[stepMsg,setStepMsg]=useState("");const fileRef=useRef();
@@ -5226,6 +5507,9 @@ export default function App(){
   const vagasAbertas=vagas.filter(vagaAberta);
   // Link público de evento (?evento=<slug>): formulário sem login, para quem não tem e-mail/senha no portal.
   const eventoPublico=new URLSearchParams(window.location.search).get("evento");
+  // Link individual da ficha de admissão (?admissao=<token>): candidato aprovado preenche sem login.
+  const admissaoPublica=new URLSearchParams(window.location.search).get("admissao");
+  if(admissaoPublica)return<FichaAdmissao token={admissaoPublica}/>;
   if(eventoPublico)return<FormularioEvento slug={eventoPublico}/>;
   if(!user&&screen==="career")return<CareerPortal vagas={vagasAbertas} carregando={vagasCarregando} onBack={()=>setScreen("login")} onSubmit={c=>setCandidates(p=>[c,...p])} criarTarefaAuto={criarTarefaAuto}/>;
   if(!user)return<Login onLogin={handleLogin} onPortal={abrirPortalVagas}/>;
