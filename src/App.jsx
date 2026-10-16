@@ -20,7 +20,7 @@ const getSB=()=>_sb;
 function initSB(){
   if(_sbp)return _sbp;
   _sbp=new Promise(res=>{
-    const t=()=>{if(window.supabase?.createClient){_sb=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false}});res(_sb);return true;}return false;};
+    const t=()=>{if(window.supabase?.createClient){_sb=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true}}); /* sessão do Supabase Auth (16/10/2026) */res(_sb);return true;}return false;};
     if(t())return;
     const s=document.createElement("script");
     s.src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js";
@@ -300,12 +300,19 @@ function Login({onLogin,onPortal}){
     setLoading(true);setErr("");
     try{
       const sb=await initSB();if(!sb){setErr("Falha ao conectar.");setLoading(false);return;}
-      // Login seguro: a comparação de senha (bcrypt) acontece dentro do Postgres via RPC,
-      // a senha nunca é comparada em texto puro no cliente e o hash nunca volta pro navegador.
       // E-mail em minúsculas: o banco compara letra a letra e o celular costuma pôr a 1ª letra maiúscula.
-      const{data,error}=await sb.rpc("verify_login",{p_email:e.trim().toLowerCase(),p_password:(p||pass).trim()});
+      const em=e.trim().toLowerCase(),pw=(p||pass).trim();
+      // 1) Login do Supabase (16/10/2026): sessão de verdade; o banco passa a saber quem está pedindo.
+      const{error:eAuth}=await sb.auth.signInWithPassword({email:em,password:pw});
+      if(!eAuth){
+        const{data:me}=await sb.rpc("meu_usuario");const eu=Array.isArray(me)?me[0]:me;
+        if(eu){window.__modoLogin="supabase";onLogin(mu(eu));return;}
+        await sb.auth.signOut();setErr("Seu acesso está inativo. Fale com o RH.");setLoading(false);return;
+      }
+      // 2) Reserva durante a transição: login antigo (compara a senha bcrypt dentro do banco).
+      const{data,error}=await sb.rpc("verify_login",{p_email:em,p_password:pw});
       const row=Array.isArray(data)?data[0]:data;
-      if(error||!row){setErr("E-mail ou senha incorretos.");setLoading(false);}else onLogin(mu(row));
+      if(error||!row){setErr("E-mail ou senha incorretos.");setLoading(false);}else{window.__modoLogin="legado";onLogin(mu(row));}
     }catch(ex){setErr("Erro: "+ex.message);setLoading(false);}
   };
   
@@ -4671,7 +4678,7 @@ function Config({user}){
         </div>
       </Card>
       {can(user.role,"rh")&&<IntegracaoCurriculos user={user}/>}
-      <Card><div style={{fontSize:14,fontWeight:700,marginBottom:10}}>Ambiente</div><div style={{fontSize:12,color:C.txm,display:"flex",flexDirection:"column",gap:6}}><span>🗄 {SB_URL}</span><span>👤 {user.name} ({user.role})</span><span>📋 K.RH v2.0 — Kalenborn International</span></div></Card>
+      <Card><div style={{fontSize:14,fontWeight:700,marginBottom:10}}>Ambiente</div><div style={{fontSize:12,color:C.txm,display:"flex",flexDirection:"column",gap:6}}><span>🗄 {SB_URL}</span><span title="Transição para o login do Supabase: 'Supabase' é o login novo; 'antigo' é a reserva">🔐 Login: {window.__modoLogin==="supabase"?"Supabase (sessão segura)":window.__modoLogin==="legado"?"antigo (reserva de transição)":"—"}</span><span>👤 {user.name} ({user.role})</span><span>📋 K.RH v2.0 — Kalenborn International</span></div></Card>
     </div>
   );
 }
@@ -5404,6 +5411,15 @@ export default function App(){
   };
   
   const handleLogin=async u=>{setUser(u);setPage("dashboard");await loadAll(u);};
+  // Sessão do Supabase guardada: ao abrir/recarregar o portal, entra direto (antes recarregar deslogava).
+  const[restaurando,setRestaurando]=useState(true);
+  useEffect(()=>{(async()=>{
+    try{const sb=await initSB();const{data}=await sb?.auth?.getSession?.()||{};
+      if(data?.session){const{data:me}=await sb.rpc("meu_usuario");const eu=Array.isArray(me)?me[0]:me;
+        if(eu){window.__modoLogin="supabase";await handleLogin(mu(eu));} else await sb.auth.signOut();}
+    }catch(e){console.error(e);}
+    setRestaurando(false);
+  })();},[]);
 
   // Portal de Vagas (candidato, sem login): busca as vagas ativas direto do banco.
   // Por quê: o loadAll só roda depois do login do RH, então o candidato via sempre a lista fixa de
@@ -5417,7 +5433,7 @@ export default function App(){
     }catch(e){console.error(e);}
     setVagasCarregando(false);
   };
-  const handleLogout=()=>{setUser(null);setUsers([]);setFerias([]);setFeedbacks([]);setChat([]);setAvaliacoes([]);setCandidates([]);setTalentos([]);setComunicados([]);setExames([]);setTarefas([]);setPulses([]);setNps([]);setBenCatalogo([]);setBenUsuarios([]);setBenSolicits([]);setMovs([]);};
+  const handleLogout=()=>{getSB()?.auth?.signOut?.().catch(()=>{});window.__modoLogin=null;setUser(null);setUsers([]);setFerias([]);setFeedbacks([]);setChat([]);setAvaliacoes([]);setCandidates([]);setTalentos([]);setComunicados([]);setExames([]);setTarefas([]);setPulses([]);setNps([]);setBenCatalogo([]);setBenUsuarios([]);setBenSolicits([]);setMovs([]);};
   
   // Automação para criar cards no Kanban Planner
   const criarTarefaAuto=async(titulo,desc,prio="media",tags=[],origemTipo=null,origemId=null)=>{
@@ -5458,6 +5474,7 @@ export default function App(){
   if(admissaoPublica)return<FichaAdmissao token={admissaoPublica}/>;
   if(eventoPublico)return<FormularioEvento slug={eventoPublico}/>;
   if(!user&&screen==="career")return<CareerPortal vagas={vagasAbertas} carregando={vagasCarregando} onBack={()=>setScreen("login")} onSubmit={c=>setCandidates(p=>[c,...p])} criarTarefaAuto={criarTarefaAuto}/>;
+  if(!user&&restaurando)return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",gap:10,color:C.txm,background:C.bg}}><style>{CSS}</style><Spin size={18}/> Carregando…</div>;
   if(!user)return<Login onLogin={handleLogin} onPortal={abrirPortalVagas}/>;
   if(loading&&users.length===0)return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,flexDirection:"column",gap:16}}><style>{CSS}</style><Spin size={36}/><div style={{fontSize:14,color:C.txd}}>Carregando dados...</div></div>;
   
