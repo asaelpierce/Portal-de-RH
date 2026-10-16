@@ -4737,7 +4737,7 @@ function Config({user}){
         </div>
       </Card>
       {can(user.role,"rh")&&<IntegracaoCurriculos user={user}/>}
-      <Card><div style={{fontSize:14,fontWeight:700,marginBottom:10}}>Ambiente</div><div style={{fontSize:12,color:C.txm,display:"flex",flexDirection:"column",gap:6}}><span>🗄 {SB_URL}</span><span title="Transição para o login do Supabase: 'Supabase' é o login novo; 'antigo' é a reserva">🔐 Login: {window.__modoLogin==="supabase"?"Supabase (sessão segura)":window.__modoLogin==="legado"?"antigo (reserva de transição)":"—"}</span><span>👤 {user.name} ({user.role})</span><span>📋 K.RH v2.0 — Kalenborn International</span></div></Card>
+      <Card><div style={{fontSize:14,fontWeight:700,marginBottom:10}}>Ambiente</div><div style={{fontSize:12,color:C.txm,display:"flex",flexDirection:"column",gap:6}}><span>🗄 {SB_URL}</span><span title="Transição para o login do Supabase: 'Supabase' é o login novo; 'antigo' é a reserva">🔐 Login: {window.__modoLogin==="supabase"?"Supabase (sessão segura)":"—"}</span><span>👤 {user.name} ({user.role})</span><span>📋 K.RH v2.0 — Kalenborn International</span></div></Card>
     </div>
   );
 }
