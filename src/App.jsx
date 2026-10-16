@@ -32,6 +32,9 @@ function initSB(){
 }
 
 // Chamada única para a Edge Function que centraliza tudo que precisa de chave secreta
+// Senha aleatória para o RH entregar (sem caracteres que se confundem: 0/O, 1/l/I).
+function gerarSenha(n=10){const a="ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";const v=new Uint32Array(n);crypto.getRandomValues(v);return Array.from(v,x=>a[x%a.length]).join("");}
+
 // Token da sessão do login do Supabase (etapa 3): as funções do servidor identificam quem pede por ele.
 // Sem sessão (páginas públicas) vai a chave pública, e o servidor só aceita o que é público.
 async function tokenSessao(){
@@ -1972,7 +1975,19 @@ function Equipe({user,users,ferias}){
 }
 
 // COLABORADORES
-function Colaboradores({users,setUsers,currentUser}){
+function Colaboradores({users,setUsers,currentUser,showToast}){
+  // Redefinir senha pelo RH (etapa 4 do login): a senha vai criptografada para o banco e de lá para o login do Supabase.
+  const[modalSenha,setModalSenha]=useState(null);const[senhaNova,setSenhaNova]=useState("");const[salvandoSenha,setSalvandoSenha]=useState(false);const[erroSenha,setErroSenha]=useState("");
+  const abrirSenha=(u,e)=>{e?.stopPropagation?.();setSenhaNova(gerarSenha());setErroSenha("");setModalSenha(u);};
+  const salvarSenha=async()=>{
+    if(senhaNova.trim().length<8){setErroSenha("A senha precisa ter pelo menos 8 caracteres.");return;}
+    setSalvandoSenha(true);setErroSenha("");
+    const{error}=await getSB().rpc("rh_redefinir_senha",{p_pedido_por:currentUser.id,p_usuario_id:modalSenha.id,p_senha:senhaNova.trim()});
+    setSalvandoSenha(false);
+    if(error){setErroSenha(error.message||"Não foi possível redefinir a senha.");return;}
+    showToast?.(`Senha de ${modalSenha.name.split(" ")[0]} redefinida. Entregue a nova senha pessoalmente.`,"success");
+    setModalSenha(null);setSenhaNova("");
+  };
   const[busca,setBusca]=useState("");const[fSetor,setFSetor]=useState("todos");const[fRole,setFRole]=useState("todos");const[fArea,setFArea]=useState("todas");const[sel,setSel]=useState(null);
   const[modalMov,setModalMov]=useState(null); // colaborador sendo movido
   // Kit de admissão (RH): CTPS e endereço ficam em tabela protegida, lidos/gravados só por funções que exigem RH.
@@ -2069,11 +2084,26 @@ function Colaboradores({users,setUsers,currentUser}){
               {(podeMovimentar||ehRH)&&<div style={{gridColumn:"1/-1",marginTop:4,display:"flex",gap:8,flexWrap:"wrap"}}>
                 {podeMovimentar&&<Btn sz="sm" v="outline" onClick={e=>abrirMovimentacao(u,e)}>⇄ Movimentar setor/área</Btn>}
                 {ehRH&&<Btn sz="sm" v="outline" title="Gerar carta de boas-vindas, termo de conduta e acordo de banco de horas já preenchidos" onClick={e=>abrirDocs(u,e)}>📄 Documentos de admissão</Btn>}
+                {ehRH&&u.email&&u.status==="ativo"&&<Btn sz="sm" v="outline" title="Criar uma senha nova para quem esqueceu a dele" onClick={e=>abrirSenha(u,e)}>🔑 Redefinir senha</Btn>}
               </div>}
             </div>}
           </Card>
         );})}
       </div>
+
+      <Modal open={!!modalSenha} onClose={()=>setModalSenha(null)} title={"Redefinir senha — "+(modalSenha?.name||"")} width={460}>
+        {modalSenha&&<div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{fontSize:13,color:C.txm}}>Login: <b>{modalSenha.email}</b>. A senha antiga deixa de funcionar na hora.</div>
+          <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
+            <div style={{flex:1}}><Inp label="Nova senha (mínimo 8 caracteres)" value={senhaNova} onChange={e=>{setSenhaNova(e.target.value);setErroSenha("");}}/></div>
+            <Btn v="outline" onClick={()=>setSenhaNova(gerarSenha())}>↻ Gerar outra</Btn>
+          </div>
+          <div style={{fontSize:12,color:C.txd,background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"8px 12px"}}>Anote e entregue a senha <b>pessoalmente</b> (não por e-mail ou grupo). A pessoa pode trocá-la depois em <b>Meu Perfil › Editar › Trocar minha senha</b>.</div>
+          {erroSenha&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"8px 12px",color:C.red,fontSize:13}}>{erroSenha}</div>}
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}><Btn v="outline" onClick={()=>setModalSenha(null)}>Cancelar</Btn>
+            <Btn onClick={salvarSenha} disabled={salvandoSenha}>{salvandoSenha?<Spin size={14} color="#fff"/>:null} Redefinir senha</Btn></div>
+        </div>}
+      </Modal>
 
       <Modal open={!!modalDocs} onClose={()=>setModalDocs(null)} title={"Documentos de admissão — "+(modalDocs?.name||"")} width={560}>
         {modalDocs&&<div style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -2130,6 +2160,29 @@ function Colaboradores({users,setUsers,currentUser}){
 }
 
 // PERFIL
+// Trocar a própria senha (etapa 4 do login): muda direto no login do Supabase, pela sessão de quem está logado.
+function TrocarMinhaSenha(){
+  const[aberto,setAberto]=useState(false);const[a,setA]=useState("");const[b,setB]=useState("");const[msg,setMsg]=useState(null);const[salv,setSalv]=useState(false);
+  const trocar=async()=>{
+    if(a.length<8){setMsg({e:true,t:"A senha precisa ter pelo menos 8 caracteres."});return;}
+    if(a!==b){setMsg({e:true,t:"As duas senhas não são iguais."});return;}
+    setSalv(true);setMsg(null);
+    const{error}=await getSB().auth.updateUser({password:a});
+    setSalv(false);
+    if(error){setMsg({e:true,t:/same|igual/i.test(error.message)?"A nova senha precisa ser diferente da atual.":"Não foi possível trocar a senha: "+error.message});return;}
+    setA("");setB("");setMsg({e:false,t:"Senha trocada. Use a nova senha no próximo acesso."});
+  };
+  if(!aberto)return<button onClick={()=>setAberto(true)} style={{background:"none",border:"none",color:C.acc,cursor:"pointer",fontSize:13,textAlign:"left",padding:0}}>🔑 Trocar minha senha</button>;
+  return(<div style={{border:"1px solid "+C.bdr,borderRadius:10,padding:12,display:"flex",flexDirection:"column",gap:10}}>
+    <div style={{fontSize:13,fontWeight:700}}>🔑 Trocar minha senha</div>
+    <Inp label="Nova senha (mínimo 8 caracteres)" type="password" value={a} onChange={e=>{setA(e.target.value);setMsg(null);}}/>
+    <Inp label="Repita a nova senha" type="password" value={b} onChange={e=>{setB(e.target.value);setMsg(null);}}/>
+    {msg&&<div style={{fontSize:13,color:msg.e?C.red:C.grn}}>{msg.t}</div>}
+    <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Btn sz="sm" v="outline" onClick={()=>{setAberto(false);setA("");setB("");setMsg(null);}}>Fechar</Btn>
+      <Btn sz="sm" onClick={trocar} disabled={salv||!a||!b}>{salv?<Spin size={12} color="#fff"/>:null} Trocar senha</Btn></div>
+  </div>);
+}
+
 function Perfil({user,setUsers,setPage}){
   const col=SC[user.setor]||C.acc;
   // Por quê: o fallback ["Comunicação","Trabalho em Equipe"] era dado fictício (e nunca aparecia, pois mu() já devolve []).
@@ -2320,6 +2373,7 @@ function Perfil({user,setUsers,setPage}){
           <Inp label="URL da foto de perfil" value={formEdit.fotoUrl} onChange={e=>setFormEdit({...formEdit,fotoUrl:e.target.value})} placeholder="https://..."/>
           {formEdit.fotoUrl&&<div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:12,color:C.txd}}>Pré-visualização:</span><Av name={formEdit.name||user.name} size={40} color={col} photo={formEdit.fotoUrl}/></div>}
           <div style={{fontSize:11,color:C.txd}}>E-mail, cargo e setor são gerenciados pelo RH — fale com seu gestor se precisar alterá-los.</div>
+          <TrocarMinhaSenha/>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
             <Btn v="outline" onClick={()=>setEditando(false)}>Cancelar</Btn>
             <Btn onClick={salvarEdicao} disabled={!formEdit.name.trim()||savingEdit}>{savingEdit?<Spin size={14} color="#fff"/>:null} Salvar</Btn>
@@ -5499,7 +5553,7 @@ export default function App(){
       case"feedbacks":return<Feedbacks {...props}/>;
       case"chat":return<Chat {...props}/>;
       case"comunicados":return<Comunicados {...props}/>;
-      case"colaboradores":return<Colaboradores users={users} setUsers={setUsers} currentUser={user}/>;
+      case"colaboradores":return<Colaboradores users={users} setUsers={setUsers} currentUser={user} showToast={showToast}/>;
       case"eventos":return<GestaoEventos {...props}/>;
       case"contratacao":return<Contratacao {...props}/>;
       case"movimentacoes":return<Movimentacoes {...props}/>;
