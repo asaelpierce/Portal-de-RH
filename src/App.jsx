@@ -3376,7 +3376,10 @@ function GestBeneficios({user,users,benCatalogo,setBenCatalogo,benUsuarios,setBe
 
 
 // MOVIMENTAÇÕES — Admissão e Demissão (escala Líder → Gestor → RH)
-function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,setVagas}){
+function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,setVagas,showToast}){
+  // Admissão/Demissão grava pelas funções do banco (mov_abrir/mov_detalhar/mov_decidir), que conferem o perfil em cada
+  // etapa. Antes gravava direto na tabela — bloqueado pelo banco — e a falha não aparecia (a janela só não fechava).
+  const erroMov=(error,padrao)=>showToast?.(error?.message||padrao,"error");
   const[tab,setTab]=useState("pendentes");
   // Solicitação de rescisão (modelo da BRIT): o RH escolhe aviso/tipo e informa os valores; o portal preenche o Word.
   const RESC_VAZIA={dataAviso:"",tipoAviso:"",tipoRescisao:"",horasExtras:"",premio:"",comissoes:"",adicionalNoturno:"",outrosProventos:"",descontos:[],faltas:"",dsr:"",atrasos:"",outrosDescontos:""};
@@ -3429,16 +3432,11 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
   const abrirAdmissaoLider=async()=>{
     if(!formAdmLider.gestorId||!formAdmLider.motivo.trim()||!formAdmLider.cargo.trim()||!formAdmLider.salario.trim())return;
     setSaving(true);
-    const sb=getSB();
-    const{data}=await sb.from("movimentacoes").insert([{
-      tipo:"admissao",status:"pendente_gestor",
-      solicitante_id:user.id,solicitante_name:user.name,
-      setor:formAdmLider.setor,lider_id:user.id,gestor_id:parseInt(formAdmLider.gestorId),
-      motivo:formAdmLider.motivo.trim(),
-      cargo:formAdmLider.cargo.trim(),salario:formAdmLider.salario.trim(),
-      requisitos:formAdmLider.perfilBuscado.trim(),
-    }]).select().single();
-    if(data){setMovs(p=>[mmv(data),...p]);setModalNova(null);setFormAdmLider({setor:"producao",gestorId:can(user.role,"gestor")?String(user.id):"",motivo:"",cargo:"",salario:"",perfilBuscado:""});}
+    const{data,error}=await getSB().rpc("mov_abrir",{p_pedido_por:user.id,p_tipo:"admissao",p_dados:{
+      setor:formAdmLider.setor,gestor_id:parseInt(formAdmLider.gestorId),motivo:formAdmLider.motivo.trim(),
+      cargo:formAdmLider.cargo.trim(),salario:formAdmLider.salario.trim(),requisitos:formAdmLider.perfilBuscado.trim()}});
+    if(error)erroMov(error,"Não foi possível abrir o pedido de admissão.");
+    if(data){showToast?.("Pedido de admissão enviado ao gestor.","success");setMovs(p=>[mmv(data),...p]);setModalNova(null);setFormAdmLider({setor:"producao",gestorId:can(user.role,"gestor")?String(user.id):"",motivo:"",cargo:"",salario:"",perfilBuscado:""});}
     setSaving(false);
   };
 
@@ -3446,16 +3444,11 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
   const abrirDemissaoLider=async()=>{
     if(!formDemLider.userId||!formDemLider.gestorId||!formDemLider.motivo.trim())return;
     setSaving(true);
-    const colab=users.find(u=>u.id===parseInt(formDemLider.userId));
-    const sb=getSB();
-    const{data}=await sb.from("movimentacoes").insert([{
-      tipo:"demissao",status:"pendente_gestor",
-      solicitante_id:user.id,solicitante_name:user.name,
-      user_id:colab.id,nome:colab.name,cargo:colab.cargo,setor:colab.setor,
-      lider_id:user.id,gestor_id:parseInt(formDemLider.gestorId),
-      motivo:formDemLider.motivo.trim(),
-    }]).select().single();
-    if(data){setMovs(p=>[mmv(data),...p]);setModalNova(null);setFormDemLider({userId:"",gestorId:"",motivo:""});}
+    // Nome, cargo e setor vêm do cadastro no banco (não do navegador).
+    const{data,error}=await getSB().rpc("mov_abrir",{p_pedido_por:user.id,p_tipo:"demissao",p_dados:{
+      user_id:parseInt(formDemLider.userId),gestor_id:parseInt(formDemLider.gestorId),motivo:formDemLider.motivo.trim()}});
+    if(error)erroMov(error,"Não foi possível abrir o pedido de demissão.");
+    if(data){showToast?.("Pedido de demissão enviado ao gestor.","success");setMovs(p=>[mmv(data),...p]);setModalNova(null);setFormDemLider({userId:"",gestorId:"",motivo:""});}
     setSaving(false);
   };
 
@@ -3463,14 +3456,11 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
   const detalharAdmissaoGestor=async mov=>{
     if(!formGestorAdm.cargo.trim()||!formGestorAdm.salario.trim())return;
     setSaving(true);
-    const sb=getSB();
-    const{data}=await sb.from("movimentacoes").update({
-      cargo:formGestorAdm.cargo.trim(),salario:formGestorAdm.salario.trim(),
-      requisitos:formGestorAdm.requisitos.trim(),prazo_encerramento:formGestorAdm.prazoEncerramento||null,
-      data_prevista:formGestorAdm.dataPrevista||null,
-      gestor_em:new Date().toISOString(),status:"pendente_rh",
-    }).eq("id",mov.id).select().single();
-    if(data){setMovs(p=>p.map(m=>m.id===mov.id?mmv(data):m));setModalDecisao(null);setFormGestorAdm({cargo:"",salario:"",requisitos:"",prazoEncerramento:"",dataPrevista:""});}
+    const{data,error}=await getSB().rpc("mov_detalhar",{p_pedido_por:user.id,p_id:mov.id,p_dados:{
+      cargo:formGestorAdm.cargo.trim(),salario:formGestorAdm.salario.trim(),requisitos:formGestorAdm.requisitos.trim(),
+      prazo_encerramento:formGestorAdm.prazoEncerramento||"",data_prevista:formGestorAdm.dataPrevista||""}});
+    if(error)erroMov(error,"Não foi possível enviar ao RH.");
+    if(data){showToast?.("Enviado ao RH.","success");setMovs(p=>p.map(m=>m.id===mov.id?mmv(data):m));setModalDecisao(null);setFormGestorAdm({cargo:"",salario:"",requisitos:"",prazoEncerramento:"",dataPrevista:""});}
     setSaving(false);
   };
 
@@ -3478,44 +3468,24 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
   const detalharDemissaoGestor=async mov=>{
     if(!formGestorDem.ultimoDia)return;
     setSaving(true);
-    const sb=getSB();
-    const{data}=await sb.from("movimentacoes").update({
-      tipo_demissao:formGestorDem.tipoDemissao,ultimo_dia:formGestorDem.ultimoDia,
-      gestor_obs:formGestorDem.obs.trim(),gestor_em:new Date().toISOString(),status:"pendente_rh",
-    }).eq("id",mov.id).select().single();
-    if(data){setMovs(p=>p.map(m=>m.id===mov.id?mmv(data):m));setModalDecisao(null);setFormGestorDem({tipoDemissao:"sem_justa_causa",ultimoDia:"",obs:""});}
+    const{data,error}=await getSB().rpc("mov_detalhar",{p_pedido_por:user.id,p_id:mov.id,p_dados:{
+      tipo_demissao:formGestorDem.tipoDemissao,ultimo_dia:formGestorDem.ultimoDia,obs:formGestorDem.obs.trim()}});
+    if(error)erroMov(error,"Não foi possível enviar ao RH.");
+    if(data){showToast?.("Enviado ao RH.","success");setMovs(p=>p.map(m=>m.id===mov.id?mmv(data):m));setModalDecisao(null);setFormGestorDem({tipoDemissao:"sem_justa_causa",ultimoDia:"",obs:""});}
     setSaving(false);
   };
 
   // ── Etapa 3 (RH): decisão final — efetiva tudo ──────────────────────
+  // RH decide: a função efetiva tudo numa só operação (admissão aprovada cria a vaga; demissão aprovada desliga).
   const decidirRH=async(mov,decisao)=>{
     setSaving(true);
-    const sb=getSB();
-    const{data}=await sb.from("movimentacoes").update({
-      rh_decisao:decisao,rh_obs:obsRH,rh_em:new Date().toISOString(),rh_id:user.id,
-      status:decisao,
-    }).eq("id",mov.id).select().single();
-
-    if(data&&decisao==="aprovado"){
-      if(mov.tipo==="admissao"){
-        // Cria a VAGA automaticamente em Vagas e Candidatos, com prazo de encerramento
-        const{data:vaga}=await sb.from("vagas").insert([{
-          id:String(Date.now()).slice(-6),
-          title:mov.cargo,area:SL[mov.setor]||mov.setor,local:"Kalenborn — presencial",
-          tipo:"CLT",descricao:(mov.requisitos||"")+(mov.salario?"\n\nSalário: "+mov.salario:""),
-          salario:mov.salario,requisitos:mov.requisitos,prazo_encerramento:mov.prazoEncerramento,
-          ativa:true,movimentacao_id:mov.id,
-        }]).select().single();
-        if(vaga){
-          setVagas(p=>[...p,mv(vaga)]);
-          await sb.from("movimentacoes").update({vaga_criada_id:vaga.id}).eq("id",mov.id);
-        }
-      }else if(mov.tipo==="demissao"){
-        await sb.from("usuarios").update({status:"desligado",data_desligamento:mov.ultimoDia||new Date().toISOString().split("T")[0]}).eq("id",mov.userId);
-        setUsers(p=>p.map(u=>u.id===mov.userId?{...u,status:"desligado"}:u));
-      }
-    }
-    if(data){setMovs(p=>p.map(m=>m.id===mov.id?mmv(data):m));setModalDecisao(null);setObsRH("");}
+    const{data:r,error}=await getSB().rpc("mov_decidir",{p_pedido_por:user.id,p_id:mov.id,p_decisao:decisao,p_obs:obsRH});
+    if(error){erroMov(error,"Não foi possível registrar a decisão.");setSaving(false);return;}
+    const data=r?.movimentacao;
+    if(r?.vaga)setVagas(p=>[...p,mv(r.vaga)]);
+    if(decisao==="aprovado"&&mov.tipo==="demissao")setUsers(p=>p.map(u=>u.id===mov.userId?{...u,status:"desligado"}:u));
+    if(data){setMovs(p=>p.map(m=>m.id===mov.id?mmv(data):m));setModalDecisao(null);setObsRH("");
+      showToast?.(decisao==="aprovado"?(mov.tipo==="admissao"?"Aprovado — vaga criada em Vagas e candidatos.":"Aprovado — colaborador marcado como desligado."):"Pedido rejeitado.","success");}
     setSaving(false);
   };
 
@@ -5391,7 +5361,8 @@ export default function App(){
   const showToast=(msg,type="success")=>{setToast({msg,type});setTimeout(()=>setToast(null),4000);};
   useEffect(()=>{initSB().then(sb=>{if(sb)setSbReady(true);else setSbReady(false);});},[]);
   
-  const loadAll=async()=>{
+  // u: quem acabou de entrar (no login o estado "user" ainda não foi atualizado quando isto roda).
+  const loadAll=async(u=user)=>{
     setLoading(true);const sb=await initSB();if(!sb){setLoading(false);return;}
     try{
       // Cada consulta fica junto do nome que recebe o resultado. Antes era uma lista posicional
@@ -5412,7 +5383,8 @@ export default function App(){
         tkR:sb.from("tarefas").select("*").order("ordem"),
         plR:sb.from("clima_pulses").select("*").order("created_at",{ascending:false}),
         npsR:sb.from("clima_nps").select("*").order("created_at",{ascending:false}),
-        movR:sb.from("movimentacoes").select("*").order("created_at",{ascending:false}),
+        // Movimentações pela função do banco (a tabela é fechada ao navegador; RH vê todas, os demais só as suas).
+        movR:u?.id?sb.rpc("mov_listar",{p_pedido_por:u.id}):Promise.resolve({data:[]}),
         bcR:sb.from("beneficios_catalogo").select("*").order("id"),
         buR:sb.from("beneficios_usuarios").select("*,beneficio:beneficios_catalogo(*)").order("created_at"),
         bsR:sb.from("beneficios_solicitacoes").select("*,beneficio:beneficios_catalogo(*)").order("created_at",{ascending:false}),
@@ -5441,7 +5413,7 @@ export default function App(){
     setLoading(false);
   };
   
-  const handleLogin=async u=>{setUser(u);setPage("dashboard");await loadAll();};
+  const handleLogin=async u=>{setUser(u);setPage("dashboard");await loadAll(u);};
 
   // Portal de Vagas (candidato, sem login): busca as vagas ativas direto do banco.
   // Por quê: o loadAll só roda depois do login do RH, então o candidato via sempre a lista fixa de
