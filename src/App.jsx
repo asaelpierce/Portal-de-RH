@@ -3724,7 +3724,7 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
 }
 
 // PESQUISA DE CLIMA
-function PesquisaClima({user,users,pulses,setPulses,nps,setNps}){
+function PesquisaClima({user,users,pulses,setPulses,nps,setNps,showToast}){
   const[view,setView]=useState("home");
   const[saving,setSaving]=useState(false);
 
@@ -3745,14 +3745,16 @@ function PesquisaClima({user,users,pulses,setPulses,nps,setNps}){
 
   // ── HELPERS ───────────────────────────────────────────────────────────
   const hoje = new Date();
-  const semanaAtual = `${hoje.getFullYear()}-W${String(Math.ceil((hoje.getDate()-hoje.getDay()+hoje.getDay())/7)).padStart(2,"0")}`;
+  // Semana ISO do ano (ex.: 2026-W42), igual à do banco. Antes era a semana do MÊS (1–5): "W03" valia para todo mês.
+  const semanaAtual = (()=>{const d=new Date(Date.UTC(hoje.getFullYear(),hoje.getMonth(),hoje.getDate()));const dia=d.getUTCDay()||7;d.setUTCDate(d.getUTCDate()+4-dia);
+    const ano=d.getUTCFullYear();const sem=Math.ceil(((d-new Date(Date.UTC(ano,0,1)))/864e5+1)/7);return `${ano}-W${String(sem).padStart(2,"0")}`;})();
   const trimAtual = `${hoje.getFullYear()}-Q${Math.ceil((hoje.getMonth()+1)/3)}`;
 
   const jaRespondeuPulse = pulses.some(p=>
-    p.user_id===user.id && p.semana===semanaAtual
+    p.minha && p.semana===semanaAtual
   );
   const jaRespondeuNps = nps.some(n=>
-    n.user_id===user.id && n.trimestre===trimAtual
+    n.minha && n.trimestre===trimAtual
   );
 
   // ── CÁLCULOS ──────────────────────────────────────────────────────────
@@ -3806,8 +3808,8 @@ function PesquisaClima({user,users,pulses,setPulses,nps,setNps}){
 
   // Pulse por setor (anonimizado — só mostra se > 2 respostas)
   const pulseSetor = Object.keys(SL).map(s=>{
-    const usersSetor = users.filter(u=>u.setor===s).map(u=>u.id);
-    const ps = pulses.filter(p=>usersSetor.includes(p.user_id));
+    // Pelo setor gravado na resposta (o banco não envia mais quem respondeu).
+    const ps = pulses.filter(p=>p.setor===s);
     if(ps.length < 2) return null;
     return{setor:SL[s], media:parseFloat((ps.reduce((a,b)=>a+b.score,0)/ps.length).toFixed(1)), count:ps.length};
   }).filter(Boolean).sort((a,b)=>b.media-a.media);
@@ -3816,19 +3818,12 @@ function PesquisaClima({user,users,pulses,setPulses,nps,setNps}){
   const enviarPulse = async()=>{
     if(pulseScore===null) return;
     setSaving(true);
-    const sb=getSB();
-    const row={
-      user_id: user.id,
-      semana: semanaAtual,
-      score: pulseScore,
-      texto: pulseText.trim()||null,
-      tag: pulseTag||null,
-      setor: user.setor,
-    };
     try{
-      const{data,error}=await sb.from("clima_pulses").insert([row]).select().single();
+      // Pela função do banco (semana e setor definidos lá). Antes: gravação falhava sem aviso.
+      const{data,error}=await getSB().rpc("clima_pulse_enviar",{p_pedido_por:user.id,p_score:pulseScore,p_texto:pulseText.trim(),p_tag:pulseTag||""});
+      if(error)showToast?.(error.message||"Não foi possível enviar sua resposta.","error");
       if(data){
-        setPulses(p=>[data,...p]);
+        setPulses(data.pulses||[]);setNps(data.nps||[]);showToast?.("Resposta enviada. Obrigado!","success");
         setPulseScore(null); setPulseText(""); setPulseTag("");
         setView("resultados");
       }
@@ -3839,18 +3834,11 @@ function PesquisaClima({user,users,pulses,setPulses,nps,setNps}){
   const enviarNps = async()=>{
     if(npsScore===null) return;
     setSaving(true);
-    const sb=getSB();
-    const row={
-      user_id: user.id,
-      trimestre: trimAtual,
-      score: npsScore,
-      motivo: npsMotivo.trim()||null,
-      melhor: npsMelhor.trim()||null,
-    };
     try{
-      const{data}=await sb.from("clima_nps").insert([row]).select().single();
+      const{data,error}=await getSB().rpc("clima_nps_enviar",{p_pedido_por:user.id,p_score:npsScore,p_motivo:npsMotivo.trim(),p_melhor:npsMelhor.trim()});
+      if(error)showToast?.(error.message||"Não foi possível enviar sua avaliação.","error");
       if(data){
-        setNps(p=>[data,...p]);
+        setPulses(data.pulses||[]);setNps(data.nps||[]);showToast?.("Avaliação enviada. Obrigado!","success");
         setNpsScore(null); setNpsMotivo(""); setNpsMelhor("");
         setView("resultados");
       }
@@ -3861,18 +3849,25 @@ function PesquisaClima({user,users,pulses,setPulses,nps,setNps}){
   const enviarDenuncia = async()=>{
     if(!denTexto.trim()) return;
     setSaving(true);
-    const sb=getSB();
     try{
-      await sb.from("clima_denuncias").insert([{
-        tipo: denTipo,
-        texto: denTexto.trim(),
-        status: "recebida",
-        // user_id intencionalmente OMITIDO para garantir anonimato
-      }]);
-      setDenEnviada(true); setDenTexto(""); setDenTipo("assedio");
-    }catch(e){console.error(e);}
+      // Anônima: não envia nem grava quem denuncia. Antes a gravação era bloqueada pelo banco e mesmo assim a tela
+      // mostrava "denúncia recebida" — a denúncia se perdia. Agora só confirma se o banco gravou.
+      const{error}=await getSB().rpc("clima_denuncia_enviar",{p_tipo:denTipo,p_texto:denTexto.trim()});
+      if(error){showToast?.(error.message||"Não foi possível registrar a denúncia. Tente de novo.","error");}
+      else{setDenEnviada(true); setDenTexto(""); setDenTipo("assedio"); if(isRHClima)carregarDenuncias();}
+    }catch(e){console.error(e);showToast?.("Não foi possível registrar a denúncia. Tente de novo.","error");}
     setSaving(false);
   };
+
+  // ── DENÚNCIAS (só RH) — antes ninguém conseguia ler as denúncias no portal ──
+  const isRHClima=can(user.role,"rh");
+  const[denuncias,setDenuncias]=useState(null);
+  const carregarDenuncias=async()=>{const{data,error}=await getSB().rpc("clima_denuncias_listar",{p_pedido_por:user.id});if(error){showToast?.(error.message,"error");return;}setDenuncias(data||[]);};
+  useEffect(()=>{if(isRHClima&&view==="denuncia"&&denuncias===null)carregarDenuncias();},[view]);
+  const mudarAndamento=async(id,status)=>{const{data,error}=await getSB().rpc("clima_denuncia_status",{p_pedido_por:user.id,p_id:id,p_status:status});
+    if(error){showToast?.(error.message,"error");return;}setDenuncias(p=>p.map(d=>d.id===id?data:d));};
+  const TIPO_DEN={assedio:"Assédio",discriminacao:"Discriminação",corrupcao:"Corrupção / fraude",seguranca:"Segurança",outro:"Outro"};
+  const AND_DEN={recebida:"Recebida",em_analise:"Em análise",concluida:"Concluída",arquivada:"Arquivada"};
 
   // ── SCORE VISUAL ──────────────────────────────────────────────────────
   const pulseEmoji = s => s>=9?"😄":s>=7?"🙂":s>=5?"😐":s>=3?"😕":"😞";
@@ -3930,7 +3925,7 @@ function PesquisaClima({user,users,pulses,setPulses,nps,setNps}){
             {[
               {l:"Termômetro Médio",v:mediaGlobalPulse!==null?mediaGlobalPulse+"/ 10":"—",c:mediaGlobalPulse>=7?C.grn:mediaGlobalPulse>=5?C.amb:C.red,sub:pulses.length+" respostas"},
               {l:"Satisfação Trimestral",v:eNPS!==null?eNPS:"—",c:eNPSColor,sub:eNPSLabel},
-              {l:"Participação no Termômetro",v:pulses.length>0?Math.round((new Set(pulses.map(p=>p.user_id)).size/Math.max(users.length,1))*100)+"%":"—",c:C.acc,sub:"este mês"},
+              {l:"Participação no Termômetro",v:pulses.length>0?Math.round((new Set(pulses.map(p=>p.respondente)).size/Math.max(users.length,1))*100)+"%":"—",c:C.acc,sub:"este mês"},
               {l:"Responderam a Pesquisa",v:npsTriAtual.length,c:C.pur,sub:"neste trimestre"},
             ].map((k,i)=>(
               <div key={i} style={{background:C.bgCard,border:"1px solid "+C.bdr,borderTop:"3px solid "+k.c,borderRadius:16,padding:"18px 20px"}}>
@@ -4167,6 +4162,25 @@ function PesquisaClima({user,users,pulses,setPulses,nps,setNps}){
       )}
 
       {/* ── CANAL ANÔNIMO ────────────────────────────────────────────── */}
+      {view==="denuncia"&&isRHClima&&(
+        <Card style={{marginBottom:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:10,flexWrap:"wrap"}}>
+            <div><div style={{fontSize:15,fontWeight:800}}>🔒 Denúncias recebidas</div><div style={{fontSize:12,color:C.txd}}>Visível só para o RH. As denúncias não identificam quem denunciou.</div></div>
+            <Btn sz="sm" v="outline" onClick={carregarDenuncias}>Atualizar</Btn>
+          </div>
+          {denuncias===null?<div style={{display:"flex",gap:8,alignItems:"center",color:C.txm,fontSize:13}}><Spin size={14}/> Carregando…</div>
+          :denuncias.length===0?<div style={{fontSize:13,color:C.txd}}>Nenhuma denúncia recebida.</div>
+          :<div style={{display:"flex",flexDirection:"column",gap:8}}>{denuncias.map(d=>(
+            <div key={d.id} style={{border:"1px solid "+C.bdr,borderRadius:10,padding:"10px 12px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+                <div style={{fontSize:13,fontWeight:700}}>{TIPO_DEN[d.tipo]||d.tipo} <span style={{fontWeight:400,color:C.txd}}>· {new Date(d.created_at).toLocaleString("pt-BR")}</span></div>
+                <select aria-label="Andamento da denúncia" value={d.status} onChange={e=>mudarAndamento(d.id,e.target.value)} style={{background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"4px 8px",color:C.txt,fontSize:12}}>
+                  {Object.entries(AND_DEN).map(([k,l])=><option key={k} value={k}>{l}</option>)}</select>
+              </div>
+              <div style={{fontSize:13,color:C.txm,marginTop:6,whiteSpace:"pre-wrap"}}>{d.texto}</div>
+            </div>))}</div>}
+        </Card>
+      )}
       {view==="denuncia"&&(
         <div className="fadeIn" style={{display:"flex",flexDirection:"column",gap:16}}>
           {denEnviada?(
@@ -5359,8 +5373,8 @@ export default function App(){
         comR:sb.from("comunicados").select("*").order("created_at",{ascending:false}),
         exR:sb.from("exames").select("*").order("created_at",{ascending:false}),
         tkR:sb.from("tarefas").select("*").order("ordem"),
-        plR:sb.from("clima_pulses").select("*").order("created_at",{ascending:false}),
-        npsR:sb.from("clima_nps").select("*").order("created_at",{ascending:false}),
+        // Clima pela função do banco: respostas SEM id de pessoa ("minha" + código embaralhado); comentários só para gestor/RH.
+        plR:u?.id?sb.rpc("clima_listar",{p_pedido_por:u.id}):Promise.resolve({data:null}),
         // Movimentações pela função do banco (a tabela é fechada ao navegador; RH vê todas, os demais só as suas).
         movR:u?.id?sb.rpc("mov_listar",{p_pedido_por:u.id}):Promise.resolve({data:[]}),
         bcR:sb.from("beneficios_catalogo").select("*").order("id"),
@@ -5368,7 +5382,7 @@ export default function App(){
         buR:u?.id?sb.rpc("ben_listar",{p_pedido_por:u.id}):Promise.resolve({data:null}),
       };
       const resultados=await Promise.all(Object.values(consultas));
-      const{uR,fR,fbR,cR,aR,cadR,vR,tR,comR,exR,tkR,plR,npsR,movR,bcR,buR}=Object.fromEntries(Object.keys(consultas).map((k,n)=>[k,resultados[n]]));
+      const{uR,fR,fbR,cR,aR,cadR,vR,tR,comR,exR,tkR,plR,movR,bcR,buR}=Object.fromEntries(Object.keys(consultas).map((k,n)=>[k,resultados[n]]));
       if(uR.data)setUsers(uR.data.map(mu));
       if(fR.data)setFerias(fR.data.map(mf));
       if(fbR.data)setFeedbacks(fbR.data.map(mfb));
@@ -5381,8 +5395,7 @@ export default function App(){
       if(comR.data)setComunicados(comR.data.map(mcom));
       if(exR.data)setExames(exR.data.map(mex));
       if(tkR.data)setTarefas(tkR.data.map(mtk));
-      if(plR.data)setPulses(plR.data);
-      if(npsR.data)setNps(npsR.data);
+      if(plR.data){setPulses(plR.data.pulses||[]);setNps(plR.data.nps||[]);}
       if(bcR.data)setBenCatalogo(bcR.data);
       if(buR.data){setBenUsuarios(buR.data.usuarios||[]);setBenSolicits(buR.data.solicitacoes||[]);}
       if(movR.data)setMovs(movR.data.map(mmv));
