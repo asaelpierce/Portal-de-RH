@@ -4748,8 +4748,8 @@ function Config({user}){
 // ativos), então mostra quem já respondeu e quem falta. A maioria não tem login: o link é público, a pessoa
 // escolhe o próprio nome e responde. Toda validação e o cálculo das faixas de idade ficam no banco
 // (responder_evento); as respostas (com nome/idade de familiares) só saem para o RH (respostas_evento).
-// Regra do RH (16/10/2026): podem ir filhos, enteados, o cônjuge/companheiro(a) e pai ou mãe.
-const PARENTESCOS=["Cônjuge / Companheiro(a)","Filho(a)","Enteado(a)","Pai / Mãe"];
+// Regra do RH (16/10/2026): podem ir filhos, enteados, o cônjuge/companheiro(a), pai ou mãe e irmão ou irmã (adulto).
+const PARENTESCOS=["Cônjuge / Companheiro(a)","Filho(a)","Enteado(a)","Pai / Mãe","Irmão(ã)"];
 // Tempo de empresa por extenso (mesma regra da função tempo_de_empresa do banco).
 const tempoEmpresa=(adm,ref=hojeISO())=>{
   if(!adm)return"";const[a1,m1,d1]=adm.split("-").map(Number),[a2,m2,d2]=ref.split("-").map(Number);
@@ -4786,7 +4786,7 @@ function FormularioEvento({slug}){
   useEffect(()=>{setErro("");},[acs]);
   const comIdade=acs.filter(a=>a.idade!=="");
   const adultos=comIdade.filter(a=>Number(a.idade)>=18);
-  const erroRegraMenor=adultos.length>1?"É permitido levar no máximo 1 acompanhante adulto (cônjuge, filho maior de 18, pai ou mãe). Filhos menores de 18 podem ir todos."
+  const erroRegraMenor=adultos.length>1?"É permitido levar no máximo 1 acompanhante adulto (cônjuge, filho maior de 18, pai, mãe, irmão ou irmã). Filhos menores de 18 podem ir todos."
     :comIdade.some(a=>Number(a.idade)<18&&a.parentesco&&!["Filho(a)","Enteado(a)"].includes(a.parentesco))?"Menores de 18 anos só podem ir se forem filho(a) ou enteado(a).":"";
   const enviar=async()=>{
     setErro("");
@@ -4868,7 +4868,7 @@ function FormularioEvento({slug}){
             {levaAc&&<div>
               <div style={{fontSize:15,fontWeight:700}}>Pessoas da sua família que irão participar</div>
               <div style={{fontSize:12,color:C.txd,margin:"2px 0 6px"}}>Nome completo, idade e parentesco de cada uma.</div>
-              <div style={{fontSize:12,color:C.txm,background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"7px 10px",marginBottom:10}}>Regra do evento: podem ir o <b>cônjuge/companheiro(a)</b>, os <b>filhos ou enteados</b> e o <b>pai ou a mãe</b>. Filhos e enteados <b>menores de 18 anos: todos</b>. Adulto: <b>no máximo 1</b> (o cônjuge, <b>ou</b> um filho maior de idade, <b>ou</b> o pai ou a mãe).</div>
+              <div style={{fontSize:12,color:C.txm,background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"7px 10px",marginBottom:10}}>Regra do evento: podem ir o <b>cônjuge/companheiro(a)</b>, os <b>filhos ou enteados</b>, o <b>pai ou a mãe</b> e um <b>irmão ou irmã</b> (maior de idade). Filhos e enteados <b>menores de 18 anos: todos</b>. Adulto: <b>no máximo 1</b> (o cônjuge, <b>ou</b> um filho maior, <b>ou</b> o pai ou a mãe, <b>ou</b> um irmão ou irmã).</div>
               <div style={{display:"flex",flexDirection:"column",gap:10}}>{acs.map(linhaAc)}</div>
               {erroRegraMenor&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"8px 12px",color:C.red,fontSize:13,marginTop:10}}>{erroRegraMenor}</div>}
               {acs.length<15&&<Btn v="outline" sz="sm" onClick={()=>setAcs([...acs,{nome:"",idade:"",parentesco:""}])} style={{marginTop:10}}>+ Adicionar acompanhante</Btn>}
