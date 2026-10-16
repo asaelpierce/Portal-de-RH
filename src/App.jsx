@@ -65,34 +65,9 @@ async function ai(msgs,sys="Assistente RH Kalenborn. Responda em português."){
   const d=await callProxy("claude",{msgs,sys});
   return d.ok?d.text:"";
 }
-
-// Lê o JSON da triagem devolvido pela IA. Devolve null se a resposta não for utilizável.
-// Por quê: antes, se a IA falhasse, o candidato entrava com nota 50/50/50 — número inventado
-// que parece uma avaliação real e se mistura com as notas verdadeiras.
-function lerAnaliseIA(resp){
-  try{
-    const m=(resp||"").match(/\{[\s\S]*\}/); if(!m) return null;
-    const a=JSON.parse(m[0]);
-    const nota=v=>(v===null||v===undefined||v==="")?null:(Number.isFinite(Number(v))?Math.max(0,Math.min(100,Math.round(Number(v)))):null);
-    const score=nota(a.score); if(score===null) return null;
-    return {...a, score, tech:nota(a.tech), behavior:nota(a.behavior)};
-  }catch{ return null; }
-}
 const STATUS_CANDIDATO=["pendente","revisao","aprovado","rejeitado"];
 // Cor da nota; sem nota (null) fica neutra e a tela mostra "—".
 const corNota=s=>s==null?C.txd:s>=80?C.grn:s>=60?C.amb:C.red;
-
-async function extractPDF(file){
-  const fileBase64=await new Promise((res,rej)=>{
-    const r=new FileReader();
-    r.onload=()=>res(r.result.split(",")[1]);
-    r.onerror=()=>rej(new Error("Falha ao ler arquivo"));
-    r.readAsDataURL(file);
-  }).catch(()=>null);
-  if(!fileBase64)return"";
-  const d=await callProxy("pdf",{fileBase64,fileName:file.name});
-  return d.ok?d.text:"";
-}
 
 // Por quê converter: o Power Automate envia o corpo como HTML; texto puro (ex.: e-mails do recrutamento
 // gerados pela IA) chegava sem as quebras de linha, num parágrafo só. Corpo que já é HTML passa direto.
@@ -5297,39 +5272,29 @@ function CareerPortal({vagas,carregando=false,onBack,onSubmit,criarTarefaAuto}){
   const[step,setStep]=useState(1);const[vaga,setVaga]=useState(null);const[form,setForm]=useState({name:"",email:"",phone:"",pcd:false,salarioPret:""});const[ans,setAns]=useState(["","","",""]);const[cvFile,setCvFile]=useState(null);const[loading,setLoading]=useState(false);const[stepMsg,setStepMsg]=useState("");const fileRef=useRef();
   const qs=["Descreva sua experiência mais relevante para esta vaga.","Quais são suas principais habilidades técnicas?","Por que você se interessa pela Kalenborn?","Qual sua pretensão salarial e disponibilidade de início?"];
   
+  // Envio pela função "curriculos" no servidor (15/10/2026): valida, exige consentimento LGPD, limita envios, lê o
+  // currículo (PDF/Word/foto) e grava. Antes: o navegador gravava direto na tabela (o que exigia deixá-la aberta a
+  // qualquer um), mandava o texto do PDF a um extrator externo e não pedia consentimento.
+  const[consent,setConsent]=useState(false);
   const submit=async()=>{
-    setLoading(true);setErroEnvio("");
+    setErroEnvio("");
+    if(!consent){setErroEnvio("Para enviar, marque que concorda com o uso dos seus dados no processo seletivo.");return;}
+    if(cvFile&&cvFile.size>10*1024*1024){setErroEnvio("O currículo tem mais de 10 MB. Envie um arquivo menor.");return;}
+    setLoading(true);
     try{
-      let cv="";if(cvFile){setStepMsg("Processando currículo...");cv=await extractPDF(cvFile)||"";}
+      let arquivo=null;
+      if(cvFile){setStepMsg("Enviando currículo...");arquivo=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(",")[1]||"");r.onerror=rej;r.readAsDataURL(cvFile);});}
       setStepMsg("Analisando seu perfil...");
-      const prompt=`Atue como um Recrutador Sênior muito criterioso da Kalenborn.
-Vaga: ${vaga.title} (${vaga.desc}).
-
-Faça uma triagem rigorosa. Avalie a aderência técnica, clareza nas respostas e expectativas. Seja rigoroso na nota (0 a 100).
-Extraia também dados estruturados do currículo: anos de experiência total (número, estimado se necessário), formação principal (curso + instituição, texto curto) e certificações relevantes (lista curta).
-CV: ${cv||"Não enviado"}
-
-Respostas do Candidato:
-${ans.map((a,i)=>(i+1)+": "+a).join("\n")}
-
-Retorne APENAS um JSON válido, sem markdown:
-{"score":0,"tech":0,"behavior":0,"status":"pendente","pontosFort":["..."],"pontosAtencao":["..."],"resumo":"Resumo crítico (prós e contras)","experienciaAnos":0,"formacao":"","certificacoes":["..."]}`;
-      const resp=await gpt([{role:"user",content:prompt}]);
-      // Se a IA falhar, a candidatura NÃO pode se perder, mas também não ganha nota inventada (antes: 50/50/50).
-      // Fica sem nota e com aviso para o RH avaliar manualmente.
-      const a=lerAnaliseIA(resp)||{score:null,tech:null,behavior:null,status:"pendente",pontosFort:[],resumo:"Análise automática indisponível — avaliar manualmente.",experienciaAnos:null,formacao:"",certificacoes:[]};
-      const sb=getSB();
-      if(!sb) throw new Error("Sem conexão com o banco.");
-      const{data,error}=await sb.from("candidatos").insert([{name:form.name,role:vaga.title,vaga_id:vaga.id,email:form.email,phone:form.phone,salario_pret:form.salarioPret,pcd:form.pcd,score:a.score,tech:a.tech,behavior:a.behavior,status:STATUS_CANDIDATO.includes(a.status)?a.status:"pendente",resumo:a.resumo,habilidades:a.pontosFort||[],experiencia_anos:a.experienciaAnos??null,formacao:a.formacao||"",certificacoes:a.certificacoes||[]}]).select().single();
-      // Só confirma para o candidato se o banco gravou (antes mostrava "Candidatura Enviada!" mesmo com falha).
-      if(error||!data) throw error||new Error("Candidatura não gravada.");
-      onSubmit(mc(data));
-      // Sem nota, a prioridade fica "media" (neutra) até o RH decidir a regra (ponto B pendente).
-      if(criarTarefaAuto) criarTarefaAuto(`Decidir: ${form.name}`, `Vaga: ${vaga.title}\nPontuação IA: ${a.score??"sem nota (IA indisponível)"}\nResumo: ${a.resumo}`, a.score==null?"media":a.score>=70?"baixa":a.score>=40?"media":"alta", ["recrutamento"], "candidatos", data.id);
+      const r=await callCurriculos({acao:"candidatura",vaga_id:vaga.id,nome:form.name,email:form.email,telefone:form.phone,pcd:!!form.pcd,salario_pret:form.salarioPret,
+        respostas:ans,consentimento:true,...(arquivo?{arquivo_base64:arquivo,nome_arquivo:cvFile.name,mime:cvFile.type}:{})});
+      if(!r?.ok){setErroEnvio(r?.error||"Não foi possível enviar sua candidatura agora. Tente novamente em alguns minutos.");setLoading(false);setStepMsg("");return;}
+      if(criarTarefaAuto) criarTarefaAuto(`Decidir: ${form.name}`,`Vaga: ${vaga.title}\nCandidatura pelo portal (K.Carreiras). Avaliação sugerida pela IA no cadastro do candidato.`,"media",["recrutamento"],"candidato");
       setStep(5);
     }catch(e){console.error(e);setErroEnvio("Não foi possível enviar sua candidatura agora. Tente novamente em alguns minutos.");}
     setLoading(false);setStepMsg("");
   };
+  const ACEITOS_CV=[".pdf",".docx",".jpg",".jpeg",".png",".webp"];
+  const aceitoCv=f=>f&&ACEITOS_CV.some(x=>f.name.toLowerCase().endsWith(x));
   
   const SLB=["Vaga","Dados","Perguntas","CV","Concluído"];
   return(
@@ -5378,14 +5343,18 @@ Retorne APENAS um JSON válido, sem markdown:
             <div style={{display:"flex",gap:10,marginTop:16}}><Btn v="outline" onClick={()=>setStep(2)}>← Voltar</Btn><Btn onClick={()=>setStep(4)} disabled={!ans.every(a=>a.trim().length>10)} full>Continuar →</Btn></div>
           </div>}
           {step===4&&<div className="fadeIn">
-            <div style={{fontSize:17,fontWeight:700,marginBottom:4}}>Currículo (PDF)</div>
-            <div style={{fontSize:12,color:C.txm,marginBottom:16}}>Opcional — melhora a análise</div>
-            <div onClick={()=>fileRef.current?.click()} onDrop={e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f?.name.endsWith(".pdf"))setCvFile(f);}} onDragOver={e=>e.preventDefault()} style={{border:"2px dashed "+(cvFile?C.grn:C.bdr),borderRadius:12,padding:36,textAlign:"center",cursor:"pointer",background:cvFile?C.grnBg:C.s2,transition:"all .2s"}}>
-              <input ref={fileRef} type="file" accept=".pdf" style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(f)setCvFile(f);}}/>
-              {cvFile?<><div style={{fontSize:32,marginBottom:8}}>📄</div><div style={{fontWeight:600,color:C.grn}}>{cvFile.name}</div></>:<><div style={{fontSize:32,marginBottom:8}}>☁</div><div style={{fontWeight:600}}>Arraste o PDF</div></>}
+            <div style={{fontSize:17,fontWeight:700,marginBottom:4}}>Currículo</div>
+            <div style={{fontSize:12,color:C.txm,marginBottom:16}}>Opcional — PDF, Word ou foto do currículo (até 10 MB)</div>
+            <div role="button" tabIndex={0} onKeyDown={e=>{if(e.key==="Enter"||e.key===" ")fileRef.current?.click();}} onClick={()=>fileRef.current?.click()} onDrop={e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(aceitoCv(f))setCvFile(f);else setErroEnvio("Envie PDF, Word (.docx) ou foto (JPG/PNG).");}} onDragOver={e=>e.preventDefault()} style={{border:"2px dashed "+(cvFile?C.grn:C.bdr),borderRadius:12,padding:36,textAlign:"center",cursor:"pointer",background:cvFile?C.grnBg:C.s2,transition:"all .2s"}}>
+              <input ref={fileRef} type="file" accept={ACEITOS_CV.join(",")} style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(aceitoCv(f)){setCvFile(f);setErroEnvio("");}}}/>
+              {cvFile?<><div style={{fontSize:32,marginBottom:8}}>📄</div><div style={{fontWeight:600,color:C.grn}}>{cvFile.name}</div></>:<><div style={{fontSize:32,marginBottom:8}}>☁</div><div style={{fontWeight:600}}>Arraste o currículo ou clique para escolher</div></>}
             </div>
+            <label style={{display:"flex",gap:10,alignItems:"flex-start",fontSize:12,color:C.txm,background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"10px 12px",marginTop:14,cursor:"pointer"}}>
+              <input type="checkbox" checked={consent} onChange={e=>{setConsent(e.target.checked);setErroEnvio("");}} style={{marginTop:2}}/>
+              <span>Concordo que a Kalenborn do Brasil use meus dados e meu currículo neste processo seletivo e para futuras oportunidades no seu banco de talentos, com análise apoiada por inteligência artificial e decisão sempre feita pela equipe de RH (LGPD). Posso pedir a exclusão dos meus dados ao RH a qualquer momento.</span>
+            </label>
             {erroEnvio&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"9px 14px",color:C.red,fontSize:13,marginTop:14}}>{erroEnvio}</div>}
-            <div style={{display:"flex",gap:10,marginTop:18}}><Btn v="outline" onClick={()=>setStep(3)}>← Voltar</Btn><Btn onClick={submit} disabled={loading} full>{loading?<><Spin size={14} color="#fff"/> {stepMsg||"Processando..."}</>:"Enviar Candidatura"}</Btn></div>
+            <div style={{display:"flex",gap:10,marginTop:18}}><Btn v="outline" onClick={()=>setStep(3)}>← Voltar</Btn><Btn onClick={submit} disabled={loading||!consent} full>{loading?<><Spin size={14} color="#fff"/> {stepMsg||"Processando..."}</>:"Enviar Candidatura"}</Btn></div>
           </div>}
           {step===5&&<div className="fadeIn" style={{textAlign:"center"}}>
             <div style={{fontSize:48,marginBottom:12}}>🎉</div>

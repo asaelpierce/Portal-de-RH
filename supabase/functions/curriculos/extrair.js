@@ -24,7 +24,7 @@ export function textoDocx(bytes) {
     .filter((t) => t.trim()).join("\n");
 }
 
-export function instrucao(vagas, vagaFixa) {
+export function instrucao(vagas, vagaFixa, respostas = null, semArquivo = false) {
   const lista = vagas.map((v) => `- id:"${v.id}" | ${v.title}${v.area ? " (" + v.area + ")" : ""} — ${(v.descricao || "").slice(0, 200)}`).join("\n");
   return `Você é um recrutador sênior da Kalenborn do Brasil (indústria em Vespasiano/MG). Leia o currículo anexado e responda APENAS com um JSON válido, sem markdown.
 
@@ -35,6 +35,9 @@ REGRAS:
 - Se o arquivo não for um currículo ou estiver ilegível, responda {"legivel": false, "motivo": "..."}.
 ${vagaFixa ? `- Avalie para a vaga: ${vagaFixa.title} — ${(vagaFixa.descricao || "").slice(0, 400)}. Use "vaga_id": "${vagaFixa.id}".`
            : `- Escolha em "vaga_id" a vaga ativa que MAIS combina (ou null se nenhuma combinar bem). Vagas ativas:\n${lista || "(nenhuma vaga ativa)"}`}
+
+${respostas ? `- O candidato também respondeu a perguntas no formulário de candidatura; use as respostas na AVALIAÇÃO (não copie para o bloco "candidato"):\n${respostas}` : ""}
+${semArquivo ? `- O candidato NÃO enviou currículo: avalie só pelas respostas; o bloco "candidato" fica vazio, e "legivel" deve ser true.` : ""}
 
 FORMATO:
 {"legivel": true,
@@ -61,7 +64,8 @@ export function normalizarTelefone(t) {
   if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
   return "";   // fora do padrão brasileiro: não grava um telefone duvidoso
 }
-const nota = (n) => { const v = Math.round(Number(n)); return Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : null; };
+// Sem nota fica sem nota (antes: null virava 0, que parecia uma avaliação péssima).
+const nota = (n) => { if (n === null || n === undefined || n === "") return null; const v = Math.round(Number(n)); return Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : null; };
 
 // Converte a resposta da IA nas colunas de "candidatos". vagasIds = ids de vagas ativas válidos.
 export function paraCandidato(ia, { nomeArquivo, vagasIds, vagaFixaId }) {
