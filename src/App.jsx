@@ -2895,16 +2895,11 @@ function GestBeneficios({user,users,benCatalogo,setBenCatalogo,benUsuarios,setBe
   const solicitarBeneficio = async(beneficio)=>{
     if(!formSol.motivo.trim()&&beneficio.valor_empresa>0){return;}
     setSaving(true);
-    const sb=getSB();
     try{
-      const{data}=await sb.from("beneficios_solicitacoes").insert([{
-        user_id:user.id,
-        user_name:user.name,
-        beneficio_id:beneficio.id,
-        status:"pendente",
-        motivo:formSol.motivo.trim()||"Solicitação sem observação.",
-      }]).select("*,beneficio:beneficios_catalogo(*)").single();
-      if(data){
+      // Pelas funções do banco (antes gravava direto na tabela, bloqueado pelo banco, sem aviso).
+      const{data,error}=await getSB().rpc("ben_solicitar",{p_pedido_por:user.id,p_beneficio_id:beneficio.id,p_motivo:formSol.motivo.trim()});
+      if(error)showToast?.(error.message||"Não foi possível enviar o pedido.","error");
+      if(data){showToast?.("Pedido enviado ao RH.","success");
         setBenSolicits(p=>[data,...p]);
         setModalSol(null);
         setFormSol({motivo:""});
@@ -2913,64 +2908,47 @@ function GestBeneficios({user,users,benCatalogo,setBenCatalogo,benUsuarios,setBe
     setSaving(false);
   };
 
+  // RH responde: a função grava a resposta e, se aprovado, inclui (ou reativa) o benefício da pessoa numa só operação.
   const responderSolic = async(id, status, obs="")=>{
-    const sb=getSB();
-    const{data}=await sb.from("beneficios_solicitacoes")
-      .update({status,resp_obs:obs,aprovado_por:user.id,aprovado_em:new Date().toISOString()})
-      .eq("id",id).select("*,beneficio:beneficios_catalogo(*)").single();
-    if(data){
-      setBenSolicits(p=>p.map(s=>s.id===id?data:s));
-      // Se aprovado, criar registro em beneficios_usuarios
-      if(status==="aprovado"){
-        const sol = benSolicits.find(s=>s.id===id);
-        if(sol){
-          const{data:bu}=await sb.from("beneficios_usuarios").insert([{
-            user_id:sol.user_id,
-            beneficio_id:sol.beneficio_id,
-            status:"ativo",
-            data_inicio:new Date().toISOString().split("T")[0],
-            aprovado_por:user.id,
-          }]).select("*,beneficio:beneficios_catalogo(*)").single();
-          if(bu) setBenUsuarios(p=>[...p,bu]);
-        }
-      }
-    }
+    const{data,error}=await getSB().rpc("ben_responder",{p_pedido_por:user.id,p_id:id,p_status:status,p_obs:obs});
+    if(error){showToast?.(error.message||"Não foi possível responder o pedido.","error");return;}
+    if(data?.solicitacao)setBenSolicits(p=>p.map(s=>s.id===id?data.solicitacao:s));
+    if(data?.beneficio_usuario){const bu=data.beneficio_usuario;setBenUsuarios(p=>p.some(b=>b.id===bu.id)?p.map(b=>b.id===bu.id?bu:b):[...p,bu]);}
+    showToast?.(status==="aprovado"?"Aprovado — benefício incluído.":"Pedido rejeitado.","success");
   };
 
   const salvarCatalogo = async()=>{
     if(!formCat.nome.trim()) return;
     setSaving(true);
-    const sb=getSB();
     const row={
       nome:formCat.nome,descricao:formCat.descricao,
       categoria:formCat.categoria,icone:formCat.icone,
       valor_empresa:parseFloat(formCat.valor_empresa)||0,
       valor_collab:parseFloat(formCat.valor_collab)||0,
-      elegibilidade:formCat.elegibilidade,ativo:true,
-      criado_por_id:user.id,
+      elegibilidade:formCat.elegibilidade,
     };
-    if(editCat){
-      const{data}=await sb.from("beneficios_catalogo").update(row).eq("id",editCat).select().single();
-      if(data) setBenCatalogo(p=>p.map(b=>b.id===editCat?data:b));
-    }else{
-      const{data}=await sb.from("beneficios_catalogo").insert([row]).select().single();
-      if(data) setBenCatalogo(p=>[...p,data]);
-    }
+    // Antes: inserir falhava calado e editar "funcionava" na tela sem mudar nada no banco.
+    const{data,error}=await getSB().rpc("ben_catalogo_salvar",{p_pedido_por:user.id,p_id:editCat||null,p_dados:row});
+    if(error){showToast?.(error.message||"Não foi possível salvar o benefício.","error");setSaving(false);return;}
+    if(editCat) setBenCatalogo(p=>p.map(b=>b.id===editCat?data:b)); else setBenCatalogo(p=>[...p,data]);
+    showToast?.("Catálogo atualizado.","success");
     setModalCat(false);setEditCat(null);
     setFormCat({nome:"",descricao:"",categoria:"alimentacao",valor_empresa:"",valor_collab:"",elegibilidade:"todos",icone:"🎁"});
     setSaving(false);
   };
 
   const toggleAtivoBeneficio = async(id,ativo)=>{
-    const sb=getSB();
-    const{data}=await sb.from("beneficios_catalogo").update({ativo:!ativo}).eq("id",id).select().single();
+    const{data,error}=await getSB().rpc("ben_catalogo_ativo",{p_pedido_por:user.id,p_id:id,p_ativo:!ativo});
+    if(error){showToast?.(error.message||"Não foi possível alterar o benefício.","error");return;}
     if(data) setBenCatalogo(p=>p.map(b=>b.id===id?data:b));
   };
 
   const removerMeuBeneficio = async(buId)=>{
-    const sb=getSB();
-    await sb.from("beneficios_usuarios").update({status:"cancelado"}).eq("id",buId);
-    setBenUsuarios(p=>p.map(b=>b.id===buId?{...b,status:"cancelado"}:b));
+    // Antes: o cancelamento era bloqueado pelo banco, mas a tela mostrava como cancelado — e era um clique só, sem confirmar.
+    if(!window.confirm("Cancelar este benefício? Para voltar a ter, será preciso pedir de novo ao RH."))return;
+    const{data,error}=await getSB().rpc("ben_cancelar",{p_pedido_por:user.id,p_id:buId});
+    if(error){showToast?.(error.message||"Não foi possível cancelar o benefício.","error");return;}
+    setBenUsuarios(p=>p.map(b=>b.id===buId?(data||{...b,status:"cancelado"}):b));
   };
 
   const fmt = v => "R$ "+parseFloat(v||0).toLocaleString("pt-BR",{minimumFractionDigits:2});
@@ -5386,11 +5364,11 @@ export default function App(){
         // Movimentações pela função do banco (a tabela é fechada ao navegador; RH vê todas, os demais só as suas).
         movR:u?.id?sb.rpc("mov_listar",{p_pedido_por:u.id}):Promise.resolve({data:[]}),
         bcR:sb.from("beneficios_catalogo").select("*").order("id"),
-        buR:sb.from("beneficios_usuarios").select("*,beneficio:beneficios_catalogo(*)").order("created_at"),
-        bsR:sb.from("beneficios_solicitacoes").select("*,beneficio:beneficios_catalogo(*)").order("created_at",{ascending:false}),
+        // Benefícios por pessoa e pedidos: pela função do banco (tabelas fechadas ao navegador; RH vê tudo, os demais só os seus).
+        buR:u?.id?sb.rpc("ben_listar",{p_pedido_por:u.id}):Promise.resolve({data:null}),
       };
       const resultados=await Promise.all(Object.values(consultas));
-      const{uR,fR,fbR,cR,aR,cadR,vR,tR,comR,exR,tkR,plR,npsR,movR,bcR,buR,bsR}=Object.fromEntries(Object.keys(consultas).map((k,n)=>[k,resultados[n]]));
+      const{uR,fR,fbR,cR,aR,cadR,vR,tR,comR,exR,tkR,plR,npsR,movR,bcR,buR}=Object.fromEntries(Object.keys(consultas).map((k,n)=>[k,resultados[n]]));
       if(uR.data)setUsers(uR.data.map(mu));
       if(fR.data)setFerias(fR.data.map(mf));
       if(fbR.data)setFeedbacks(fbR.data.map(mfb));
@@ -5406,8 +5384,7 @@ export default function App(){
       if(plR.data)setPulses(plR.data);
       if(npsR.data)setNps(npsR.data);
       if(bcR.data)setBenCatalogo(bcR.data);
-      if(buR.data)setBenUsuarios(buR.data);
-      if(bsR.data)setBenSolicits(bsR.data);
+      if(buR.data){setBenUsuarios(buR.data.usuarios||[]);setBenSolicits(buR.data.solicitacoes||[]);}
       if(movR.data)setMovs(movR.data.map(mmv));
     }catch(e){console.error(e);showToast("Erro ao carregar dados.","error");}
     setLoading(false);
