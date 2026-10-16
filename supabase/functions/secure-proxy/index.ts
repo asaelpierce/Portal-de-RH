@@ -10,12 +10,18 @@
 //    beneficios_usuario_upsert_rh. Nenhuma tela as usava e elas confiavam no papel ("rh") informado pelo navegador:
 //    qualquer um poderia ler as denúncias ou alterar benefícios. Denúncias e benefícios agora usam funções do banco
 //    que conferem o perfil (clima_* e ben_*).
+// 16/10/2026 (versão 5, etapa 3 do login): exige a SESSÃO do login do Supabase. Antes aceitava a chave pública do site:
+//    qualquer pessoa na internet podia usar a IA da empresa e mandar e-mails pelo Power Automate da Kalenborn.
+//    IA: qualquer colaborador logado e ativo. E-mail: só RH (quem envia hoje: férias, recrutamento, admissão).
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY") ?? "";
 const ANTHROPIC_KEY = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
 const PA_WEBHOOK = Deno.env.get("POWER_AUTOMATE_WEBHOOK") ?? "";
+// Só para descobrir quem está pedindo (perfil do cadastro ligado à sessão).
+const admin = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "", { auth: { persistSession: false } });
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -33,6 +39,14 @@ serve(async (req) => {
   let body: any;
   try { body = await req.json(); } catch { return json({ ok: false, error: "JSON inválido." }, 400); }
   const { action } = body;
+
+  // Quem pede: token da sessão → conta do login → cadastro ativo.
+  const token = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
+  const { data: au } = token ? await admin.auth.getUser(token) : { data: null };
+  const { data: eu } = au?.user?.id
+    ? await admin.from("usuarios").select("id,role,status").eq("auth_id", au.user.id).maybeSingle() : { data: null };
+  if (!eu || (eu.status ?? "ativo") !== "ativo") return json({ ok: false, error: "Entre no portal para usar este recurso." }, 401);
+  if (action === "email" && !["rh", "dev"].includes(eu.role)) return json({ ok: false, error: "Envio de e-mail permitido apenas para o RH." }, 403);
 
   try {
     if (action === "gpt") {

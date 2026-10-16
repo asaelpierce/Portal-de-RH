@@ -32,11 +32,16 @@ function initSB(){
 }
 
 // Chamada única para a Edge Function que centraliza tudo que precisa de chave secreta
+// Token da sessão do login do Supabase (etapa 3): as funções do servidor identificam quem pede por ele.
+// Sem sessão (páginas públicas) vai a chave pública, e o servidor só aceita o que é público.
+async function tokenSessao(){
+  try{const sb=await initSB();const{data}=await sb?.auth?.getSession?.()||{};return data?.session?.access_token||SB_KEY;}catch{return SB_KEY;}
+}
 async function callProxy(action, payload){
   try{
     const r=await fetch(`${SB_URL}/functions/v1/secure-proxy`,{
       method:"POST",
-      headers:{"Content-Type":"application/json","Authorization":"Bearer "+SB_KEY},
+      headers:{"Content-Type":"application/json","Authorization":"Bearer "+await tokenSessao()},
       body:JSON.stringify({action,...payload}),
     });
     return await r.json();
@@ -49,7 +54,7 @@ async function callProxy(action, payload){
 // Função "curriculos" do servidor: lê PDF/Word/foto com IA, guarda o arquivo e grava o candidato (ver supabase/functions/curriculos).
 async function callCurriculos(payload){
   try{
-    const r=await fetch(`${SB_URL}/functions/v1/curriculos`,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+SB_KEY},body:JSON.stringify(payload)});
+    const r=await fetch(`${SB_URL}/functions/v1/curriculos`,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+await tokenSessao()},body:JSON.stringify(payload)});
     return await r.json();
   }catch(e){console.error(e);return{ok:false,error:"Falha de rede: "+e.message};}
 }
@@ -302,17 +307,17 @@ function Login({onLogin,onPortal}){
       const sb=await initSB();if(!sb){setErr("Falha ao conectar.");setLoading(false);return;}
       // E-mail em minúsculas: o banco compara letra a letra e o celular costuma pôr a 1ª letra maiúscula.
       const em=e.trim().toLowerCase(),pw=(p||pass).trim();
-      // 1) Login do Supabase (16/10/2026): sessão de verdade; o banco passa a saber quem está pedindo.
+      // Login do Supabase (sessão de verdade; o banco sabe quem está pedindo). Desde a etapa 3 (16/10/2026) é o único:
+      // o login antigo de reserva saiu, porque as regras de acesso das tabelas dependem da sessão.
       const{error:eAuth}=await sb.auth.signInWithPassword({email:em,password:pw});
       if(!eAuth){
         const{data:me}=await sb.rpc("meu_usuario");const eu=Array.isArray(me)?me[0]:me;
         if(eu){window.__modoLogin="supabase";onLogin(mu(eu));return;}
         await sb.auth.signOut();setErr("Seu acesso está inativo. Fale com o RH.");setLoading(false);return;
       }
-      // 2) Reserva durante a transição: login antigo (compara a senha bcrypt dentro do banco).
-      const{data,error}=await sb.rpc("verify_login",{p_email:em,p_password:pw});
-      const row=Array.isArray(data)?data[0]:data;
-      if(error||!row){setErr("E-mail ou senha incorretos.");setLoading(false);}else{window.__modoLogin="legado";onLogin(mu(row));}
+      // Registra a falha (e-mail e motivo, nunca a senha) para o RH/dev saber se alguém não consegue entrar.
+      sb.rpc("registrar_falha_login",{p_email:em,p_motivo:eAuth.message||""}).then(()=>{},()=>{});
+      setErr("E-mail ou senha incorretos. Se o problema continuar, fale com o RH.");setLoading(false);
     }catch(ex){setErr("Erro: "+ex.message);setLoading(false);}
   };
   
@@ -5261,7 +5266,7 @@ function CareerPortal({vagas,carregando=false,onBack,onSubmit,criarTarefaAuto}){
       const r=await callCurriculos({acao:"candidatura",vaga_id:vaga.id,nome:form.name,email:form.email,telefone:form.phone,pcd:!!form.pcd,salario_pret:form.salarioPret,
         respostas:ans,consentimento:true,...(arquivo?{arquivo_base64:arquivo,nome_arquivo:cvFile.name,mime:cvFile.type}:{})});
       if(!r?.ok){setErroEnvio(r?.error||"Não foi possível enviar sua candidatura agora. Tente novamente em alguns minutos.");setLoading(false);setStepMsg("");return;}
-      if(criarTarefaAuto) criarTarefaAuto(`Decidir: ${form.name}`,`Vaga: ${vaga.title}\nCandidatura pelo portal (K.Carreiras). Avaliação sugerida pela IA no cadastro do candidato.`,"media",["recrutamento"],"candidato");
+      // A tarefa "Decidir" no Planejamento é criada pela função do servidor (o público não grava mais direto nas tabelas).
       setStep(5);
     }catch(e){console.error(e);setErroEnvio("Não foi possível enviar sua candidatura agora. Tente novamente em alguns minutos.");}
     setLoading(false);setStepMsg("");

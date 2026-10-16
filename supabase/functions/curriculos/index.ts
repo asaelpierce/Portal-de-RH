@@ -1,5 +1,5 @@
 // Captura de currículos — mesmo processamento para as duas entradas (decisão do Asael, 15/10/2026):
-//   • Portal (aba Upload de CVs, arrastar e soltar): body.pedido_por = id do usuário (precisa ser RH/dev).
+//   • Portal (aba Upload de CVs, arrastar e soltar): token da sessão do login do Supabase (precisa ser RH/dev).
 //   • Power Automate (e-mail do RH): cabeçalho "x-segredo" = chave da integração (tela Configurações).
 //   • Portal público do candidato (K.Carreiras): acao "candidatura", sem login (vaga ativa, LGPD, limites de envio).
 // Faz: guarda o arquivo original (armazenamento privado "curriculos") → a IA (gpt-4o) lê o PDF/foto direto ou o
@@ -63,8 +63,13 @@ Deno.serve(async (req) => {
     if (ok !== true) return json({ ok: false, error: "Chave inválida." }, 401);
     origem = "email";
   } else {
-    const { data: u } = await admin.from("usuarios").select("role,status").eq("id", Number(body.pedido_por) || 0).maybeSingle();
-    if (!u || !["rh", "dev"].includes(u.role) || (u.status ?? "ativo") !== "ativo") return json({ ok: false, error: "Acesso permitido apenas para RH." }, 403);
+    // RH do portal: identidade pelo TOKEN DA SESSÃO do login do Supabase (16/10/2026, etapa 3). Antes valia o número
+    // "pedido_por" enviado pelo navegador — dava para se passar por RH.
+    const token = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
+    const { data: au } = token ? await admin.auth.getUser(token) : { data: null };
+    const authId = au?.user?.id;
+    const { data: u } = authId ? await admin.from("usuarios").select("role,status").eq("auth_id", authId).maybeSingle() : { data: null };
+    if (!u || !["rh", "dev"].includes(u.role) || (u.status ?? "ativo") !== "ativo") return json({ ok: false, error: "Acesso permitido apenas para RH (entre de novo no portal)." }, 403);
   }
 
   // ── Link temporário para abrir o currículo original
@@ -175,6 +180,15 @@ Deno.serve(async (req) => {
     const { data, error } = await admin.from("candidatos").insert([{ ...linha, status: "pendente", area_sugerida: dados.area_sugerida }]).select().single();
     if (error) return json({ ok: false, error: error.message }, 500);
     gravado = data;
+  }
+  // Candidatura pública nova → tarefa "Decidir" no Planejamento (antes o próprio navegador do candidato gravava a
+  // tarefa; a partir da etapa 3 do login o público não grava mais direto nas tabelas). Falha aqui não perde a candidatura.
+  if (publico && !dup) {
+    const { error: eT } = await admin.from("tarefas").insert([{ titulo: `Decidir: ${gravado.name}`,
+      descricao: `Vaga: ${vaga?.title || "—"}\nCandidatura pelo portal (K.Carreiras). Avaliação sugerida pela IA no cadastro do candidato.`,
+      coluna: "backlog", prioridade: "media", responsavel_id: null, responsavel_name: "", setor: "", data_vencimento: null,
+      tags: ["recrutamento"], criado_por_id: null, criado_por_name: "Sistema Automático", origem_tipo: "candidato", origem_id: String(gravado.id) }]);
+    if (eT) console.error("Tarefa da candidatura não criada:", eT.message);
   }
   // Candidato do portal público recebe só a confirmação (nota e análise são do RH).
   if (publico) return json({ ok: true, candidato: { id: gravado.id, name: gravado.name } });
