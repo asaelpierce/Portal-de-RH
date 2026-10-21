@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { gerarXlsx } from "./planilhaXlsx.js";
 import { carregarPdfJs, textoDoPdf, lerDemonstrativoVG, gerarPlanilhaVG, emailResumoVG, itensConferencia, nomeCompetencia, brl } from "./seguroVida.js";
 import { lerFaturaOdonto, gerarPlanilhaOdonto, emailResumoOdonto, itensConferenciaOdonto } from "./odontoBradesco.js";
+import { lerRelatorioAraujo, gerarPlanilhaAraujo, emailResumoAraujo, itensConferenciaAraujo } from "./araujo.js";
 import { gerarFichaBrit, dadosKitDaAdmissao } from "./fichaBrit.js";
 import { DOCUMENTOS_ADMISSAO, preencherDocx, faltandoPara, TIPOS_AVISO, TIPOS_RESCISAO, SUGESTAO_RESCISAO, DESCONTOS_MARCAR, MODELO_RESCISAO, trocasRescisao } from "./documentosAdmissao.js";
 // Leitura do relatório de saldos da folha BRIT e geração do formulário Word de férias (ver o arquivo para o porquê).
@@ -292,7 +293,7 @@ const NAV=[
     {id:"eventos",icon:"🎉",label:"Eventos",min:"rh",desc:"Inscrições de eventos por link (ex.: confraternização): quem já respondeu e quem falta."},
   ]},
   {group:"Gestão",items:[
-    {id:"relatorios",icon:"📑",label:"Relatórios",min:"rh",desc:"Relatórios mensais automatizados: seguro de vida (Prudential) e plano odontológico (Bradesco). Anexe o PDF e receba o rateio por centro de custo (folha da BRIT) com a conferência."},
+    {id:"relatorios",icon:"📑",label:"Relatórios",min:"rh",desc:"Relatórios mensais automatizados: seguro de vida (Prudential), plano odontológico (Bradesco) e convênio Drogaria Araujo. Anexe o PDF e receba o rateio por centro de custo (folha da BRIT) com a conferência."},
   ]},
   {group:"Minha conta",items:[
     {id:"perfil",icon:"◎",label:"Meu Perfil",min:"colaborador",desc:"Seus dados, habilidades, cursos e certificações."},
@@ -4759,6 +4760,17 @@ const RELATORIOS_MENSAIS=[
    refazer:(user,r)=>getSB().rpc("odonto_conferir",{p_pedido_por:user.id,p_competencia:r.competencia,p_vigencia:r.vigencia||"",p_arquivo:r.arquivo_nome||"",
      p_beneficiarios:(r.linhas||[]).map(b=>({certificado:b.certificado,seq:b.seq,nome:b.nome,nascimento:b.nascimento,parentesco:b.parentesco,lancamentos:b.lancamentos,valor:b.valor}))}),
    vinculos:true},
+  {chave:"araujo",icone:"💊",titulo:"Convênio Drogaria Araujo — rateio por centro de custo",
+   descricao:<>Anexe o <b>Relatório Total Compras agrupado por Funcionário e Período</b> (PDF) da Araujo. O portal rateia o <b>Total Convênio</b> de cada funcionário pelo <b>centro de custo da folha da BRIT</b>, achando cada um pela matrícula (ou pelo nome, se a matrícula da Araujo estiver diferente).</>,
+   arraste:"Arraste o PDF da Araujo ou clique para escolher",sub:"Relatório RCONV-06 — compras por funcionário e período",
+   ler:linhas=>{const r=lerRelatorioAraujo(linhas);return{...r,dados:r.linhas};},
+   conferir:(user,lido,arq)=>getSB().rpc("araujo_conferir",{p_pedido_por:user.id,p_competencia:lido.competencia,p_periodo:lido.periodo||"",p_arquivo:arq,p_linhas:lido.dados}),
+   historico:user=>getSB().rpc("araujo_historico",{p_pedido_por:user.id}),
+   obter:(user,c)=>getSB().rpc("araujo_obter",{p_pedido_por:user.id,p_competencia:c}),
+   itens:r=>itensConferenciaAraujo(r.conferencia),planilha:gerarPlanilhaAraujo,email:emailResumoAraujo,arquivo:c=>`araujo_rateio_${c}.xlsx`,
+   titRateio:r=>`Rateio de ${nomeCompetencia(r.competencia)}`,
+   resumo:r=>`${r.pessoas} funcionários${r.periodo?` · período ${r.periodo}`:""}`,qtd:["Pessoas",x=>x.pessoas],qtdTotal:r=>r.pessoas,
+   resumoHist:h=>`${h.pessoas} funcionários${h.periodo?` · ${h.periodo}`:""}`},
 ];
 
 function Relatorios({user,users=[],showToast}){

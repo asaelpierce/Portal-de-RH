@@ -35,6 +35,18 @@
        conferencia:{mensalidade_padrao:21.75,titulares_sem_vinculo:linhas.filter(l=>l.seq==="00"&&!l.responsavel_id&&!l.centro_custo).map(l=>({certificado:l.certificado,titular:l.nome})),sem_centro_custo:[],desligados_cobrados:[],
          vinculados_a_outro:[],inclusoes:["ANA NOVA TESTE"],cancelamentos:["PEDRO SAIU TESTE"],valor_diferente:[]}};
      window.__ODO[r.competencia]=r;return ok(r);}
+   if(fn.startsWith("araujo_")&&(!u||u.role!=="rh"))return er("Só o RH acessa os relatórios do convênio Araujo.");
+   window.__ARA=window.__ARA||{};
+   if(fn==="araujo_historico")return ok(Object.values(window.__ARA).map(r=>({competencia:r.competencia,periodo:r.periodo,total:r.total,pessoas:r.pessoas,gerado_por:"Ana RH",gerado_em:new Date().toISOString()})));
+   if(fn==="araujo_obter")return ok(window.__ARA[a.p_competencia]);
+   if(fn==="araujo_conferir"){const MAP={"100":{c:"Maria Teste da Silva",cc:"VULCANIZACAO - MÃO DE OBRA",cad:"100"},"00007":{c:"Joao Nome Curto Completo",cc:"FINANCEIRO",cad:"70",vinc:true}};
+     const linhas=a.p_linhas.map(l=>{const x=MAP[l.matricula];return{...l,usuario_id:x?1:null,colaborador:x?.c||null,centro_custo:x?.cc||null,cadastro:x?.cad||null,achado_por:x?(x.vinc?"vinculo":"matricula"):null};});
+     const g={};linhas.filter(l=>l.convenio>0).forEach(l=>{const k=l.centro_custo||"SEM CENTRO DE CUSTO (verificar)";g[k]=g[k]||{centro_custo:k,pessoas:0,valor:0};g[k].pessoas++;g[k].valor=Math.round((g[k].valor+l.convenio)*100)/100;});
+     const r={competencia:a.p_competencia,periodo:a.p_periodo,arquivo_nome:a.p_arquivo,total:Math.round(linhas.reduce((s,l)=>s+l.convenio,0)*100)/100,pessoas:linhas.filter(l=>l.convenio>0).length,linhas,
+       rateio:Object.values(g).sort((x,y)=>x.centro_custo.localeCompare(y.centro_custo)),
+       conferencia:{nao_encontrados:linhas.filter(l=>!l.usuario_id).map(l=>({matricula:l.matricula,nome:l.nome})),matricula_diferente:linhas.filter(l=>l.achado_por==="vinculo").map(l=>({nome:l.colaborador,araujo:l.matricula,folha:l.cadastro})),
+         sem_centro_custo:[],desligados_com_compra:[],compras_acima_do_convenio:linhas.filter(l=>l.compras>l.convenio).map(l=>({nome:l.colaborador||l.nome,compras:l.compras,convenio:l.convenio}))}};
+     window.__ARA[r.competencia]=r;return ok(r);}
    return ok(null);},
   functions:{invoke:async()=>({data:null,error:null})},storage:{from:()=>({upload:async()=>({data:{},error:null})})}};
  window.supabase={createClient:()=>client};
