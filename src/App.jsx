@@ -5,6 +5,7 @@ import { gerarXlsx } from "./planilhaXlsx.js";
 import { carregarPdfJs, textoDoPdf, lerDemonstrativoVG, gerarPlanilhaVG, emailResumoVG, itensConferencia, nomeCompetencia, brl } from "./seguroVida.js";
 import { lerFaturaOdonto, gerarPlanilhaOdonto, emailResumoOdonto, itensConferenciaOdonto } from "./odontoBradesco.js";
 import { lerRelatorioAraujo, gerarPlanilhaAraujo, emailResumoAraujo, itensConferenciaAraujo } from "./araujo.js";
+import { lerRelacaoSesi, gerarPlanilhaSesi, emailResumoSesi, itensConferenciaSesi } from "./sesi.js";
 import { gerarFichaBrit, dadosKitDaAdmissao } from "./fichaBrit.js";
 import { DOCUMENTOS_ADMISSAO, preencherDocx, faltandoPara, TIPOS_AVISO, TIPOS_RESCISAO, SUGESTAO_RESCISAO, DESCONTOS_MARCAR, MODELO_RESCISAO, trocasRescisao } from "./documentosAdmissao.js";
 // Leitura do relatório de saldos da folha BRIT e geração do formulário Word de férias (ver o arquivo para o porquê).
@@ -293,7 +294,7 @@ const NAV=[
     {id:"eventos",icon:"🎉",label:"Eventos",min:"rh",desc:"Inscrições de eventos por link (ex.: confraternização): quem já respondeu e quem falta."},
   ]},
   {group:"Gestão",items:[
-    {id:"relatorios",icon:"📑",label:"Relatórios",min:"rh",desc:"Relatórios mensais automatizados: seguro de vida (Prudential), plano odontológico (Bradesco) e convênio Drogaria Araujo. Anexe o PDF e receba o rateio por centro de custo (folha da BRIT) com a conferência."},
+    {id:"relatorios",icon:"📑",label:"Relatórios",min:"rh",desc:"Relatórios mensais automatizados: seguro de vida (Prudential), plano odontológico (Bradesco), convênio Drogaria Araujo e Clube SESI. Anexe o PDF e receba o rateio por centro de custo (folha da BRIT) com a conferência."},
   ]},
   {group:"Minha conta",items:[
     {id:"perfil",icon:"◎",label:"Meu Perfil",min:"colaborador",desc:"Seus dados, habilidades, cursos e certificações."},
@@ -4771,6 +4772,18 @@ const RELATORIOS_MENSAIS=[
    titRateio:r=>`Rateio de ${nomeCompetencia(r.competencia)}`,
    resumo:r=>`${r.pessoas} funcionários${r.periodo?` · período ${r.periodo}`:""}`,qtd:["Pessoas",x=>x.pessoas],qtdTotal:r=>r.pessoas,
    resumoHist:h=>`${h.pessoas} funcionários${h.periodo?` · ${h.periodo}`:""}`},
+  {chave:"sesi",icone:"🏊",titulo:"Clube SESI Vespasiano — rateio por centro de custo",
+   descricao:<>Anexe a <b>Relação de Conveniados</b> (PDF) do SESI. O valor de cada titular é o <b>valor integral</b>; o portal acha cada um pelo <b>CPF</b> e rateia pelo <b>centro de custo da folha da BRIT</b>.</>,
+   arraste:"Arraste o PDF do SESI ou clique para escolher",sub:"Relação de Conveniados — Clube SESI Vespasiano",
+   ler:linhas=>{const r=lerRelacaoSesi(linhas);return{...r,dados:r.linhas};},
+   conferir:(user,lido,arq)=>getSB().rpc("sesi_conferir",{p_pedido_por:user.id,p_competencia:lido.competencia,
+     p_cabecalho:{data_corte:lido.dataCorte||"",contrato:lido.contrato||"",vigencia:lido.vigencia||""},p_arquivo:arq,p_linhas:lido.dados}),
+   historico:user=>getSB().rpc("sesi_historico",{p_pedido_por:user.id}),
+   obter:(user,c)=>getSB().rpc("sesi_obter",{p_pedido_por:user.id,p_competencia:c}),
+   itens:r=>itensConferenciaSesi(r.conferencia),planilha:gerarPlanilhaSesi,email:emailResumoSesi,arquivo:c=>`sesi_rateio_${c}.xlsx`,
+   titRateio:r=>`Rateio de ${nomeCompetencia(r.competencia)}`,
+   resumo:r=>`${r.pessoas} titulares${r.data_corte?` · data de corte ${String(r.data_corte).slice(0,10).split("-").reverse().join("/")}`:""}`,
+   qtd:["Titulares",x=>x.pessoas],qtdTotal:r=>r.pessoas,resumoHist:h=>`${h.pessoas} titulares`},
 ];
 
 function Relatorios({user,users=[],showToast}){

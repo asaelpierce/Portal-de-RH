@@ -47,6 +47,17 @@
        conferencia:{nao_encontrados:linhas.filter(l=>!l.usuario_id).map(l=>({matricula:l.matricula,nome:l.nome})),matricula_diferente:linhas.filter(l=>l.achado_por==="vinculo").map(l=>({nome:l.colaborador,araujo:l.matricula,folha:l.cadastro})),
          sem_centro_custo:[],desligados_com_compra:[],compras_acima_do_convenio:linhas.filter(l=>l.compras>l.convenio).map(l=>({nome:l.colaborador||l.nome,compras:l.compras,convenio:l.convenio}))}};
      window.__ARA[r.competencia]=r;return ok(r);}
+   if(fn.startsWith("sesi_")&&(!u||u.role!=="rh"))return er("Só o RH acessa os relatórios do Clube SESI.");
+   window.__SESI=window.__SESI||{};
+   if(fn==="sesi_historico")return ok(Object.values(window.__SESI).map(r=>({competencia:r.competencia,data_corte:r.data_corte,total:r.total,pessoas:r.pessoas,gerado_por:"Ana RH",gerado_em:new Date().toISOString()})));
+   if(fn==="sesi_obter")return ok(window.__SESI[a.p_competencia]);
+   if(fn==="sesi_conferir"){const MAP={"11144477735":{c:"Maria Teste",cc:"VULCANIZACAO - MÃO DE OBRA"},"02233344405":{c:"Jose Teste de Tal",cc:"RECURSOS HUMANOS",st:"desligado"}};
+     const linhas=a.p_linhas.map(l=>{const x=MAP[l.cpf];return{...l,usuario_id:x?1:null,colaborador:x?.c||null,centro_custo:x?.cc||null,status:x?.st||"ativo",achado_por:x?"cpf":null};});
+     const g={};linhas.forEach(l=>{const k=l.centro_custo||"SEM CENTRO DE CUSTO (verificar)";g[k]=g[k]||{centro_custo:k,pessoas:0,valor:0};g[k].pessoas++;g[k].valor=Math.round((g[k].valor+l.valor)*100)/100;});
+     const r={competencia:a.p_competencia,data_corte:a.p_cabecalho.data_corte,contrato:a.p_cabecalho.contrato,vigencia:a.p_cabecalho.vigencia,arquivo_nome:a.p_arquivo,
+       total:Math.round(linhas.reduce((s,l)=>s+l.valor,0)*100)/100,pessoas:linhas.length,linhas,rateio:Object.values(g).sort((x,y)=>x.centro_custo.localeCompare(y.centro_custo)),
+       conferencia:{nao_encontrados:linhas.filter(l=>!l.usuario_id).map(l=>l.nome),achados_pelo_nome:[],sem_centro_custo:[],desligados_conveniados:linhas.filter(l=>l.status==="desligado").map(l=>({nome:l.colaborador,desligamento:"2026-10-01",valor:l.valor}))}};
+     window.__SESI[r.competencia]=r;return ok(r);}
    return ok(null);},
   functions:{invoke:async()=>({data:null,error:null})},storage:{from:()=>({upload:async()=>({data:{},error:null})})}};
  window.supabase={createClient:()=>client};
