@@ -4,33 +4,7 @@
 import os, re, json, sys, openpyxl, io
 from playwright.sync_api import sync_playwright
 AQUI=os.path.dirname(os.path.abspath(__file__)); PDFJS_DIR=os.environ.get("PDFJS_DIR","/tmp/pdfjs/node_modules/pdfjs-dist/build")
-MOCK=r"""
-(()=>{const RH={id:1,name:"Ana RH",email:"ana@teste.local",role:"rh",setor:"rh",status:"ativo",cadastro:"1"};
- const COLAB={id:2,name:"Bia Colab",email:"bia@teste.local",role:"colaborador",setor:"producao",status:"ativo",cadastro:"2"};
- const CC={"11144477735":"VULCANIZACAO - MÃO DE OBRA","02233344405":"ADMINISTRATIVE BOARD"};
- window.__EMAILS=[];window.__REL={};const ok=d=>Promise.resolve({data:d,error:null}),er=m=>Promise.resolve({data:null,error:{message:m}});
- const q=()=>{const o={select:()=>o,eq:()=>o,neq:()=>o,in:()=>o,order:()=>o,limit:()=>o,gte:()=>o,lte:()=>o,is:()=>o,not:()=>o,or:()=>o,
-   single:()=>ok(null),maybeSingle:()=>ok(null),insert:()=>o,update:()=>o,delete:()=>o,upsert:()=>o,then:(r,j)=>Promise.resolve({data:[],error:null}).then(r,j)};return o;};
- const eu=()=>{const s=JSON.parse(sessionStorage.getItem("ses")||"null");return s?[RH,COLAB].find(u=>u.id===s):null;};
- const client={from:q,channel:()=>({on(){return this;},subscribe(){return this;}}),removeChannel(){},
-  auth:{signInWithPassword:async({email})=>{const u=[RH,COLAB].find(x=>x.email===email);if(!u)return{data:{},error:{message:"Invalid login credentials"}};sessionStorage.setItem("ses",u.id);return{data:{session:{access_token:"t"}},error:null};},
-        getSession:async()=>({data:{session:sessionStorage.getItem("ses")?{access_token:"t"}:null}}),signOut:async()=>{sessionStorage.removeItem("ses");return{}},onAuthStateChange:()=>({data:{subscription:{unsubscribe(){}}}}),updateUser:async()=>({data:{},error:null})},
-  rpc:(fn,a)=>{const u=eu();
-   if(fn==="meu_usuario")return ok(u?[u]:[]);
-   if(fn.startsWith("seguro_vida_")&&(!u||u.role!=="rh"))return er("Só o RH acessa os relatórios do seguro de vida.");
-   if(fn==="seguro_vida_historico")return ok(Object.values(window.__REL).map(r=>({competencia:r.competencia,total:r.total,pessoas:r.pessoas,gerado_por:"Ana RH",gerado_em:new Date().toISOString()})));
-   if(fn==="seguro_vida_obter")return ok(window.__REL[a.p_competencia]);
-   if(fn==="seguro_vida_conferir"){const linhas=a.p_linhas.map(l=>({...l,centro_custo:CC[l.cpf]||null,usuario_id:CC[l.cpf]||l.cpf==="44455566677"?9:null,status:l.cpf==="44455566677"?"desligado":"ativo"}));
-     const cob=linhas.filter(l=>l.premio>0),g={};cob.forEach(l=>{const k=l.centro_custo||"SEM CENTRO DE CUSTO (verificar)";g[k]=g[k]||{centro_custo:k,pessoas:0,valor:0};g[k].pessoas++;g[k].valor=Math.round((g[k].valor+l.premio)*100)/100;});
-     const r={competencia:a.p_competencia,arquivo_nome:a.p_arquivo,total:Math.round(cob.reduce((s,l)=>s+l.premio,0)*100)/100,pessoas:cob.length,linhas,rateio:Object.values(g).sort((x,y)=>x.centro_custo.localeCompare(y.centro_custo)),
-       conferencia:{premio_padrao:4.47,nao_encontrados:[],sem_centro_custo:["PEDRO DESLIGADO TESTE"],desligados_cobrados:[{nome:"PEDRO DESLIGADO TESTE",desligamento:"2026-10-15"}],exclusoes:["ANA EXCLUÍDA TESTE"],inclusoes:[],
-         premio_diferente:[{nome:"JOSÉ CONCEIÇÃO FICTÍCIO",premio:12.87,capital:119876}],ativos_fora_do_seguro:[{nome:"Aprendiz Teste",cargo:"Aprendiz",admissao:"2025-10-06",aprendiz:true}],achados_pelo_nome:[]}};
-     window.__REL[r.competencia]=r;return ok(r);}
-   return ok(null);},
-  functions:{invoke:async()=>({data:null,error:null})},storage:{from:()=>({upload:async()=>({data:{},error:null})})}};
- window.supabase={createClient:()=>client};
- const f=window.fetch;window.fetch=async(u,o)=>{if(String(u).includes("/functions/v1/secure-proxy")){const b=JSON.parse(o.body);if(b.action==="email"){window.__EMAILS.push(b);return new Response(JSON.stringify({ok:true}));}return new Response(JSON.stringify({ok:true,text:""}));}return f(u,o);};
-})();"""
+MOCK=open(os.path.join(AQUI,"..","relatorios_mock.js")).read()
 res={}
 with sync_playwright() as p:
     b=p.chromium.launch(); errs=[]
@@ -45,9 +19,9 @@ with sync_playwright() as p:
         pg.fill("input[type=email]",email); pg.fill("input[type=password]","x"); pg.get_by_role("button",name=re.compile("Entrar")).click(); pg.wait_for_timeout(1200)
     pg=pagina(); entrar(pg,"ana@teste.local")
     pg.locator("nav").get_by_text("Relatórios",exact=True).click(); pg.wait_for_timeout(600)
-    res["T1 RH abre Relatórios; histórico vazio"]="Seguro de vida — rateio por centro de custo" in pg.locator("main").inner_text() and "Nenhum mês gerado ainda" in pg.locator("main").inner_text()
-    pg.locator("main input[type=file]").set_input_files(os.path.join(AQUI,"demonstrativo_ficticio.pdf")); pg.wait_for_timeout(3500)
-    t=pg.locator("main").inner_text().replace("\xa0"," ")   # moeda usa espaço não separável
+    res["T1 RH abre Relatórios; histórico vazio"]="Seguro de vida — rateio por centro de custo" in pg.locator("main").inner_text() and "Nenhum mês gerado ainda" in pg.locator("[data-relatorio=seguro]").inner_text()
+    pg.locator("[data-relatorio=seguro] input[type=file]").set_input_files(os.path.join(AQUI,"demonstrativo_ficticio.pdf")); pg.wait_for_timeout(3500)
+    t=pg.locator("[data-relatorio=seguro]").inner_text().replace("\xa0"," ")   # moeda usa espaço não separável
     res["T2 lê o PDF e mostra o rateio de outubro/2026"]="Rateio de outubro/2026" in t and "R$ 21,81" in t and "3 segurados" in t
     res["T3 rateio por centro de custo (folha)"]="VULCANIZACAO - MÃO DE OBRA" in t and "ADMINISTRATIVE BOARD" in t and "SEM CENTRO DE CUSTO (verificar)" in t
     res["T4 conferência: desligado cobrado, aprendiz 'verificar', exclusão"]="Desligados ainda cobrados" in t and "Aprendizes fora do seguro (verificar" in t and "ANA EXCLUÍDA TESTE" in t
@@ -60,7 +34,7 @@ with sync_playwright() as p:
     except Exception: pass
     em=pg.evaluate("window.__EMAILS")
     res["T6 e-mail do resumo vai para o próprio RH"]=len(em)==1 and em[0]["to"]=="ana@teste.local" and "outubro/2026" in em[0]["subject"] and "Resumo enviado" in pg.locator("body").inner_text()
-    res["T7 mês aparece no histórico"]="Outubro/2026" in pg.locator("main").inner_text() or "outubro/2026" in pg.locator("main").inner_text().split("Histórico")[1]
+    res["T7 mês aparece no histórico"]="Outubro/2026" in pg.locator("main").inner_text() or "outubro/2026" in pg.locator("[data-relatorio=seguro]").inner_text().split("Histórico")[1]
     # PDF com total que não confere → recusa sem gravar
     import shutil, subprocess
     ruim=os.path.join("/tmp","demonstrativo_total_errado.pdf")
@@ -70,8 +44,8 @@ with sync_playwright() as p:
     c.drawString(40,H-50,"Prudential VG EXPRESS"); c.drawString(40,H-75,"RELATÓRIO DE MOVIMENTAÇÃO"); c.drawString(600,H-105,"2026/11")
     c.drawString(60,H-150,"MARIA DA SILVA TESTE"); c.drawString(330,H-150,"111.444.777-35"); c.drawString(410,H-150,"10/02/1990"); c.drawString(470,H-150,"01/05/2026"); c.drawRightString(700,H-150,"41.696,00"); c.drawRightString(790,H-150,"4,47")
     c.drawString(560,H-163,"TOTAL:"); c.drawRightString(700,H-163,"41.696,00"); c.drawRightString(790,H-163,"99,99"); c.save()
-    pg.locator("main input[type=file]").set_input_files(ruim); pg.wait_for_timeout(3000)
-    res["T8 total que não confere: recusa e não grava"]="não bate com o TOTAL do PDF" in pg.locator("main").inner_text() and "2026-11" not in json.dumps(pg.evaluate("Object.keys(window.__REL)"))
+    pg.locator("[data-relatorio=seguro] input[type=file]").set_input_files(ruim); pg.wait_for_timeout(3000)
+    res["T8 total que não confere: recusa e não grava"]="não bate com o total do PDF" in pg.locator("[data-relatorio=seguro]").inner_text() and "2026-11" not in json.dumps(pg.evaluate("Object.keys(window.__REL)"))
     pg.close()
     pg=pagina(); entrar(pg,"bia@teste.local")
     res["T9 colaborador não vê Relatórios"]=pg.locator("nav").get_by_text("Relatórios",exact=True).count()==0

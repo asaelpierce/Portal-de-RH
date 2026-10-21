@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback, useId } from "react";
 import { createPortal } from "react-dom";
 import { gerarXlsx } from "./planilhaXlsx.js";
 import { carregarPdfJs, textoDoPdf, lerDemonstrativoVG, gerarPlanilhaVG, emailResumoVG, itensConferencia, nomeCompetencia, brl } from "./seguroVida.js";
+import { lerFaturaOdonto, gerarPlanilhaOdonto, emailResumoOdonto, itensConferenciaOdonto } from "./odontoBradesco.js";
 import { gerarFichaBrit, dadosKitDaAdmissao } from "./fichaBrit.js";
 import { DOCUMENTOS_ADMISSAO, preencherDocx, faltandoPara, TIPOS_AVISO, TIPOS_RESCISAO, SUGESTAO_RESCISAO, DESCONTOS_MARCAR, MODELO_RESCISAO, trocasRescisao } from "./documentosAdmissao.js";
 // Leitura do relatório de saldos da folha BRIT e geração do formulário Word de férias (ver o arquivo para o porquê).
@@ -114,7 +115,7 @@ const can=(r,m)=>(RL[r]||0)>=(RL[m]||0);
 // que checam user.role==="rh" diretamente em vez de usar can().
 const isRHouDev=r=>r==="rh"||r==="dev";
 
-const mu=u=>({id:u.id,name:u.name,email:u.email,role:u.role,setor:u.setor,area:u.area||null,cargo:u.cargo,admissao:u.admissao,gestorId:u.gestor_id,liderId:u.lider_id,skills:u.skills||[],senioridade:u.senioridade||0,telefone:u.telefone||"",fotoUrl:u.foto_url||"",status:u.status||"ativo",cadastro:u.cadastro||null});
+const mu=u=>({id:u.id,name:u.name,email:u.email,role:u.role,setor:u.setor,area:u.area||null,cargo:u.cargo,admissao:u.admissao,gestorId:u.gestor_id,liderId:u.lider_id,skills:u.skills||[],senioridade:u.senioridade||0,telefone:u.telefone||"",fotoUrl:u.foto_url||"",status:u.status||"ativo",cadastro:u.cadastro||null,centroCusto:u.centro_custo||null});
 const mf=f=>({id:f.id,userId:f.user_id,userName:f.user_name,setor:f.setor,tipo:f.tipo,inicio:f.inicio,fim:f.fim,abono:f.abono,status:f.status,liderAprov:f.lider_aprov,gestorAprov:f.gestor_aprov,rhAprov:f.rh_aprov,obs:f.obs,dataVenc:f.data_vencimento,periodoAq:f.periodo_aquisitivo,createdAt:f.created_at,historico:f.historico_edicoes||[],canceladoPor:f.cancelado_por,canceladoMotivo:f.cancelado_motivo,canceladoEm:f.cancelado_em,opcao:f.opcao||(f.tipo==="30dias"?"30":f.tipo==="15dias"?"15":null),adiantamento13:f.adiantamento_13,lancadoPor:f.lancado_por,lancadoPorNome:f.lancado_por_nome,periodoInicio:f.periodo_inicio,periodoFim:f.periodo_fim,emailEnviadoEm:f.email_enviado_em});
 const mfb=fb=>({id:fb.id,fromId:fb.from_id,fromName:fb.from_name,fromRole:fb.from_role,toId:fb.to_id,toName:fb.to_name,toRole:fb.to_role,tipo:fb.tipo,texto:fb.texto,sigiloso:fb.sigiloso,createdAt:fb.created_at});
 const mch=m=>({id:m.id,fromId:m.from_id,fromName:m.from_name,toId:m.to_id,toName:m.to_name,texto:m.texto,lido:m.lido,createdAt:m.created_at});
@@ -291,7 +292,7 @@ const NAV=[
     {id:"eventos",icon:"🎉",label:"Eventos",min:"rh",desc:"Inscrições de eventos por link (ex.: confraternização): quem já respondeu e quem falta."},
   ]},
   {group:"Gestão",items:[
-    {id:"relatorios",icon:"📑",label:"Relatórios",min:"rh",desc:"Relatórios mensais automatizados. Seguro de vida: anexe o PDF da Prudential e receba o rateio por centro de custo (folha da BRIT) com a conferência."},
+    {id:"relatorios",icon:"📑",label:"Relatórios",min:"rh",desc:"Relatórios mensais automatizados: seguro de vida (Prudential) e plano odontológico (Bradesco). Anexe o PDF e receba o rateio por centro de custo (folha da BRIT) com a conferência."},
   ]},
   {group:"Minha conta",items:[
     {id:"perfil",icon:"◎",label:"Meu Perfil",min:"colaborador",desc:"Seus dados, habilidades, cursos e certificações."},
@@ -4728,52 +4729,92 @@ function IntegracaoCurriculos({user}){
     </Card>);
 }
 
-// ── RELATÓRIOS (RH) ── Seguro de vida: rateio mensal por centro de custo (21/10/2026). Lógica em src/seguroVida.js.
-function Relatorios({user,showToast}){
+// ── RELATÓRIOS (RH) ── Relatórios mensais automatizados (21/10/2026). Cada relatório é uma configuração do mesmo
+// cartão (RelatorioMensal): ler o PDF → conferir no banco → rateio, conferência, planilha, e-mail e histórico.
+// Seguro de vida (Prudential): src/seguroVida.js. Plano odontológico (Bradesco Dental): src/odontoBradesco.js.
+const RELATORIOS_MENSAIS=[
+  {chave:"seguro",icone:"🛡",titulo:"Seguro de vida — rateio por centro de custo",
+   descricao:<>Anexe o <b>Relatório de Movimentação</b> (PDF) que a Prudential envia todo mês. O portal lê os segurados, aplica o <b>centro de custo da folha da BRIT</b>, soma por centro de custo e aponta o que precisa de atenção.</>,
+   arraste:"Arraste o PDF da Prudential ou clique para escolher",sub:"Relatório de Movimentação — VG Express",
+   ler:linhas=>{const r=lerDemonstrativoVG(linhas);return{...r,dados:r.linhas,vigencia:""};},
+   conferir:(user,lido,arq)=>getSB().rpc("seguro_vida_conferir",{p_pedido_por:user.id,p_competencia:lido.competencia,p_arquivo:arq,p_linhas:lido.dados}),
+   historico:user=>getSB().rpc("seguro_vida_historico",{p_pedido_por:user.id}),
+   obter:(user,c)=>getSB().rpc("seguro_vida_obter",{p_pedido_por:user.id,p_competencia:c}),
+   itens:r=>itensConferencia(r.conferencia),planilha:gerarPlanilhaVG,email:emailResumoVG,arquivo:c=>`seguro_vida_rateio_${c}.xlsx`,
+   titRateio:r=>`Rateio de ${nomeCompetencia(r.competencia)}`,
+   resumo:r=>`${r.pessoas} segurados · ${(r.rateio||[]).length} centros de custo`,qtd:["Pessoas",x=>x.pessoas],qtdTotal:r=>r.pessoas,
+   resumoHist:h=>`${h.pessoas} segurados`},
+  {chave:"odonto",icone:"🦷",titulo:"Plano odontológico (Bradesco) — rateio por centro de custo",
+   descricao:<>Anexe a <b>Fatura Técnica</b> (PDF) da Bradesco Dental. O portal soma os lançamentos de cada beneficiário (mensalidade, inclusões e devoluções), lança os <b>dependentes no titular</b> e usa o <b>centro de custo da folha da BRIT</b> do colaborador responsável.</>,
+   arraste:"Arraste o PDF da Bradesco Dental ou clique para escolher",sub:"Fatura Técnica com o boleto",
+   ler:linhas=>{const r=lerFaturaOdonto(linhas);return{...r,dados:r.beneficiarios};},
+   conferir:(user,lido,arq)=>getSB().rpc("odonto_conferir",{p_pedido_por:user.id,p_competencia:lido.competencia,p_vigencia:lido.vigencia||"",p_arquivo:arq,p_beneficiarios:lido.dados}),
+   historico:user=>getSB().rpc("odonto_historico",{p_pedido_por:user.id}),
+   obter:(user,c)=>getSB().rpc("odonto_obter",{p_pedido_por:user.id,p_competencia:c}),
+   itens:r=>itensConferenciaOdonto(r.conferencia),planilha:gerarPlanilhaOdonto,email:emailResumoOdonto,arquivo:c=>`odonto_rateio_${c}.xlsx`,
+   titRateio:r=>`Rateio da fatura de ${nomeCompetencia(r.competencia)}`,
+   resumo:r=>`${r.titulares} titulares · ${r.beneficiarios} beneficiários${r.vigencia?` · vigência ${r.vigencia}`:""}`,qtd:["Beneficiários",x=>x.beneficiarios],qtdTotal:r=>r.beneficiarios,
+   resumoHist:h=>`${h.titulares} titulares · ${h.beneficiarios} beneficiários`,
+   // Refazer com os mesmos beneficiários (depois de vincular titulares), sem anexar o PDF de novo.
+   refazer:(user,r)=>getSB().rpc("odonto_conferir",{p_pedido_por:user.id,p_competencia:r.competencia,p_vigencia:r.vigencia||"",p_arquivo:r.arquivo_nome||"",
+     p_beneficiarios:(r.linhas||[]).map(b=>({certificado:b.certificado,seq:b.seq,nome:b.nome,nascimento:b.nascimento,parentesco:b.parentesco,lancamentos:b.lancamentos,valor:b.valor}))}),
+   vinculos:true},
+];
+
+function Relatorios({user,users=[],showToast}){
+  return(<div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:20}}>
+    {RELATORIOS_MENSAIS.map(cfg=><RelatorioMensal key={cfg.chave} cfg={cfg} user={user} users={users} showToast={showToast}/>)}
+  </div>);
+}
+
+function RelatorioMensal({cfg,user,users,showToast}){
   const[hist,setHist]=useState(null);const[rel,setRel]=useState(null);const[proc,setProc]=useState("");const[erro,setErro]=useState("");
   const[enviando,setEnviando]=useState(false);const[arrastando,setArrastando]=useState(false);const fileRef=useRef(null);
-  const carregarHist=async()=>{const{data,error}=await getSB().rpc("seguro_vida_historico",{p_pedido_por:user.id});if(error){setErro(error.message);setHist([]);return;}setHist(data||[]);};
+  const carregarHist=async()=>{const{data,error}=await cfg.historico(user);if(error){setErro(error.message);setHist([]);return;}setHist(data||[]);};
   useEffect(()=>{carregarHist();},[]);
   const processar=async(arquivo)=>{
     setErro("");if(!arquivo)return;
-    if(!/\.pdf$/i.test(arquivo.name)){setErro("Anexe o PDF do Relatório de Movimentação da Prudential.");return;}
+    if(!/\.pdf$/i.test(arquivo.name)){setErro("Anexe o arquivo em PDF.");return;}
     try{
       setProc("Lendo o PDF…");
       const pdfjs=await carregarPdfJs();
-      const lido=lerDemonstrativoVG(await textoDoPdf(pdfjs,new Uint8Array(await arquivo.arrayBuffer())));
-      if(!lido.competencia)throw new Error("Não encontrei o mês (Ano/Mês Vigência) no PDF.");
-      // Trava de segurança: a soma do que foi lido tem que bater com o TOTAL impresso; senão nada é gravado.
-      if(!lido.confere)throw new Error(`A soma dos prêmios lidos (${brl(lido.soma)}) não bate com o TOTAL do PDF (${lido.totalImpresso==null?"não encontrado":brl(lido.totalImpresso)}). Nada foi gravado.`);
+      const lido=cfg.ler(await textoDoPdf(pdfjs,new Uint8Array(await arquivo.arrayBuffer())));
+      if(!lido.competencia)throw new Error("Não encontrei o mês de referência no PDF.");
+      // Trava de segurança: a soma do que foi lido tem que bater com o total impresso; senão nada é gravado.
+      if(!lido.confere)throw new Error(`A soma dos valores lidos (${brl(lido.soma)}) não bate com o total do PDF (${lido.totalImpresso==null?"não encontrado":brl(lido.totalImpresso)}). Nada foi gravado.`);
       if((hist||[]).some(h=>h.competencia===lido.competencia)&&!window.confirm(`Já existe o relatório de ${nomeCompetencia(lido.competencia)}. Substituir pelo deste PDF?`)){setProc("");return;}
       setProc("Cruzando com o cadastro…");
-      const{data,error}=await getSB().rpc("seguro_vida_conferir",{p_pedido_por:user.id,p_competencia:lido.competencia,p_arquivo:arquivo.name,p_linhas:lido.linhas});
+      const{data,error}=await cfg.conferir(user,lido,arquivo.name);
       if(error)throw new Error(error.message);
       setRel(data);showToast?.(`Rateio de ${nomeCompetencia(lido.competencia)} gerado.`,"success");carregarHist();
     }catch(e){console.error(e);setErro(e.message||"Não foi possível ler o PDF.");}
     setProc("");if(fileRef.current)fileRef.current.value="";
   };
-  const abrir=async c=>{setErro("");const{data,error}=await getSB().rpc("seguro_vida_obter",{p_pedido_por:user.id,p_competencia:c});if(error){setErro(error.message);return;}setRel(data);};
+  const abrir=async c=>{setErro("");const{data,error}=await cfg.obter(user,c);if(error){setErro(error.message);return;}setRel(data);};
+  const refazer=async()=>{setProc("Refazendo o rateio…");const{data,error}=await cfg.refazer(user,rel);setProc("");
+    if(error){setErro(error.message);return;}setRel(data);carregarHist();showToast?.("Rateio refeito com os vínculos atualizados.","success");};
   const baixar=()=>{
-    const url=URL.createObjectURL(new Blob([gerarPlanilhaVG(rel)],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})),el=document.createElement("a");
-    el.href=url;el.download=`seguro_vida_rateio_${rel.competencia}.xlsx`;document.body.appendChild(el);el.click();el.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
+    const url=URL.createObjectURL(new Blob([cfg.planilha(rel)],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})),el=document.createElement("a");
+    el.href=url;el.download=cfg.arquivo(rel.competencia);document.body.appendChild(el);el.click();el.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
   };
   const enviar=async()=>{
     if(!user.email){showToast?.("Seu cadastro não tem e-mail.","error");return;}
-    setEnviando(true);const em=emailResumoVG(rel);const r=await sendPAEmail(user.email,em.assunto,em.html);setEnviando(false);
+    setEnviando(true);const em=cfg.email(rel);const r=await sendPAEmail(user.email,em.assunto,em.html);setEnviando(false);
     showToast?.(r?.ok?`Resumo enviado para ${user.email}.`:(r?.error||"Não foi possível enviar o e-mail."),r?.ok?"success":"error");
   };
   const COR={erro:[C.red,C.redBg],alerta:[C.amb,C.ambBg||C.s1],info:[C.acc,C.s1]};
-  const conf=rel?itensConferencia(rel.conferencia):[];
+  const conf=rel?cfg.itens(rel):[];
+  const td={padding:"5px 8px",borderBottom:"1px solid "+C.bdr};
   return(
-    <div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:16}}>
+    <div data-relatorio={cfg.chave} style={{display:"flex",flexDirection:"column",gap:12}}>
       <Card>
-        <div style={{fontSize:16,fontWeight:800,marginBottom:4}}>🛡 Seguro de vida — rateio por centro de custo</div>
-        <div style={{fontSize:13,color:C.txm,marginBottom:12}}>Anexe o <b>Relatório de Movimentação</b> (PDF) que a Prudential envia todo mês. O portal lê os segurados, aplica o <b>centro de custo da folha da BRIT</b>, soma por centro de custo e aponta o que precisa de atenção. O relatório fica guardado por mês.</div>
-        <div role="button" tabIndex={0} aria-label="Anexar o PDF da Prudential" onClick={()=>!proc&&fileRef.current?.click()} onKeyDown={e=>{if((e.key==="Enter"||e.key===" ")&&!proc)fileRef.current?.click();}}
+        <div style={{fontSize:16,fontWeight:800,marginBottom:4}}>{cfg.icone} {cfg.titulo}</div>
+        <div style={{fontSize:13,color:C.txm,marginBottom:12}}>{cfg.descricao} O relatório fica guardado por mês.</div>
+        <div role="button" tabIndex={0} aria-label={cfg.arraste} onClick={()=>!proc&&fileRef.current?.click()} onKeyDown={e=>{if((e.key==="Enter"||e.key===" ")&&!proc)fileRef.current?.click();}}
           onDragOver={e=>{e.preventDefault();setArrastando(true);}} onDragLeave={()=>setArrastando(false)} onDrop={e=>{e.preventDefault();setArrastando(false);if(!proc)processar(e.dataTransfer.files[0]);}}
-          style={{border:"2px dashed "+(arrastando?C.acc:C.bdr),borderRadius:12,padding:"22px 16px",textAlign:"center",cursor:proc?"wait":"pointer",background:arrastando?C.s1:"transparent"}}>
+          style={{border:"2px dashed "+(arrastando?C.acc:C.bdr),borderRadius:12,padding:"20px 16px",textAlign:"center",cursor:proc?"wait":"pointer",background:arrastando?C.s1:"transparent"}}>
           {proc?<div style={{display:"flex",gap:8,alignItems:"center",justifyContent:"center",color:C.txm}}><Spin size={16}/> {proc}</div>
-          :<><div style={{fontSize:26}}>📄</div><div style={{fontWeight:700}}>Arraste o PDF da Prudential ou clique para escolher</div><div style={{fontSize:12,color:C.txd}}>Relatório de Movimentação — VG Express</div></>}
+          :<><div style={{fontSize:24}}>📄</div><div style={{fontWeight:700}}>{cfg.arraste}</div><div style={{fontSize:12,color:C.txd}}>{cfg.sub}</div></>}
           <input ref={fileRef} type="file" accept=".pdf,application/pdf" style={{display:"none"}} onChange={e=>processar(e.target.files[0])}/>
         </div>
         {erro&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"9px 14px",color:C.red,fontSize:13,marginTop:12}}>{erro}</div>}
@@ -4781,36 +4822,72 @@ function Relatorios({user,showToast}){
 
       {rel&&<Card>
         <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",alignItems:"flex-start",marginBottom:12}}>
-          <div><div style={{fontSize:15,fontWeight:800}}>Rateio de {nomeCompetencia(rel.competencia)}</div>
-            <div style={{fontSize:13,color:C.txm}}><b>{brl(rel.total)}</b> · {rel.pessoas} segurados · {(rel.rateio||[]).length} centros de custo{rel.arquivo_nome?` · ${rel.arquivo_nome}`:""}</div></div>
+          <div><div style={{fontSize:15,fontWeight:800}}>{cfg.titRateio(rel)}</div>
+            <div style={{fontSize:13,color:C.txm}}><b>{brl(rel.total)}</b> · {cfg.resumo(rel)}{rel.arquivo_nome?` · ${rel.arquivo_nome}`:""}</div></div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             <Btn onClick={baixar}>⬇ Baixar planilha</Btn>
             <Btn v="outline" onClick={enviar} disabled={enviando}>{enviando?<Spin size={12}/>:"✉"} Enviar resumo para meu e-mail</Btn>
           </div>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
-          {conf.length===0?<div style={{fontSize:13,color:C.grn}}>✓ Conferência: todos encontrados no cadastro, com centro de custo.</div>
+          {conf.length===0?<div style={{fontSize:13,color:C.grn}}>✓ Conferência: nada a apontar.</div>
           :conf.map((c,i)=><div key={i} style={{borderLeft:"3px solid "+COR[c.tipo][0],background:COR[c.tipo][1],borderRadius:6,padding:"8px 12px",fontSize:13}}><b>{c.titulo}:</b> <span style={{color:C.txm}}>{c.texto}</span></div>)}
         </div>
+        {cfg.vinculos&&<VinculosOdonto rel={rel} users={users} user={user} showToast={showToast} onRefazer={refazer}/>}
         <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-          <thead><tr>{["Centro de custo","Pessoas","Valor"].map((h,i)=><th key={h} style={{textAlign:i?"right":"left",padding:"6px 8px",borderBottom:"1px solid "+C.bdr,color:C.txd,fontWeight:600}}>{h}</th>)}</tr></thead>
-          <tbody>{(rel.rateio||[]).map(r=><tr key={r.centro_custo}><td style={{padding:"5px 8px",borderBottom:"1px solid "+C.bdr}}>{r.centro_custo}</td><td style={{padding:"5px 8px",borderBottom:"1px solid "+C.bdr,textAlign:"right"}}>{r.pessoas}</td><td style={{padding:"5px 8px",borderBottom:"1px solid "+C.bdr,textAlign:"right"}}>{brl(r.valor)}</td></tr>)}
-            <tr><td style={{padding:"6px 8px",fontWeight:800}}>TOTAL</td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:800}}>{rel.pessoas}</td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:800}}>{brl(rel.total)}</td></tr></tbody>
+          <thead><tr>{["Centro de custo",cfg.qtd[0],"Valor"].map((h,i)=><th key={h} style={{textAlign:i?"right":"left",padding:"6px 8px",borderBottom:"1px solid "+C.bdr,color:C.txd,fontWeight:600}}>{h}</th>)}</tr></thead>
+          <tbody>{(rel.rateio||[]).map(r=><tr key={r.centro_custo}><td style={td}>{r.centro_custo}</td><td style={{...td,textAlign:"right"}}>{cfg.qtd[1](r)}</td><td style={{...td,textAlign:"right"}}>{brl(r.valor)}</td></tr>)}
+            <tr><td style={{padding:"6px 8px",fontWeight:800}}>TOTAL</td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:800}}>{cfg.qtdTotal(rel)}</td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:800}}>{brl(rel.total)}</td></tr></tbody>
         </table></div>
       </Card>}
 
       <Card>
-        <div style={{fontSize:14,fontWeight:700,marginBottom:8}}>Histórico</div>
+        <div style={{fontSize:14,fontWeight:700,marginBottom:8}}>Histórico — {cfg.titulo.split(" — ")[0]}</div>
         {hist===null?<div style={{display:"flex",gap:8,alignItems:"center",color:C.txm,fontSize:13}}><Spin size={14}/> Carregando…</div>
         :hist.length===0?<div style={{fontSize:13,color:C.txd}}>Nenhum mês gerado ainda.</div>
         :<div style={{display:"flex",flexDirection:"column",gap:6}}>{hist.map(h=>(
           <div key={h.competencia} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",border:"1px solid "+C.bdr,borderRadius:8,padding:"8px 12px",fontSize:13}}>
-            <div><b style={{textTransform:"capitalize"}}>{nomeCompetencia(h.competencia)}</b> · {brl(h.total)} · {h.pessoas} segurados <span style={{color:C.txd}}>— gerado por {h.gerado_por||"—"} em {new Date(h.gerado_em).toLocaleString("pt-BR")}</span></div>
+            <div><b style={{textTransform:"capitalize"}}>{nomeCompetencia(h.competencia)}</b> · {brl(h.total)} · {cfg.resumoHist(h)} <span style={{color:C.txd}}>— gerado por {h.gerado_por||"—"} em {new Date(h.gerado_em).toLocaleString("pt-BR")}</span></div>
             <Btn sz="sm" v="outline" onClick={()=>abrir(h.competencia)}>Abrir</Btn>
           </div>))}</div>}
       </Card>
     </div>
   );
+}
+
+// Odonto: titulares que o portal não conseguiu ligar a um colaborador (ou sem centro de custo na folha).
+// O RH escolhe o colaborador responsável e/ou um centro de custo fixo; o vínculo fica guardado pelo certificado.
+function VinculosOdonto({rel,users,user,showToast,onRefazer}){
+  const c=rel.conferencia||{};
+  const pend=[...(c.titulares_sem_vinculo||[]).map(x=>({certificado:x.certificado,titular:x.titular,motivo:"sem colaborador"})),
+    ...(c.sem_centro_custo||[]).map(nome=>{const l=(rel.linhas||[]).find(b=>b.titular===nome&&b.seq==="00");return l?{certificado:l.certificado,titular:nome,responsavel_id:l.responsavel_id,motivo:"sem centro de custo"}:null;}).filter(Boolean)];
+  const[esc,setEsc]=useState({});const[salvando,setSalvando]=useState("");const[mudou,setMudou]=useState(false);
+  const ccs=[...new Set(users.map(u=>u.centroCusto).filter(Boolean))].sort();
+  const ativos=[...users].filter(u=>u.status!=="desligado").sort((a,b)=>a.name.localeCompare(b.name));
+  if(!pend.length)return null;
+  const salvar=async p=>{
+    const e=esc[p.certificado]||{};const uid=e.uid?Number(e.uid):(p.responsavel_id||null);
+    if(!uid&&!e.cc){showToast?.("Escolha o colaborador responsável ou um centro de custo.","error");return;}
+    setSalvando(p.certificado);
+    const{error}=await getSB().rpc("odonto_vincular",{p_pedido_por:user.id,p_certificado:p.certificado,p_nome_titular:p.titular,p_usuario_id:uid,p_centro_custo_fixo:e.cc||"",p_observacao:e.obs||""});
+    setSalvando("");if(error){showToast?.(error.message,"error");return;}
+    setMudou(true);showToast?.(`Vínculo de ${p.titular} guardado. Vale para os próximos meses.`,"success");
+  };
+  const sel={background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"6px 8px",color:C.txt,fontSize:12,maxWidth:"100%"};
+  return(<div style={{border:"1px solid "+C.bdr,borderRadius:10,padding:12,marginBottom:14}}>
+    <div style={{fontSize:13,fontWeight:700,marginBottom:6}}>Vincular titulares</div>
+    <div style={{fontSize:12,color:C.txd,marginBottom:10}}>Escolha quem responde por cada titular (ex.: titular que não é funcionário → colaborador da família) e/ou um centro de custo fixo (ex.: desligado). Fica guardado pelo certificado da Bradesco.</div>
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>{pend.map(p=>(
+      <div key={p.certificado} style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",fontSize:13}}>
+        <div style={{minWidth:220,flex:"1 1 220px"}}><b>{p.titular}</b> <span style={{color:C.txd}}>· cert. {p.certificado} · {p.motivo}</span></div>
+        <select aria-label={"Colaborador responsável por "+p.titular} style={sel} value={esc[p.certificado]?.uid||""} onChange={e=>setEsc(x=>({...x,[p.certificado]:{...x[p.certificado],uid:e.target.value}}))}>
+          <option value="">{p.responsavel_id?"(manter o colaborador atual)":"Colaborador responsável…"}</option>{ativos.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select>
+        <select aria-label={"Centro de custo fixo de "+p.titular} style={sel} value={esc[p.certificado]?.cc||""} onChange={e=>setEsc(x=>({...x,[p.certificado]:{...x[p.certificado],cc:e.target.value}}))}>
+          <option value="">Centro de custo do colaborador (folha)</option>{ccs.map(cc=><option key={cc} value={cc}>{cc}</option>)}</select>
+        <Btn sz="sm" onClick={()=>salvar(p)} disabled={salvando===p.certificado}>{salvando===p.certificado?<Spin size={12}/>:null} Guardar</Btn>
+      </div>))}</div>
+    {mudou&&<div style={{marginTop:10}}><Btn sz="sm" v="outline" onClick={onRefazer}>↻ Refazer o rateio com os vínculos</Btn></div>}
+  </div>);
 }
 
 function Config({user}){
@@ -5517,7 +5594,7 @@ export default function App(){
       // benefícios e vice-versa (tela Benefícios com catálogo vazio; pedidos de admissão/demissão sumiam ao recarregar).
       // vR traz todas as vagas (a aba Vagas precisa das encerradas); as outras telas recebem só as abertas (vagasAbertas).
       const consultas={
-        uR:sb.from("usuarios").select("id,name,email,role,setor,area,cargo,admissao,gestor_id,lider_id,skills,senioridade,telefone,foto_url,status,data_desligamento,cadastro").order("id"),
+        uR:sb.from("usuarios").select("id,name,email,role,setor,area,cargo,admissao,gestor_id,lider_id,skills,senioridade,telefone,foto_url,status,data_desligamento,cadastro,centro_custo").order("id"),
         fR:sb.from("ferias").select("*").order("created_at",{ascending:false}),
         fbR:sb.from("feedbacks").select("*").is("arquivado_em",null).order("created_at",{ascending:false}), // arquivados não aparecem
         cR:sb.from("chat").select("*").order("created_at"),
@@ -5647,7 +5724,7 @@ export default function App(){
       case"contratacao":return<Contratacao {...props}/>;
       case"movimentacoes":return<Movimentacoes {...props}/>;
       case"exames":return<Exames {...props}/>;
-      case"beneficios":return<GestBeneficios {...props}/>;case"clima":return<PesquisaClima {...props}/>;case"analytics":return<PeopleAnalytics {...props}/>;case"config":return<Config user={user}/>;case"relatorios":return<Relatorios user={user} showToast={showToast}/>;
+      case"beneficios":return<GestBeneficios {...props}/>;case"clima":return<PesquisaClima {...props}/>;case"analytics":return<PeopleAnalytics {...props}/>;case"config":return<Config user={user}/>;case"relatorios":return<Relatorios user={user} users={users} showToast={showToast}/>;
       default:return<Dashboard {...props}/>;
     }
   };
