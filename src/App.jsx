@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useId } from "react";
 // Portal: janelas e avisos são desenhados direto no <body>, fora das telas (ver Modal).
 import { createPortal } from "react-dom";
 import { gerarXlsx } from "./planilhaXlsx.js";
+import { carregarPdfJs, textoDoPdf, lerDemonstrativoVG, gerarPlanilhaVG, emailResumoVG, itensConferencia, nomeCompetencia, brl } from "./seguroVida.js";
 import { gerarFichaBrit, dadosKitDaAdmissao } from "./fichaBrit.js";
 import { DOCUMENTOS_ADMISSAO, preencherDocx, faltandoPara, TIPOS_AVISO, TIPOS_RESCISAO, SUGESTAO_RESCISAO, DESCONTOS_MARCAR, MODELO_RESCISAO, trocasRescisao } from "./documentosAdmissao.js";
 // Leitura do relatório de saldos da folha BRIT e geração do formulário Word de férias (ver o arquivo para o porquê).
@@ -288,6 +289,9 @@ const NAV=[
     {id:"comunicados",icon:"📢",label:"Comunicados",min:"colaborador",desc:"Avisos oficiais da empresa para todos ou por setor."},
     {id:"feedbacks",icon:"◆",label:"Feedbacks",min:"colaborador",desc:"Feedbacks entre colaboradores e líderes: elogios e pontos de melhoria."},
     {id:"eventos",icon:"🎉",label:"Eventos",min:"rh",desc:"Inscrições de eventos por link (ex.: confraternização): quem já respondeu e quem falta."},
+  ]},
+  {group:"Gestão",items:[
+    {id:"relatorios",icon:"📑",label:"Relatórios",min:"rh",desc:"Relatórios mensais automatizados. Seguro de vida: anexe o PDF da Prudential e receba o rateio por centro de custo (folha da BRIT) com a conferência."},
   ]},
   {group:"Minha conta",items:[
     {id:"perfil",icon:"◎",label:"Meu Perfil",min:"colaborador",desc:"Seus dados, habilidades, cursos e certificações."},
@@ -4724,6 +4728,91 @@ function IntegracaoCurriculos({user}){
     </Card>);
 }
 
+// ── RELATÓRIOS (RH) ── Seguro de vida: rateio mensal por centro de custo (21/10/2026). Lógica em src/seguroVida.js.
+function Relatorios({user,showToast}){
+  const[hist,setHist]=useState(null);const[rel,setRel]=useState(null);const[proc,setProc]=useState("");const[erro,setErro]=useState("");
+  const[enviando,setEnviando]=useState(false);const[arrastando,setArrastando]=useState(false);const fileRef=useRef(null);
+  const carregarHist=async()=>{const{data,error}=await getSB().rpc("seguro_vida_historico",{p_pedido_por:user.id});if(error){setErro(error.message);setHist([]);return;}setHist(data||[]);};
+  useEffect(()=>{carregarHist();},[]);
+  const processar=async(arquivo)=>{
+    setErro("");if(!arquivo)return;
+    if(!/\.pdf$/i.test(arquivo.name)){setErro("Anexe o PDF do Relatório de Movimentação da Prudential.");return;}
+    try{
+      setProc("Lendo o PDF…");
+      const pdfjs=await carregarPdfJs();
+      const lido=lerDemonstrativoVG(await textoDoPdf(pdfjs,new Uint8Array(await arquivo.arrayBuffer())));
+      if(!lido.competencia)throw new Error("Não encontrei o mês (Ano/Mês Vigência) no PDF.");
+      // Trava de segurança: a soma do que foi lido tem que bater com o TOTAL impresso; senão nada é gravado.
+      if(!lido.confere)throw new Error(`A soma dos prêmios lidos (${brl(lido.soma)}) não bate com o TOTAL do PDF (${lido.totalImpresso==null?"não encontrado":brl(lido.totalImpresso)}). Nada foi gravado.`);
+      if((hist||[]).some(h=>h.competencia===lido.competencia)&&!window.confirm(`Já existe o relatório de ${nomeCompetencia(lido.competencia)}. Substituir pelo deste PDF?`)){setProc("");return;}
+      setProc("Cruzando com o cadastro…");
+      const{data,error}=await getSB().rpc("seguro_vida_conferir",{p_pedido_por:user.id,p_competencia:lido.competencia,p_arquivo:arquivo.name,p_linhas:lido.linhas});
+      if(error)throw new Error(error.message);
+      setRel(data);showToast?.(`Rateio de ${nomeCompetencia(lido.competencia)} gerado.`,"success");carregarHist();
+    }catch(e){console.error(e);setErro(e.message||"Não foi possível ler o PDF.");}
+    setProc("");if(fileRef.current)fileRef.current.value="";
+  };
+  const abrir=async c=>{setErro("");const{data,error}=await getSB().rpc("seguro_vida_obter",{p_pedido_por:user.id,p_competencia:c});if(error){setErro(error.message);return;}setRel(data);};
+  const baixar=()=>{
+    const url=URL.createObjectURL(new Blob([gerarPlanilhaVG(rel)],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})),el=document.createElement("a");
+    el.href=url;el.download=`seguro_vida_rateio_${rel.competencia}.xlsx`;document.body.appendChild(el);el.click();el.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
+  };
+  const enviar=async()=>{
+    if(!user.email){showToast?.("Seu cadastro não tem e-mail.","error");return;}
+    setEnviando(true);const em=emailResumoVG(rel);const r=await sendPAEmail(user.email,em.assunto,em.html);setEnviando(false);
+    showToast?.(r?.ok?`Resumo enviado para ${user.email}.`:(r?.error||"Não foi possível enviar o e-mail."),r?.ok?"success":"error");
+  };
+  const COR={erro:[C.red,C.redBg],alerta:[C.amb,C.ambBg||C.s1],info:[C.acc,C.s1]};
+  const conf=rel?itensConferencia(rel.conferencia):[];
+  return(
+    <div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:16}}>
+      <Card>
+        <div style={{fontSize:16,fontWeight:800,marginBottom:4}}>🛡 Seguro de vida — rateio por centro de custo</div>
+        <div style={{fontSize:13,color:C.txm,marginBottom:12}}>Anexe o <b>Relatório de Movimentação</b> (PDF) que a Prudential envia todo mês. O portal lê os segurados, aplica o <b>centro de custo da folha da BRIT</b>, soma por centro de custo e aponta o que precisa de atenção. O relatório fica guardado por mês.</div>
+        <div role="button" tabIndex={0} aria-label="Anexar o PDF da Prudential" onClick={()=>!proc&&fileRef.current?.click()} onKeyDown={e=>{if((e.key==="Enter"||e.key===" ")&&!proc)fileRef.current?.click();}}
+          onDragOver={e=>{e.preventDefault();setArrastando(true);}} onDragLeave={()=>setArrastando(false)} onDrop={e=>{e.preventDefault();setArrastando(false);if(!proc)processar(e.dataTransfer.files[0]);}}
+          style={{border:"2px dashed "+(arrastando?C.acc:C.bdr),borderRadius:12,padding:"22px 16px",textAlign:"center",cursor:proc?"wait":"pointer",background:arrastando?C.s1:"transparent"}}>
+          {proc?<div style={{display:"flex",gap:8,alignItems:"center",justifyContent:"center",color:C.txm}}><Spin size={16}/> {proc}</div>
+          :<><div style={{fontSize:26}}>📄</div><div style={{fontWeight:700}}>Arraste o PDF da Prudential ou clique para escolher</div><div style={{fontSize:12,color:C.txd}}>Relatório de Movimentação — VG Express</div></>}
+          <input ref={fileRef} type="file" accept=".pdf,application/pdf" style={{display:"none"}} onChange={e=>processar(e.target.files[0])}/>
+        </div>
+        {erro&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"9px 14px",color:C.red,fontSize:13,marginTop:12}}>{erro}</div>}
+      </Card>
+
+      {rel&&<Card>
+        <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",alignItems:"flex-start",marginBottom:12}}>
+          <div><div style={{fontSize:15,fontWeight:800}}>Rateio de {nomeCompetencia(rel.competencia)}</div>
+            <div style={{fontSize:13,color:C.txm}}><b>{brl(rel.total)}</b> · {rel.pessoas} segurados · {(rel.rateio||[]).length} centros de custo{rel.arquivo_nome?` · ${rel.arquivo_nome}`:""}</div></div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <Btn onClick={baixar}>⬇ Baixar planilha</Btn>
+            <Btn v="outline" onClick={enviar} disabled={enviando}>{enviando?<Spin size={12}/>:"✉"} Enviar resumo para meu e-mail</Btn>
+          </div>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
+          {conf.length===0?<div style={{fontSize:13,color:C.grn}}>✓ Conferência: todos encontrados no cadastro, com centro de custo.</div>
+          :conf.map((c,i)=><div key={i} style={{borderLeft:"3px solid "+COR[c.tipo][0],background:COR[c.tipo][1],borderRadius:6,padding:"8px 12px",fontSize:13}}><b>{c.titulo}:</b> <span style={{color:C.txm}}>{c.texto}</span></div>)}
+        </div>
+        <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+          <thead><tr>{["Centro de custo","Pessoas","Valor"].map((h,i)=><th key={h} style={{textAlign:i?"right":"left",padding:"6px 8px",borderBottom:"1px solid "+C.bdr,color:C.txd,fontWeight:600}}>{h}</th>)}</tr></thead>
+          <tbody>{(rel.rateio||[]).map(r=><tr key={r.centro_custo}><td style={{padding:"5px 8px",borderBottom:"1px solid "+C.bdr}}>{r.centro_custo}</td><td style={{padding:"5px 8px",borderBottom:"1px solid "+C.bdr,textAlign:"right"}}>{r.pessoas}</td><td style={{padding:"5px 8px",borderBottom:"1px solid "+C.bdr,textAlign:"right"}}>{brl(r.valor)}</td></tr>)}
+            <tr><td style={{padding:"6px 8px",fontWeight:800}}>TOTAL</td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:800}}>{rel.pessoas}</td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:800}}>{brl(rel.total)}</td></tr></tbody>
+        </table></div>
+      </Card>}
+
+      <Card>
+        <div style={{fontSize:14,fontWeight:700,marginBottom:8}}>Histórico</div>
+        {hist===null?<div style={{display:"flex",gap:8,alignItems:"center",color:C.txm,fontSize:13}}><Spin size={14}/> Carregando…</div>
+        :hist.length===0?<div style={{fontSize:13,color:C.txd}}>Nenhum mês gerado ainda.</div>
+        :<div style={{display:"flex",flexDirection:"column",gap:6}}>{hist.map(h=>(
+          <div key={h.competencia} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",border:"1px solid "+C.bdr,borderRadius:8,padding:"8px 12px",fontSize:13}}>
+            <div><b style={{textTransform:"capitalize"}}>{nomeCompetencia(h.competencia)}</b> · {brl(h.total)} · {h.pessoas} segurados <span style={{color:C.txd}}>— gerado por {h.gerado_por||"—"} em {new Date(h.gerado_em).toLocaleString("pt-BR")}</span></div>
+            <Btn sz="sm" v="outline" onClick={()=>abrir(h.competencia)}>Abrir</Btn>
+          </div>))}</div>}
+      </Card>
+    </div>
+  );
+}
+
 function Config({user}){
   return(
     <div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:20}}>
@@ -5558,7 +5647,7 @@ export default function App(){
       case"contratacao":return<Contratacao {...props}/>;
       case"movimentacoes":return<Movimentacoes {...props}/>;
       case"exames":return<Exames {...props}/>;
-      case"beneficios":return<GestBeneficios {...props}/>;case"clima":return<PesquisaClima {...props}/>;case"analytics":return<PeopleAnalytics {...props}/>;case"config":return<Config user={user}/>;
+      case"beneficios":return<GestBeneficios {...props}/>;case"clima":return<PesquisaClima {...props}/>;case"analytics":return<PeopleAnalytics {...props}/>;case"config":return<Config user={user}/>;case"relatorios":return<Relatorios user={user} showToast={showToast}/>;
       default:return<Dashboard {...props}/>;
     }
   };
