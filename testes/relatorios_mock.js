@@ -58,6 +58,14 @@
        total:Math.round(linhas.reduce((s,l)=>s+l.valor,0)*100)/100,pessoas:linhas.length,linhas,rateio:Object.values(g).sort((x,y)=>x.centro_custo.localeCompare(y.centro_custo)),
        conferencia:{nao_encontrados:linhas.filter(l=>!l.usuario_id).map(l=>l.nome),achados_pelo_nome:[],sem_centro_custo:[],desligados_conveniados:linhas.filter(l=>l.status==="desligado").map(l=>({nome:l.colaborador,desligamento:"2026-10-01",valor:l.valor}))}};
      window.__SESI[r.competencia]=r;return ok(r);}
+   if(fn.startsWith("unimed_")&&(!u||u.role!=="rh"))return er("Só o RH acessa os relatórios da Unimed.");
+   window.__UNI=window.__UNI||{};window.__UFAM=window.__UFAM||{"11111111111111":3,"44444444444444":4};
+   if(fn==="unimed_vincular"){const o={};a.p_familias.forEach(f=>{const id=window.__UFAM[f.familia];const us=USERS.find(x=>x.id===id);
+     if(us)o[f.familia]={usuario_id:us.id,colaborador:us.name,centro_custo:us.centro_custo||"CORTE CERAMICA MAO DE OBRA",status:us.status,data_desligamento:us.status==="desligado"?"2026-10-15":null};});return ok(o);}
+   if(fn==="unimed_vincular_manual"){window.__UFAM[a.p_familia]=a.p_usuario_id;return ok({familia:a.p_familia});}
+   if(fn==="unimed_salvar"){const r={...a.p_relatorio,competencia:a.p_competencia,arquivo_nome:a.p_arquivo,gerado_em:new Date().toISOString()};window.__UNI[a.p_competencia]=r;return ok(r);}
+   if(fn==="unimed_historico")return ok(Object.values(window.__UNI).map(r=>({competencia:r.competencia,total:r.total,colaboradores:(r.descontos||[]).length,gerado_por:"Ana RH",gerado_em:r.gerado_em})));
+   if(fn==="unimed_obter")return ok(window.__UNI[a.p_competencia]);
    return ok(null);},
   functions:{invoke:async()=>({data:null,error:null})},storage:{from:()=>({upload:async()=>({data:{},error:null})})}};
  window.supabase={createClient:()=>client};

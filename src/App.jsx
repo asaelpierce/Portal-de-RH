@@ -6,6 +6,7 @@ import { carregarPdfJs, textoDoPdf, lerDemonstrativoVG, gerarPlanilhaVG, emailRe
 import { lerFaturaOdonto, gerarPlanilhaOdonto, emailResumoOdonto, itensConferenciaOdonto } from "./odontoBradesco.js";
 import { lerRelatorioAraujo, gerarPlanilhaAraujo, emailResumoAraujo, itensConferenciaAraujo } from "./araujo.js";
 import { lerRelacaoSesi, gerarPlanilhaSesi, emailResumoSesi, itensConferenciaSesi } from "./sesi.js";
+import { lerVariosUnimed, familiasParaVincular, calcularUnimed, competenciaRelatorio, gerarPlanilhaUnimed, emailResumoUnimed, itensConferenciaUnimed, CONTRATOS as CONTRATOS_UNIMED } from "./unimed.js";
 import { gerarFichaBrit, dadosKitDaAdmissao } from "./fichaBrit.js";
 import { DOCUMENTOS_ADMISSAO, preencherDocx, faltandoPara, TIPOS_AVISO, TIPOS_RESCISAO, SUGESTAO_RESCISAO, DESCONTOS_MARCAR, MODELO_RESCISAO, trocasRescisao } from "./documentosAdmissao.js";
 // Leitura do relatório de saldos da folha BRIT e geração do formulário Word de férias (ver o arquivo para o porquê).
@@ -294,7 +295,7 @@ const NAV=[
     {id:"eventos",icon:"🎉",label:"Eventos",min:"rh",desc:"Inscrições de eventos por link (ex.: confraternização): quem já respondeu e quem falta."},
   ]},
   {group:"Gestão",items:[
-    {id:"relatorios",icon:"📑",label:"Relatórios",min:"rh",desc:"Relatórios mensais automatizados: seguro de vida (Prudential), plano odontológico (Bradesco), convênio Drogaria Araujo e Clube SESI. Anexe o PDF e receba o rateio por centro de custo (folha da BRIT) com a conferência."},
+    {id:"relatorios",icon:"📑",label:"Relatórios",min:"rh",desc:"Relatórios mensais automatizados: seguro de vida (Prudential), plano odontológico (Bradesco), convênio Drogaria Araujo, Clube SESI e Unimed (com descontos em folha). Anexe o PDF e receba o rateio por centro de custo (folha da BRIT) com a conferência."},
   ]},
   {group:"Minha conta",items:[
     {id:"perfil",icon:"◎",label:"Meu Perfil",min:"colaborador",desc:"Seus dados, habilidades, cursos e certificações."},
@@ -4784,7 +4785,65 @@ const RELATORIOS_MENSAIS=[
    titRateio:r=>`Rateio de ${nomeCompetencia(r.competencia)}`,
    resumo:r=>`${r.pessoas} titulares${r.data_corte?` · data de corte ${String(r.data_corte).slice(0,10).split("-").reverse().join("/")}`:""}`,
    qtd:["Titulares",x=>x.pessoas],qtdTotal:r=>r.pessoas,resumoHist:h=>`${h.pessoas} titulares`},
+  {chave:"unimed",icone:"🏥",titulo:"Unimed — rateio por centro de custo e descontos em folha",multiplos:true,
+   descricao:<>Anexe <b>de uma vez</b> os PDFs do mês da Unimed: <b>Dados da Fatura</b> (mensalidade) e <b>Utilização por Família</b> (coparticipação) dos contratos 0309917, 0309918 e 0372477. O portal faz o rateio por contrato e centro de custo da folha e calcula os <b>descontos em folha</b>: 11% da mensalidade (diretoria R$ 1,00) e, na coparticipação, 2 consultas/exames por família no mês pela empresa e 50% do restante. Desligados vão para a lista da <b>rescisão</b>.</>,
+   arraste:"Arraste os PDFs da Unimed (pode ser vários) ou clique para escolher",sub:"Rel1 Dados da Fatura e Rel7 Utilização por Família",
+   lerVarios:lerVariosUnimed,
+   conferir:async(user,lido,arq)=>unimedProcessar(user,lido.dados,arq),
+   refazer:(user,r)=>unimedProcessar(user,r.lidos||[],r.arquivo_nome||"",r.competencia),
+   historico:user=>getSB().rpc("unimed_historico",{p_pedido_por:user.id}),
+   obter:(user,c)=>getSB().rpc("unimed_obter",{p_pedido_por:user.id,p_competencia:c}),
+   itens:r=>itensConferenciaUnimed(r),planilha:gerarPlanilhaUnimed,email:emailResumoUnimed,arquivo:c=>`unimed_rateio_descontos_${c}.xlsx`,
+   titRateio:r=>`Unimed de ${nomeCompetencia(r.competencia)}`,
+   resumo:r=>`${(r.arquivos||[]).length} PDFs · descontos em folha ${brl((r.descontos||[]).reduce((a,d)=>a+d.total,0))} (${(r.descontos||[]).length} colaboradores)`,
+   resumoHist:h=>`${h.colaboradores} colaboradores com desconto`,
+   tabela:r=><TabelaUnimed rel={r}/>,vinculosUnimed:true},
 ];
+
+// Unimed: liga as famílias ao cadastro (banco), calcula rateio e descontos (src/unimed.js) e guarda o mês (banco).
+async function unimedProcessar(user,arquivos,arq,competencia){
+  const sb=getSB();
+  const v=await sb.rpc("unimed_vincular",{p_pedido_por:user.id,p_familias:familiasParaVincular(arquivos)});
+  if(v.error)return{data:null,error:v.error};
+  const rel=calcularUnimed(arquivos,v.data||{});
+  return sb.rpc("unimed_salvar",{p_pedido_por:user.id,p_competencia:competencia||competenciaRelatorio(arquivos),p_arquivo:arq,p_relatorio:{...rel,lidos:arquivos}});
+}
+
+function TabelaUnimed({rel}){
+  const td={padding:"5px 8px",borderBottom:"1px solid "+C.bdr},th={...td,color:C.txd,fontWeight:600};
+  const totDesc=(rel.descontos||[]).reduce((a,d)=>a+d.total,0);
+  return(<div style={{display:"flex",flexDirection:"column",gap:14}}>
+    {(rel.rateio||[]).map(r=>(<div key={r.contrato} style={{overflowX:"auto"}}>
+      <div style={{fontSize:13,fontWeight:700,marginBottom:4}}>Contrato {r.contrato} — {r.nome}</div>
+      <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr><th style={{...th,textAlign:"left"}}>Centro de custo</th><th style={{...th,textAlign:"right"}}>Mensalidade</th><th style={{...th,textAlign:"right"}}>Coparticipação</th><th style={{...th,textAlign:"right"}}>Total</th></tr></thead>
+        <tbody>{r.centros.map(c=><tr key={c.centro_custo}><td style={td}>{c.centro_custo}</td><td style={{...td,textAlign:"right"}}>{brl(c.mensalidade)}</td><td style={{...td,textAlign:"right"}}>{brl(c.copart)}</td><td style={{...td,textAlign:"right"}}>{brl(c.total)}</td></tr>)}
+          <tr><td style={{padding:"6px 8px",fontWeight:800}}>Subtotal</td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:800}}>{brl(r.mensalidade)}</td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:800}}>{brl(r.copart)}</td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:800}}>{brl(r.mensalidade+r.copart)}</td></tr></tbody></table></div>))}
+    <div style={{fontSize:13,border:"1px solid "+C.bdr,borderRadius:8,padding:"8px 12px"}}><b>Descontos em folha:</b> {brl(totDesc)} em {(rel.descontos||[]).length} colaboradores (detalhe na planilha, aba “Descontos em folha”).
+      {(rel.rescisao||[]).length>0&&<> <b style={{color:C.red}}>Rescisão:</b> {(rel.rescisao||[]).map(x=>`${x.colaborador} ${brl(x.total)}`).join(", ")}.</>}</div>
+  </div>);
+}
+
+// Unimed: famílias que o portal não ligou a um colaborador — o RH escolhe o titular (vale para os próximos meses).
+function VinculosUnimed({rel,users,user,showToast,onRefazer}){
+  const pend=(rel.conferencia||{}).nao_encontrados_fam||[];
+  const[esc,setEsc]=useState({});const[salvando,setSalvando]=useState("");const[mudou,setMudou]=useState(false);
+  if(!pend.length)return null;
+  const ativos=[...users].sort((a,b)=>a.name.localeCompare(b.name));
+  const salvar=async p=>{const uid=Number(esc[p.familia]||0);if(!uid){showToast?.("Escolha o colaborador titular.","error");return;}
+    setSalvando(p.familia);const{error}=await getSB().rpc("unimed_vincular_manual",{p_pedido_por:user.id,p_familia:p.familia,p_titular:p.titular,p_usuario_id:uid});setSalvando("");
+    if(error){showToast?.(error.message,"error");return;}setMudou(true);showToast?.(`Família de ${p.titular} vinculada. Vale para os próximos meses.`,"success");};
+  const sel={background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"6px 8px",color:C.txt,fontSize:12,maxWidth:"100%"};
+  return(<div style={{border:"1px solid "+C.bdr,borderRadius:10,padding:12,marginBottom:14}}>
+    <div style={{fontSize:13,fontWeight:700,marginBottom:6}}>Vincular famílias</div>
+    <div style={{fontSize:12,color:C.txd,marginBottom:10}}>Escolha o colaborador titular de cada família que o portal não reconheceu (nome diferente na Unimed). Fica guardado pelo código da família.</div>
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>{pend.map(p=>(<div key={p.familia} style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",fontSize:13}}>
+      <div style={{minWidth:220,flex:"1 1 220px"}}><b>{p.titular}</b> <span style={{color:C.txd}}>· família {p.familia}</span></div>
+      <select aria-label={"Titular da família de "+p.titular} style={sel} value={esc[p.familia]||""} onChange={e=>setEsc(x=>({...x,[p.familia]:e.target.value}))}>
+        <option value="">Colaborador titular…</option>{ativos.map(u=><option key={u.id} value={u.id}>{u.name}{u.status==="desligado"?" (desligado)":""}</option>)}</select>
+      <Btn sz="sm" onClick={()=>salvar(p)} disabled={salvando===p.familia}>{salvando===p.familia?<Spin size={12}/>:null} Guardar</Btn></div>))}</div>
+    {mudou&&<div style={{marginTop:10}}><Btn sz="sm" v="outline" onClick={onRefazer}>↻ Refazer com os vínculos</Btn></div>}
+  </div>);
+}
 
 function Relatorios({user,users=[],showToast}){
   return(<div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:20}}>
@@ -4797,13 +4856,15 @@ function RelatorioMensal({cfg,user,users,showToast}){
   const[enviando,setEnviando]=useState(false);const[arrastando,setArrastando]=useState(false);const fileRef=useRef(null);
   const carregarHist=async()=>{const{data,error}=await cfg.historico(user);if(error){setErro(error.message);setHist([]);return;}setHist(data||[]);};
   useEffect(()=>{carregarHist();},[]);
-  const processar=async(arquivo)=>{
-    setErro("");if(!arquivo)return;
-    if(!/\.pdf$/i.test(arquivo.name)){setErro("Anexe o arquivo em PDF.");return;}
+  const processar=async(lista)=>{
+    setErro("");const arqs=[...(lista||[])].filter(Boolean).slice(0,cfg.multiplos?12:1);if(!arqs.length)return;
+    if(arqs.some(a=>!/\.pdf$/i.test(a.name))){setErro("Anexe os arquivos em PDF.");return;}
+    const arquivo={name:arqs.map(a=>a.name).join(", ")};
     try{
-      setProc("Lendo o PDF…");
+      setProc(arqs.length>1?`Lendo ${arqs.length} PDFs…`:"Lendo o PDF…");
       const pdfjs=await carregarPdfJs();
-      const lido=cfg.ler(await textoDoPdf(pdfjs,new Uint8Array(await arquivo.arrayBuffer())));
+      const textos=[];for(const a of arqs)textos.push({nome:a.name,linhas:await textoDoPdf(pdfjs,new Uint8Array(await a.arrayBuffer()))});
+      const lido=cfg.multiplos?cfg.lerVarios(textos):cfg.ler(textos[0].linhas);
       if(!lido.competencia)throw new Error("Não encontrei o mês de referência no PDF.");
       // Trava de segurança: a soma do que foi lido tem que bater com o total impresso; senão nada é gravado.
       if(!lido.confere)throw new Error(`A soma dos valores lidos (${brl(lido.soma)}) não bate com o total do PDF (${lido.totalImpresso==null?"não encontrado":brl(lido.totalImpresso)}). Nada foi gravado.`);
@@ -4836,11 +4897,11 @@ function RelatorioMensal({cfg,user,users,showToast}){
         <div style={{fontSize:16,fontWeight:800,marginBottom:4}}>{cfg.icone} {cfg.titulo}</div>
         <div style={{fontSize:13,color:C.txm,marginBottom:12}}>{cfg.descricao} O relatório fica guardado por mês.</div>
         <div role="button" tabIndex={0} aria-label={cfg.arraste} onClick={()=>!proc&&fileRef.current?.click()} onKeyDown={e=>{if((e.key==="Enter"||e.key===" ")&&!proc)fileRef.current?.click();}}
-          onDragOver={e=>{e.preventDefault();setArrastando(true);}} onDragLeave={()=>setArrastando(false)} onDrop={e=>{e.preventDefault();setArrastando(false);if(!proc)processar(e.dataTransfer.files[0]);}}
+          onDragOver={e=>{e.preventDefault();setArrastando(true);}} onDragLeave={()=>setArrastando(false)} onDrop={e=>{e.preventDefault();setArrastando(false);if(!proc)processar(e.dataTransfer.files);}}
           style={{border:"2px dashed "+(arrastando?C.acc:C.bdr),borderRadius:12,padding:"20px 16px",textAlign:"center",cursor:proc?"wait":"pointer",background:arrastando?C.s1:"transparent"}}>
           {proc?<div style={{display:"flex",gap:8,alignItems:"center",justifyContent:"center",color:C.txm}}><Spin size={16}/> {proc}</div>
           :<><div style={{fontSize:24}}>📄</div><div style={{fontWeight:700}}>{cfg.arraste}</div><div style={{fontSize:12,color:C.txd}}>{cfg.sub}</div></>}
-          <input ref={fileRef} type="file" accept=".pdf,application/pdf" style={{display:"none"}} onChange={e=>processar(e.target.files[0])}/>
+          <input ref={fileRef} type="file" accept=".pdf,application/pdf" multiple={!!cfg.multiplos} style={{display:"none"}} onChange={e=>processar(e.target.files)}/>
         </div>
         {erro&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"9px 14px",color:C.red,fontSize:13,marginTop:12}}>{erro}</div>}
       </Card>
@@ -4859,11 +4920,12 @@ function RelatorioMensal({cfg,user,users,showToast}){
           :conf.map((c,i)=><div key={i} style={{borderLeft:"3px solid "+COR[c.tipo][0],background:COR[c.tipo][1],borderRadius:6,padding:"8px 12px",fontSize:13}}><b>{c.titulo}:</b> <span style={{color:C.txm}}>{c.texto}</span></div>)}
         </div>
         {cfg.vinculos&&<VinculosOdonto rel={rel} users={users} user={user} showToast={showToast} onRefazer={refazer}/>}
-        <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+        {cfg.vinculosUnimed&&<VinculosUnimed rel={rel} users={users} user={user} showToast={showToast} onRefazer={refazer}/>}
+        {cfg.tabela?cfg.tabela(rel):<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr>{["Centro de custo",cfg.qtd[0],"Valor"].map((h,i)=><th key={h} style={{textAlign:i?"right":"left",padding:"6px 8px",borderBottom:"1px solid "+C.bdr,color:C.txd,fontWeight:600}}>{h}</th>)}</tr></thead>
           <tbody>{(rel.rateio||[]).map(r=><tr key={r.centro_custo}><td style={td}>{r.centro_custo}</td><td style={{...td,textAlign:"right"}}>{cfg.qtd[1](r)}</td><td style={{...td,textAlign:"right"}}>{brl(r.valor)}</td></tr>)}
             <tr><td style={{padding:"6px 8px",fontWeight:800}}>TOTAL</td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:800}}>{cfg.qtdTotal(rel)}</td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:800}}>{brl(rel.total)}</td></tr></tbody>
-        </table></div>
+        </table></div>}
       </Card>}
 
       <Card>
