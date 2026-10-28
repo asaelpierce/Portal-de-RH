@@ -71,6 +71,15 @@
    if(fn==="ferias_ciencia_ver"||fn==="ferias_ciencia_confirmar_link"){if(a.p_token!=="a1".repeat(18))return fn==="ferias_ciencia_ver"?ok(null):er("Link inválido.");
      window.__CIENTE=window.__CIENTE||(fn==="ferias_ciencia_confirmar_link"?new Date().toISOString():null);
      return ok({nome:"Bia",inicio:"2026-12-01",fim:"2026-12-30",dias:30,periodo_aquisitivo:"01/03/2025 a 28/02/2026",abono:false,adiantamento_13:true,status:"em_aprovacao",ciente_em:window.__CIENTE});}
+   window.__MOVS=window.__MOVS||[];
+   if(fn==="mov_listar")return ok(window.__MOVS);
+   if(fn==="mov_abrir"){const d=a.p_dados,c=USERS.find(x=>x.id===d.user_id);window.__ULTIMO_MOV=a;
+     const r={id:window.__MOVS.length+1,tipo:a.p_tipo,status:"pendente_gestor",solicitante_id:u.id,solicitante_name:u.name,user_id:d.user_id,nome:c&&c.name,cargo:c&&c.cargo,setor:c&&c.setor,
+       lider_id:u.id,gestor_id:d.gestor_id,motivo:d.motivo,data_prevista:d.data_vigencia,mov_tipos:d.tipos,atual:{cargo:c&&c.cargo,setor:c&&c.setor,centro_custo:c&&c.centro_custo},proposta:d.proposta,created_at:new Date().toISOString()};
+     window.__MOVS=[r,...window.__MOVS];return ok(r);}
+   if(fn==="mov_detalhar"){const r=window.__MOVS.find(x=>x.id===a.p_id);Object.assign(r,{status:"pendente_rh",gestor_em:new Date().toISOString(),gestor_obs:a.p_dados.obs||null,data_prevista:a.p_dados.data_vigencia||r.data_prevista});return ok({...r});}
+   if(fn==="mov_decidir"){const r=window.__MOVS.find(x=>x.id===a.p_id);const hoje=new Date().toISOString().slice(0,10);
+     Object.assign(r,{status:a.p_decisao,rh_decisao:a.p_decisao,rh_em:new Date().toISOString(),aplicado_em:a.p_decisao==="aprovado"&&r.data_prevista<=hoje?new Date().toISOString():null});return ok({movimentacao:{...r},vaga:null});}
    return ok(null);},
   functions:{invoke:async(nome,opt)=>{window.__INVOKES=(window.__INVOKES||[]).concat([{nome,body:opt&&opt.body}]);
     if(nome==="ferias-ciencia")return{data:{ok:true,link:location.origin+"/?ciencia="+"a1".repeat(18),enviado:!!(opt&&opt.body&&opt.body.enviar),para:"bi***@teste.local"},error:null};

@@ -133,7 +133,12 @@ const mtal=t=>({id:t.id,cId:t.candidato_id,name:t.name,email:t.email||"",phone:t
 const mcom=c=>({id:c.id,titulo:c.titulo,corpo:c.corpo,autorId:c.autor_id,autorName:c.autor_name,tipo:c.tipo,setores:c.setores||[],fixado:c.fixado,createdAt:c.created_at});
 const mex=e=>({id:e.id,userId:e.user_id,userName:e.user_name,tipo:e.tipo,data:e.data_agendada,local:e.local||"",status:e.status,obs:e.observacoes||"",createdAt:e.created_at});
 const mtk=t=>({id:t.id,titulo:t.titulo,desc:t.descricao||"",coluna:t.coluna,prio:t.prioridade,respId:t.responsavel_id,respName:t.responsavel_name||"",setor:t.setor||"",venc:t.data_vencimento,tags:t.tags||[],ordem:t.ordem||0,criadoPorId:t.criado_por_id,criadoPorName:t.criado_por_name||"",createdAt:t.created_at,origemTipo:t.origem_tipo||null,origemId:t.origem_id||null});
-const mmv=m=>({id:m.id,tipo:m.tipo,status:m.status,solicitanteId:m.solicitante_id,solicitanteName:m.solicitante_name,nome:m.nome,email:m.email,cargo:m.cargo,setor:m.setor,liderId:m.lider_id,gestorId:m.gestor_id,dataPrevista:m.data_prevista,motivo:m.motivo,userId:m.user_id,tipoDemissao:m.tipo_demissao,ultimoDia:m.ultimo_dia,liderParecer:m.lider_parecer,liderObs:m.lider_obs,liderEm:m.lider_em,gestorParecer:m.gestor_parecer,gestorObs:m.gestor_obs,gestorEm:m.gestor_em,rhDecisao:m.rh_decisao,rhObs:m.rh_obs,rhEm:m.rh_em,rhId:m.rh_id,createdAt:m.created_at,salario:m.salario,requisitos:m.requisitos,prazoEncerramento:m.prazo_encerramento,vagaCriadaId:m.vaga_criada_id});
+const mmv=m=>({id:m.id,tipo:m.tipo,status:m.status,solicitanteId:m.solicitante_id,solicitanteName:m.solicitante_name,nome:m.nome,email:m.email,cargo:m.cargo,setor:m.setor,liderId:m.lider_id,gestorId:m.gestor_id,dataPrevista:m.data_prevista,motivo:m.motivo,userId:m.user_id,tipoDemissao:m.tipo_demissao,ultimoDia:m.ultimo_dia,liderParecer:m.lider_parecer,liderObs:m.lider_obs,liderEm:m.lider_em,gestorParecer:m.gestor_parecer,gestorObs:m.gestor_obs,gestorEm:m.gestor_em,rhDecisao:m.rh_decisao,rhObs:m.rh_obs,rhEm:m.rh_em,rhId:m.rh_id,createdAt:m.created_at,salario:m.salario,requisitos:m.requisitos,prazoEncerramento:m.prazo_encerramento,vagaCriadaId:m.vaga_criada_id,
+  movTipos:m.mov_tipos||[],atual:m.atual||null,proposta:m.proposta||null,aplicadoEm:m.aplicado_em});
+// Movimentação de pessoal (substitui o Forms KdB 133): tipos e campos da proposta.
+const MOV_TIPOS={promocao:"Promoção",salario:"Alteração salarial",transferencia:"Transferência de setor/centro de custo",funcao:"Mudança de função",horario:"Mudança de horário/turno",lideranca:"Troca de líder/gestor"};
+const MOV_CAMPOS={cargo:"Cargo",salario:"Salário",setor:"Setor",area:"Área",centro_custo:"Centro de custo",horario:"Horário/turno",lider_id:"Líder",gestor_id:"Gestor"};
+const MOV_CAMPOS_POR_TIPO={promocao:["cargo","salario"],salario:["salario"],transferencia:["setor","area","centro_custo"],funcao:["cargo"],horario:["horario"],lideranca:["lider_id","gestor_id"]};
 
 const fd=d=>{if(!d)return"—";const s=(d+"").split("T")[0];const[y,m,dd]=s.split("-");return dd+"/"+m+"/"+y;};
 // Data de hoje no fuso do navegador, no mesmo formato do banco (YYYY-MM-DD).
@@ -277,7 +282,7 @@ const NAV=[
   ]},
   {group:"Pessoas",items:[
     {id:"colaboradores",icon:"⊞",label:"Colaboradores",min:"gestor",desc:"Colaboradores ativos com cargo, setor e contato. Clique numa pessoa para ver detalhes ou mudar de setor."},
-    {id:"movimentacoes",icon:"⇄",label:"Admissão/Demissão",min:"lider",desc:"Pedidos de admissão e desligamento: o líder solicita, o gestor detalha e o RH decide."},
+    {id:"movimentacoes",icon:"⇄",label:"Pedidos de pessoal",min:"lider",desc:"Admissão, demissão e movimentação (promoção, salário, transferência, função, horário, liderança): o líder solicita, o gestor detalha e o RH decide. Movimentação aprovada atualiza o cadastro na vigência."},
     {id:"ferias",icon:"✈",label:"Férias",min:"colaborador",desc:"Férias: o líder lança, o gestor e o RH aprovam. Saldos, prazos e o formulário de solicitação."},
     {id:"exames",icon:"🏥",label:"Exames",min:"gestor",desc:"Agenda de exames ocupacionais (admissional, periódico e demissional)."},
     {id:"avaliacoes",icon:"★",label:"Avaliações",min:"colaborador",desc:"Avaliações de desempenho semestrais: o líder avalia a equipe e acompanha o histórico."},
@@ -3462,6 +3467,9 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
   // Etapa 1 — Líder só justifica a necessidade (admissão) ou pede a saída (demissão)
   const[formAdmLider,setFormAdmLider]=useState({setor:"producao",gestorId:"",motivo:"",cargo:"",salario:"",perfilBuscado:""});
   const[formDemLider,setFormDemLider]=useState({userId:"",gestorId:"",motivo:""});
+  const MOV_VAZIA={userId:"",gestorId:"",tipos:[],vigencia:"",proposta:{},motivo:""};
+  const[formMov,setFormMov]=useState(MOV_VAZIA);
+  const[formGestorMov,setFormGestorMov]=useState({vigencia:"",obs:""});
 
   // Etapa 2 — Gestor detalha (preenchido dentro do modal de decisão)
   const[formGestorAdm,setFormGestorAdm]=useState({cargo:"",salario:"",requisitos:"",prazoEncerramento:"",dataPrevista:""});
@@ -3484,7 +3492,7 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
     return false;
   });
 
-  const visiveis=isRH?movs:movs.filter(m=>m.solicitanteId===user.id||m.liderId===user.id||m.gestorId===user.id||m.userId===user.id);
+  const visiveis=isRH?movs:movs.filter(m=>m.solicitanteId===user.id||m.liderId===user.id||m.gestorId===user.id);
   const concluidas=visiveis.filter(m=>m.status==="aprovado"||m.status==="rejeitado");
 
   // ── Etapa 1 (Líder): abrir pedido de admissão — só setor + gestor + justificativa ──
@@ -3510,6 +3518,33 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
     if(data){showToast?.("Pedido de demissão enviado ao gestor.","success");setMovs(p=>[mmv(data),...p]);setModalNova(null);setFormDemLider({userId:"",gestorId:"",motivo:""});}
     setSaving(false);
   };
+
+  // ── Etapa 1: pedir movimentação (líder/gestor do colaborador ou RH) — o banco confere quem pode e o que muda ──
+  const camposMov=[...new Set(formMov.tipos.flatMap(t=>MOV_CAMPOS_POR_TIPO[t]||[]))];
+  const abrirMovimentacao=async()=>{
+    if(!formMov.userId||!formMov.gestorId||!formMov.tipos.length||!formMov.vigencia||!formMov.motivo.trim())return;
+    const prop={};camposMov.forEach(k=>{const v=formMov.proposta[k];if(v!==undefined&&String(v).trim()!=="")prop[k]=k.endsWith("_id")?parseInt(v):String(v).trim();});
+    setSaving(true);
+    const{data,error}=await getSB().rpc("mov_abrir",{p_pedido_por:user.id,p_tipo:"movimentacao",p_dados:{
+      user_id:parseInt(formMov.userId),gestor_id:parseInt(formMov.gestorId),tipos:formMov.tipos,data_vigencia:formMov.vigencia,proposta:prop,motivo:formMov.motivo.trim()}});
+    if(error)erroMov(error,"Não foi possível abrir o pedido de movimentação.");
+    if(data){showToast?.("Pedido de movimentação enviado ao gestor.","success");setMovs(p=>[mmv(data),...p]);setModalNova(null);setFormMov(MOV_VAZIA);}
+    setSaving(false);
+  };
+  const detalharMovGestor=async mov=>{
+    setSaving(true);
+    const{data,error}=await getSB().rpc("mov_detalhar",{p_pedido_por:user.id,p_id:mov.id,p_dados:{data_vigencia:formGestorMov.vigencia||"",obs:formGestorMov.obs.trim()}});
+    if(error)erroMov(error,"Não foi possível enviar ao RH.");
+    if(data){showToast?.("Enviado ao RH.","success");setMovs(p=>p.map(m=>m.id===mov.id?mmv(data):m));setModalDecisao(null);}
+    setSaving(false);
+  };
+  const nomeDe=id=>(todosUsuarios.find(u=>u.id===Number(id))||users.find(u=>u.id===Number(id)))?.name||(id?"#"+id:"—");
+  const valorMov=(k,v)=>v===null||v===undefined||v===""?"—":k.endsWith("_id")?nomeDe(v):k==="setor"?(SL[v]||v):String(v);
+  const DeParaMov=({mov})=>(<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+    <thead><tr><th style={{textAlign:"left",padding:"4px 6px",color:C.txd}}>Campo</th><th style={{textAlign:"left",padding:"4px 6px",color:C.txd}}>Atual</th><th style={{textAlign:"left",padding:"4px 6px",color:C.txd}}>Proposto</th></tr></thead>
+    <tbody>{Object.entries(mov.proposta||{}).map(([k,v])=><tr key={k}><td style={{padding:"4px 6px",borderTop:"1px solid "+C.bdr}}>{MOV_CAMPOS[k]||k}</td>
+      <td style={{padding:"4px 6px",borderTop:"1px solid "+C.bdr,color:C.txm}}>{k==="salario"||k==="horario"?"(não fica no portal)":valorMov(k,mov.atual?.[k])}</td>
+      <td style={{padding:"4px 6px",borderTop:"1px solid "+C.bdr,fontWeight:700}}>{valorMov(k,v)}</td></tr>)}</tbody></table></div>);
 
   // ── Etapa 2 (Gestor): detalha admissão — cargo, salário, requisitos, prazo — segue direto pro RH ──
   const detalharAdmissaoGestor=async mov=>{
@@ -3543,8 +3578,10 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
     const data=r?.movimentacao;
     if(r?.vaga)setVagas(p=>[...p,mv(r.vaga)]);
     if(decisao==="aprovado"&&mov.tipo==="demissao")setUsers(p=>p.map(u=>u.id===mov.userId?{...u,status:"desligado"}:u));
+    if(decisao==="aprovado"&&mov.tipo==="movimentacao"&&data?.aplicado_em){const pr=data.proposta||{};
+      setUsers(p=>p.map(u=>u.id===mov.userId?{...u,...(pr.cargo?{cargo:pr.cargo}:{}),...(pr.setor?{setor:pr.setor}:{}),...(pr.area?{area:pr.area}:{}),...(pr.centro_custo?{centroCusto:pr.centro_custo}:{}),...(pr.lider_id?{liderId:pr.lider_id}:{}),...(pr.gestor_id?{gestorId:pr.gestor_id}:{})}:u));}
     if(data){setMovs(p=>p.map(m=>m.id===mov.id?mmv(data):m));setModalDecisao(null);setObsRH("");
-      showToast?.(decisao==="aprovado"?(mov.tipo==="admissao"?"Aprovado — vaga criada em Vagas e candidatos.":"Aprovado — colaborador marcado como desligado."):"Pedido rejeitado.","success");}
+      showToast?.(decisao==="aprovado"?(mov.tipo==="admissao"?"Aprovado — vaga criada em Vagas e candidatos.":mov.tipo==="movimentacao"?(data.aplicado_em?"Aprovado — cadastro atualizado.":"Aprovado — o cadastro será atualizado em "+fd(data.data_prevista)+"."):"Aprovado — colaborador marcado como desligado."):"Pedido rejeitado.","success");}
     setSaving(false);
   };
 
@@ -3558,6 +3595,7 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
   const abrirModalDecisao=mov=>{
     if(mov.tipo==="admissao")setFormGestorAdm({cargo:mov.cargo||"",salario:mov.salario||"",requisitos:mov.requisitos||"",prazoEncerramento:mov.prazoEncerramento||"",dataPrevista:mov.dataPrevista||""});
     if(mov.tipo==="demissao")setFormGestorDem({tipoDemissao:mov.tipoDemissao||"sem_justa_causa",ultimoDia:mov.ultimoDia||"",obs:mov.gestorObs||""});
+    if(mov.tipo==="movimentacao")setFormGestorMov({vigencia:mov.dataPrevista||"",obs:mov.gestorObs||""});
     setObsRH("");
     setModalDecisao(mov);
   };
@@ -3566,11 +3604,12 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
     <div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:20}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",flexWrap:"wrap",gap:12}}>
         <div>
-          <div style={{fontSize:22,fontWeight:800,letterSpacing:"-.02em"}}>⇄ Admissão / Demissão</div>
+          <div style={{fontSize:22,fontWeight:800,letterSpacing:"-.02em"}}>⇄ Admissão, Demissão e Movimentação</div>
           <div style={{fontSize:13,color:C.txm,marginTop:2}}>Líder solicita → Gestor detalha → RH decide e efetiva</div>
         </div>
         <div style={{display:"flex",gap:8}}>
           {can(user.role,"lider")&&<Btn v="success" onClick={()=>{setFormAdmLider(f=>({...f,gestorId:can(user.role,"gestor")?String(user.id):f.gestorId}));setModalNova("admissao");}}>+ Pedir admissão</Btn>}
+          {can(user.role,"lider")&&<Btn v="outline" onClick={()=>{setFormMov({...MOV_VAZIA,gestorId:can(user.role,"gestor")?String(user.id):"",vigencia:hojeISO()});setModalNova("movimentacao");}}>⇄ Pedir movimentação</Btn>}
           {can(user.role,"lider")&&<Btn v="danger" onClick={()=>setModalNova("demissao")}>+ Pedir demissão</Btn>}
         </div>
       </div>
@@ -3587,8 +3626,8 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
         )}
         {(tab==="pendentes"?minhasPendencias:tab==="concluidas"?concluidas:visiveis).map(mov=>{
           const stage=STAGE[mov.status]||{l:mov.status,c:C.txm,n:0};
-          const tipoIcon=mov.tipo==="admissao"?"➕":"➖";
-          const tipoColor=mov.tipo==="admissao"?C.grn:C.red;
+          const tipoIcon=mov.tipo==="admissao"?"➕":mov.tipo==="movimentacao"?"⇄":"➖";
+          const tipoColor=mov.tipo==="admissao"?C.grn:mov.tipo==="movimentacao"?C.blu:C.red;
           const acao=podeAgir(mov);
           const titulo=mov.tipo==="admissao"?(mov.cargo||"Vaga a definir pelo gestor"):mov.nome;
           return(
@@ -3603,6 +3642,7 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
                         {SL[mov.setor]||mov.setor}
                         {mov.tipo==="demissao"&&mov.tipoDemissao?" · "+TIPO_DEM[mov.tipoDemissao]:""}
                         {mov.tipo==="admissao"&&mov.salario?" · "+mov.salario:""}
+                        {mov.tipo==="movimentacao"?" · "+(mov.movTipos||[]).map(t=>MOV_TIPOS[t]||t).join(", ")+(mov.dataPrevista?" · vigência "+fd(mov.dataPrevista):""):""}
                       </div>
                     </div>
                     <Chip label={stage.l} color={stage.c} dot/>
@@ -3630,6 +3670,7 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
                     {mov.gestorEm&&<Chip label="✓ Detalhado pelo Gestor" color={C.blu}/>}
                     {mov.rhDecisao&&<Chip label={"RH: "+(mov.rhDecisao==="aprovado"?"✓ Aprovado":"✗ Rejeitado")} color={mov.rhDecisao==="aprovado"?C.grn:C.red}/>}
                     {mov.vagaCriadaId&&<Chip label={"📋 Vaga #"+mov.vagaCriadaId+" criada"} color={C.pur}/>}
+                    {mov.tipo==="movimentacao"&&mov.status==="aprovado"&&<Chip label={mov.aplicadoEm?"✓ Cadastro atualizado em "+fd(mov.aplicadoEm):"⏳ Atualiza o cadastro em "+fd(mov.dataPrevista)} color={mov.aplicadoEm?C.grn:C.amb}/>}
                   </div>
 
                   <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -3705,6 +3746,42 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
         </div>
       </Modal>
 
+      {/* MODAL: Pedir movimentação (substitui o Forms KdB 133) */}
+      <Modal open={modalNova==="movimentacao"} onClose={()=>setModalNova(null)} title="Pedir movimentação de pessoal" width={680}>
+        {(()=>{const colab=(todosUsuarios.length?todosUsuarios:users).find(u=>u.id===Number(formMov.userId));
+          const equipe=(todosUsuarios.length?todosUsuarios:users).filter(u=>u.status!=="desligado"&&u.id!==user.id&&(isRH||u.liderId===user.id||u.gestorId===user.id)).sort((a,b)=>a.name.localeCompare(b.name));
+          const ccs=[...new Set((todosUsuarios.length?todosUsuarios:users).map(u=>u.centroCusto).filter(Boolean))].sort();
+          const areas=[...new Set((todosUsuarios.length?todosUsuarios:users).map(u=>u.area).filter(Boolean))].sort();
+          const lideres=users.filter(u=>can(u.role,"lider")&&u.status!=="desligado");
+          const setP=(k,v)=>setFormMov(f=>({...f,proposta:{...f.proposta,[k]:v}}));
+          const campo=k=>{const v=formMov.proposta[k]??"";
+            if(k==="setor")return<Sel key={k} label="Novo setor" value={v} onChange={e=>setP(k,e.target.value)} options={[{value:"",label:"(não muda)"},...Object.entries(SL).map(([a,b])=>({value:a,label:b}))]}/>;
+            if(k==="area")return<Sel key={k} label="Nova área" value={v} onChange={e=>setP(k,e.target.value)} options={[{value:"",label:"(não muda)"},...areas.map(a=>({value:a,label:a}))]}/>;
+            if(k==="centro_custo")return<Sel key={k} label="Novo centro de custo (folha)" value={v} onChange={e=>setP(k,e.target.value)} options={[{value:"",label:"(não muda)"},...ccs.map(a=>({value:a,label:a}))]}/>;
+            if(k==="lider_id")return<Sel key={k} label="Novo líder" value={v} onChange={e=>setP(k,e.target.value)} options={[{value:"",label:"(não muda)"},...lideres.map(u=>({value:u.id,label:u.name}))]}/>;
+            if(k==="gestor_id")return<Sel key={k} label="Novo gestor" value={v} onChange={e=>setP(k,e.target.value)} options={[{value:"",label:"(não muda)"},...gestores.map(u=>({value:u.id,label:u.name}))]}/>;
+            return<Inp key={k} label={k==="cargo"?"Novo cargo":k==="salario"?"Novo salário":"Novo horário/turno"} value={v} onChange={e=>setP(k,e.target.value)} placeholder={k==="salario"?"Ex.: R$ 3.200,00":k==="horario"?"Ex.: 2º turno, 14h às 22h":"Ex.: Oficial de Produção IA"}/>;};
+          const ok=formMov.userId&&formMov.gestorId&&formMov.tipos.length&&formMov.vigencia&&formMov.motivo.trim()&&camposMov.some(k=>String(formMov.proposta[k]??"").trim());
+          return(<div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <div style={{background:C.accBg,borderRadius:9,padding:"10px 14px",fontSize:12,color:C.accLt}}>⇄ Promoção, alteração salarial, transferência, função, horário ou liderança. Aprovado pelo RH, o portal atualiza o cadastro na data de vigência (cargo, setor, centro de custo, líder e gestor).</div>
+            <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:12}}>
+              <Sel label="Colaborador *" value={formMov.userId} onChange={e=>setFormMov({...formMov,userId:e.target.value,proposta:{}})} options={[{value:"",label:"Selecione..."},...equipe.map(u=>({value:u.id,label:u.name+(u.cargo?" — "+u.cargo:"")}))]}/>
+              <Sel label="Gestor responsável *" value={formMov.gestorId} onChange={e=>setFormMov({...formMov,gestorId:e.target.value})} options={[{value:"",label:"Selecione..."},...gestores.map(u=>({value:u.id,label:u.name}))]}/>
+            </div>
+            {colab&&<div style={{fontSize:12,color:C.txm,background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"8px 12px"}}>Hoje: <b>{colab.cargo||"—"}</b> · {SL[colab.setor]||colab.setor||"—"}{colab.area?" / "+colab.area:""} · {colab.centroCusto||"sem centro de custo"} · líder {nomeDe(colab.liderId)} · gestor {nomeDe(colab.gestorId)}</div>}
+            <div><div style={{fontSize:12,fontWeight:600,color:C.txm,marginBottom:6}}>Tipo de movimentação *</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:"6px 16px"}}>{Object.entries(MOV_TIPOS).map(([k,l])=><label key={k} style={{display:"flex",gap:6,alignItems:"center",fontSize:13,cursor:"pointer"}}>
+                <input type="checkbox" checked={formMov.tipos.includes(k)} onChange={e=>setFormMov(f=>({...f,tipos:e.target.checked?[...f.tipos,k]:f.tipos.filter(x=>x!==k)}))}/>{l}</label>)}</div></div>
+            {camposMov.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12}}>{camposMov.map(campo)}</div>}
+            <Inp label="Data de vigência *" type="date" value={formMov.vigencia} onChange={e=>setFormMov({...formMov,vigencia:e.target.value})}/>
+            <Tex label="Justificativa *" value={formMov.motivo} onChange={e=>setFormMov({...formMov,motivo:e.target.value})} rows={3} placeholder="Por que essa movimentação? (desempenho, nova função, reorganização da equipe...)"/>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+              <Btn v="outline" onClick={()=>setModalNova(null)}>Cancelar</Btn>
+              <Btn onClick={abrirMovimentacao} disabled={!ok||saving} title={!ok?"Preencha colaborador, gestor, tipo, pelo menos uma mudança, vigência e justificativa":""}>{saving?<Spin size={14} color="#fff"/>:null} Enviar ao gestor</Btn>
+            </div>
+          </div>);})()}
+      </Modal>
+
       {/* MODAL: Líder pede Demissão — só justificativa */}
       <Modal open={modalNova==="demissao"} onClose={()=>setModalNova(null)} title="Pedir Demissão" width={480}>
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -3720,7 +3797,7 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
       </Modal>
 
       {/* MODAL: Decisão — varia por etapa (Gestor detalha / RH decide) */}
-      <Modal open={!!modalDecisao} onClose={()=>setModalDecisao(null)} title={(modalDecisao?.tipo==="admissao"?"Admissão":"Demissão")+" — "+(modalDecisao?.tipo==="admissao"?(SL[modalDecisao?.setor]||""):(modalDecisao?.nome||""))} width={520}>
+      <Modal open={!!modalDecisao} onClose={()=>setModalDecisao(null)} title={(modalDecisao?.tipo==="admissao"?"Admissão":modalDecisao?.tipo==="movimentacao"?"Movimentação":"Demissão")+" — "+(modalDecisao?.tipo==="admissao"?(SL[modalDecisao?.setor]||""):(modalDecisao?.nome||""))} width={520}>
         {modalDecisao&&(()=>{
           const mov=modalDecisao;
           const ehGestor=mov.status==="pendente_gestor"&&(user.id===mov.gestorId||isRH);
@@ -3751,6 +3828,21 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
                 </>
               )}
 
+              {/* ── MOVIMENTAÇÃO: de → para (gestor e RH) ── */}
+              {mov.tipo==="movimentacao"&&(ehGestor||ehRH)&&<div style={{background:C.s1,borderRadius:10,padding:"10px 12px"}}>
+                <div style={{fontSize:12,color:C.txd,marginBottom:4}}>{(mov.movTipos||[]).map(t=>MOV_TIPOS[t]||t).join(", ")} · vigência {fd(mov.dataPrevista)}</div>
+                <DeParaMov mov={mov}/>{mov.gestorObs&&<div style={{fontSize:12,color:C.txm,marginTop:6}}>Gestor: {mov.gestorObs}</div>}</div>}
+              {ehGestor&&mov.tipo==="movimentacao"&&(
+                <>
+                  <Inp label="Data de vigência *" type="date" value={formGestorMov.vigencia} onChange={e=>setFormGestorMov({...formGestorMov,vigencia:e.target.value})}/>
+                  <Tex label="Observações para o RH" value={formGestorMov.obs} onChange={e=>setFormGestorMov({...formGestorMov,obs:e.target.value})} rows={3} placeholder="De acordo? Algum ajuste?"/>
+                  <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+                    <Btn v="outline" onClick={()=>setModalDecisao(null)}>Cancelar</Btn>
+                    <Btn onClick={()=>detalharMovGestor(mov)} disabled={!formGestorMov.vigencia||saving}>{saving?<Spin size={14} color="#fff"/>:null} Enviar ao RH</Btn>
+                  </div>
+                </>
+              )}
+
               {/* ── ETAPA GESTOR: DEMISSÃO ── */}
               {ehGestor&&mov.tipo==="demissao"&&(
                 <>
@@ -3770,7 +3862,7 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
               {/* ── ETAPA RH: DECISÃO FINAL ── */}
               {ehRH&&(
                 <>
-                  <div style={{background:C.s1,borderRadius:10,padding:"12px 16px",display:"flex",flexDirection:"column",gap:6}}>
+                  {mov.tipo!=="movimentacao"&&<div style={{background:C.s1,borderRadius:10,padding:"12px 16px",display:"flex",flexDirection:"column",gap:6}}>
                     <div style={{fontSize:12,color:C.txd}}>Detalhado pelo gestor:</div>
                     {mov.tipo==="admissao"?(
                       <>
@@ -3784,9 +3876,9 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
                         {mov.gestorObs&&<div style={{fontSize:12,color:C.txm}}>{mov.gestorObs}</div>}
                       </>
                     )}
-                  </div>
+                  </div>}
                   <div style={{fontSize:12,color:C.pur,background:C.purBg,borderRadius:9,padding:"8px 12px"}}>
-                    🔑 Decisão final — {mov.tipo==="admissao"?"aprovar cria automaticamente a vaga em Vagas e Candidatos":"aprovar desliga o colaborador (preserva histórico)"}.
+                    🔑 Decisão final — {mov.tipo==="admissao"?"aprovar cria automaticamente a vaga em Vagas e Candidatos":mov.tipo==="movimentacao"?"aprovar atualiza o cadastro na data de vigência (cargo, setor, centro de custo, líder e gestor)":"aprovar desliga o colaborador (preserva histórico)"}.
                   </div>
                   <Tex label="Observações da decisão" value={obsRH} onChange={e=>setObsRH(e.target.value)} rows={3} placeholder="Justificativa da decisão final..."/>
                   <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
