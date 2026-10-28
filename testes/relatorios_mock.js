@@ -75,7 +75,8 @@
    if(fn==="mov_listar")return ok(window.__MOVS);
    if(fn==="mov_abrir"){const d=a.p_dados,c=USERS.find(x=>x.id===d.user_id);window.__ULTIMO_MOV=a;
      const r={id:window.__MOVS.length+1,tipo:a.p_tipo,status:"pendente_gestor",solicitante_id:u.id,solicitante_name:u.name,user_id:d.user_id,nome:c&&c.name,cargo:c&&c.cargo,setor:c&&c.setor,
-       lider_id:u.id,gestor_id:d.gestor_id,motivo:d.motivo,data_prevista:d.data_vigencia,mov_tipos:d.tipos,atual:{cargo:c&&c.cargo,setor:c&&c.setor,centro_custo:c&&c.centro_custo},proposta:d.proposta,created_at:new Date().toISOString()};
+       lider_id:u.id,gestor_id:d.gestor_id,motivo:d.motivo,data_prevista:d.data_vigencia,
+       ...(a.p_tipo==="admissao"?{cargo:d.cargo,salario:d.salario,setor:d.setor,requisitos:d.requisitos,motivo_requisicao:d.motivo_requisicao,substituido_id:d.substituido_id,quantidade:d.quantidade,tipo_contratacao:d.tipo_contratacao,turno:d.turno,centro_custo:d.centro_custo}:{}),mov_tipos:d.tipos,atual:{cargo:c&&c.cargo,setor:c&&c.setor,centro_custo:c&&c.centro_custo},proposta:d.proposta,created_at:new Date().toISOString()};
      window.__MOVS=[r,...window.__MOVS];return ok(r);}
    if(fn==="mov_detalhar"){const r=window.__MOVS.find(x=>x.id===a.p_id);Object.assign(r,{status:"pendente_rh",gestor_em:new Date().toISOString(),gestor_obs:a.p_dados.obs||null,data_prevista:a.p_dados.data_vigencia||r.data_prevista});return ok({...r});}
    if(fn==="mov_decidir"){const r=window.__MOVS.find(x=>x.id===a.p_id);const hoje=new Date().toISOString().slice(0,10);

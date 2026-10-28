@@ -134,7 +134,10 @@ const mcom=c=>({id:c.id,titulo:c.titulo,corpo:c.corpo,autorId:c.autor_id,autorNa
 const mex=e=>({id:e.id,userId:e.user_id,userName:e.user_name,tipo:e.tipo,data:e.data_agendada,local:e.local||"",status:e.status,obs:e.observacoes||"",createdAt:e.created_at});
 const mtk=t=>({id:t.id,titulo:t.titulo,desc:t.descricao||"",coluna:t.coluna,prio:t.prioridade,respId:t.responsavel_id,respName:t.responsavel_name||"",setor:t.setor||"",venc:t.data_vencimento,tags:t.tags||[],ordem:t.ordem||0,criadoPorId:t.criado_por_id,criadoPorName:t.criado_por_name||"",createdAt:t.created_at,origemTipo:t.origem_tipo||null,origemId:t.origem_id||null});
 const mmv=m=>({id:m.id,tipo:m.tipo,status:m.status,solicitanteId:m.solicitante_id,solicitanteName:m.solicitante_name,nome:m.nome,email:m.email,cargo:m.cargo,setor:m.setor,liderId:m.lider_id,gestorId:m.gestor_id,dataPrevista:m.data_prevista,motivo:m.motivo,userId:m.user_id,tipoDemissao:m.tipo_demissao,ultimoDia:m.ultimo_dia,liderParecer:m.lider_parecer,liderObs:m.lider_obs,liderEm:m.lider_em,gestorParecer:m.gestor_parecer,gestorObs:m.gestor_obs,gestorEm:m.gestor_em,rhDecisao:m.rh_decisao,rhObs:m.rh_obs,rhEm:m.rh_em,rhId:m.rh_id,createdAt:m.created_at,salario:m.salario,requisitos:m.requisitos,prazoEncerramento:m.prazo_encerramento,vagaCriadaId:m.vaga_criada_id,
-  movTipos:m.mov_tipos||[],atual:m.atual||null,proposta:m.proposta||null,aplicadoEm:m.aplicado_em});
+  movTipos:m.mov_tipos||[],atual:m.atual||null,proposta:m.proposta||null,aplicadoEm:m.aplicado_em,
+  motivoRequisicao:m.motivo_requisicao,substituidoId:m.substituido_id,quantidade:m.quantidade||1,tipoContratacao:m.tipo_contratacao,turno:m.turno,centroCusto:m.centro_custo});
+// Requisição de pessoal (substitui o Forms KdB 181)
+const TIPO_CONTRATACAO={clt:"Efetivo (CLT)",temporario:"Temporário",aprendiz:"Aprendiz",estagio:"Estágio"};
 // Movimentação de pessoal (substitui o Forms KdB 133): tipos e campos da proposta.
 const MOV_TIPOS={promocao:"Promoção",salario:"Alteração salarial",transferencia:"Transferência de setor/centro de custo",funcao:"Mudança de função",horario:"Mudança de horário/turno",lideranca:"Troca de líder/gestor"};
 const MOV_CAMPOS={cargo:"Cargo",salario:"Salário",setor:"Setor",area:"Área",centro_custo:"Centro de custo",horario:"Horário/turno",lider_id:"Líder",gestor_id:"Gestor"};
@@ -3465,7 +3468,8 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
   const[saving,setSaving]=useState(false);
 
   // Etapa 1 — Líder só justifica a necessidade (admissão) ou pede a saída (demissão)
-  const[formAdmLider,setFormAdmLider]=useState({setor:"producao",gestorId:"",motivo:"",cargo:"",salario:"",perfilBuscado:""});
+  const ADM_VAZIA={setor:"producao",gestorId:"",motivo:"",cargo:"",salario:"",perfilBuscado:"",motivoRequisicao:"",substituidoId:"",quantidade:"1",tipoContratacao:"clt",turno:"",centroCusto:""};
+  const[formAdmLider,setFormAdmLider]=useState(ADM_VAZIA);
   const[formDemLider,setFormDemLider]=useState({userId:"",gestorId:"",motivo:""});
   const MOV_VAZIA={userId:"",gestorId:"",tipos:[],vigencia:"",proposta:{},motivo:""};
   const[formMov,setFormMov]=useState(MOV_VAZIA);
@@ -3497,13 +3501,15 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
 
   // ── Etapa 1 (Líder): abrir pedido de admissão — só setor + gestor + justificativa ──
   const abrirAdmissaoLider=async()=>{
-    if(!formAdmLider.gestorId||!formAdmLider.motivo.trim()||!formAdmLider.cargo.trim()||!formAdmLider.salario.trim())return;
+    if(!formAdmLider.gestorId||!formAdmLider.motivo.trim()||!formAdmLider.cargo.trim()||!formAdmLider.salario.trim()||!formAdmLider.motivoRequisicao||(formAdmLider.motivoRequisicao==="substituicao"&&!formAdmLider.substituidoId))return;
     setSaving(true);
     const{data,error}=await getSB().rpc("mov_abrir",{p_pedido_por:user.id,p_tipo:"admissao",p_dados:{
       setor:formAdmLider.setor,gestor_id:parseInt(formAdmLider.gestorId),motivo:formAdmLider.motivo.trim(),
-      cargo:formAdmLider.cargo.trim(),salario:formAdmLider.salario.trim(),requisitos:formAdmLider.perfilBuscado.trim()}});
+      cargo:formAdmLider.cargo.trim(),salario:formAdmLider.salario.trim(),requisitos:formAdmLider.perfilBuscado.trim(),
+      motivo_requisicao:formAdmLider.motivoRequisicao,substituido_id:formAdmLider.motivoRequisicao==="substituicao"?parseInt(formAdmLider.substituidoId):null,
+      quantidade:parseInt(formAdmLider.quantidade)||1,tipo_contratacao:formAdmLider.tipoContratacao,turno:formAdmLider.turno.trim(),centro_custo:formAdmLider.centroCusto}});
     if(error)erroMov(error,"Não foi possível abrir o pedido de admissão.");
-    if(data){showToast?.("Pedido de admissão enviado ao gestor.","success");setMovs(p=>[mmv(data),...p]);setModalNova(null);setFormAdmLider({setor:"producao",gestorId:can(user.role,"gestor")?String(user.id):"",motivo:"",cargo:"",salario:"",perfilBuscado:""});}
+    if(data){showToast?.("Pedido de admissão enviado ao gestor.","success");setMovs(p=>[mmv(data),...p]);setModalNova(null);setFormAdmLider({...ADM_VAZIA,gestorId:can(user.role,"gestor")?String(user.id):""});}
     setSaving(false);
   };
 
@@ -3642,6 +3648,7 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
                         {SL[mov.setor]||mov.setor}
                         {mov.tipo==="demissao"&&mov.tipoDemissao?" · "+TIPO_DEM[mov.tipoDemissao]:""}
                         {mov.tipo==="admissao"&&mov.salario?" · "+mov.salario:""}
+                        {mov.tipo==="admissao"&&mov.motivoRequisicao?" · "+(mov.quantidade>1?mov.quantidade+" vagas · ":"")+(mov.motivoRequisicao==="substituicao"?"substituição de "+((todosUsuarios.find(u=>u.id===mov.substituidoId)||users.find(u=>u.id===mov.substituidoId))?.name||"—"):"aumento de quadro")+(mov.tipoContratacao&&mov.tipoContratacao!=="clt"?" · "+TIPO_CONTRATACAO[mov.tipoContratacao]:""):""}
                         {mov.tipo==="movimentacao"?" · "+(mov.movTipos||[]).map(t=>MOV_TIPOS[t]||t).join(", ")+(mov.dataPrevista?" · vigência "+fd(mov.dataPrevista):""):""}
                       </div>
                     </div>
@@ -3735,13 +3742,21 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
             <Inp label="Qual cargo? *" value={formAdmLider.cargo} onChange={e=>setFormAdmLider({...formAdmLider,cargo:e.target.value})} placeholder="Ex: Operador de Produção II"/>
             <Inp label="Qual salário da vaga? *" value={formAdmLider.salario} onChange={e=>setFormAdmLider({...formAdmLider,salario:e.target.value})} placeholder="Ex: R$ 2.800,00"/>
           </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12}}>
+            <Sel label="Motivo da requisição *" value={formAdmLider.motivoRequisicao} onChange={e=>setFormAdmLider({...formAdmLider,motivoRequisicao:e.target.value,substituidoId:""})} options={[{value:"",label:"Selecione..."},{value:"aumento_quadro",label:"Aumento de quadro"},{value:"substituicao",label:"Substituição"}]}/>
+            {formAdmLider.motivoRequisicao==="substituicao"&&<Sel label="Quem será substituído? *" value={formAdmLider.substituidoId} onChange={e=>setFormAdmLider({...formAdmLider,substituidoId:e.target.value})} options={[{value:"",label:"Selecione..."},...(todosUsuarios.length?todosUsuarios:users).filter(u=>u.id!==user.id).sort((a,b)=>(a.status==="desligado")-(b.status==="desligado")||a.name.localeCompare(b.name)).map(u=>({value:u.id,label:u.name+(u.status==="desligado"?" (desligado)":"")}))]}/>}
+            <Inp label="Quantidade de vagas *" type="number" value={formAdmLider.quantidade} onChange={e=>setFormAdmLider({...formAdmLider,quantidade:e.target.value})}/>
+            <Sel label="Tipo de contratação *" value={formAdmLider.tipoContratacao} onChange={e=>setFormAdmLider({...formAdmLider,tipoContratacao:e.target.value})} options={Object.entries(TIPO_CONTRATACAO).map(([k,v])=>({value:k,label:v}))}/>
+            <Inp label="Turno / horário" value={formAdmLider.turno} onChange={e=>setFormAdmLider({...formAdmLider,turno:e.target.value})} placeholder="Ex.: 1º turno, 6h às 14h"/>
+            <Sel label="Centro de custo" value={formAdmLider.centroCusto} onChange={e=>setFormAdmLider({...formAdmLider,centroCusto:e.target.value})} options={[{value:"",label:"(definir depois)"},...[...new Set((todosUsuarios.length?todosUsuarios:users).map(u=>u.centroCusto).filter(Boolean))].sort().map(c=>({value:c,label:c}))]}/>
+          </div>
           <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:12}}>
             <Tex label="O que você busca no colaborador? *" value={formAdmLider.perfilBuscado} onChange={e=>setFormAdmLider({...formAdmLider,perfilBuscado:e.target.value})} rows={3} placeholder="Perfil, experiência, habilidades e requisitos desejados..."/>
             <Tex label="Justificativa da necessidade *" value={formAdmLider.motivo} onChange={e=>setFormAdmLider({...formAdmLider,motivo:e.target.value})} rows={3} placeholder="Por que essa contratação é necessária? Qual a urgência?"/>
           </div>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
             <Btn v="outline" onClick={()=>setModalNova(null)}>Cancelar</Btn>
-            <Btn onClick={abrirAdmissaoLider} disabled={!formAdmLider.gestorId||!formAdmLider.motivo.trim()||!formAdmLider.cargo.trim()||!formAdmLider.salario.trim()||saving}>{saving?<Spin size={14} color="#fff"/>:null} Enviar ao gestor</Btn>
+            <Btn onClick={abrirAdmissaoLider} disabled={!formAdmLider.gestorId||!formAdmLider.motivo.trim()||!formAdmLider.cargo.trim()||!formAdmLider.salario.trim()||!formAdmLider.motivoRequisicao||(formAdmLider.motivoRequisicao==="substituicao"&&!formAdmLider.substituidoId)||saving}>{saving?<Spin size={14} color="#fff"/>:null} Enviar ao gestor</Btn>
           </div>
         </div>
       </Modal>
@@ -3866,7 +3881,8 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
                     <div style={{fontSize:12,color:C.txd}}>Detalhado pelo gestor:</div>
                     {mov.tipo==="admissao"?(
                       <>
-                        <div style={{fontSize:13,fontWeight:700}}>{mov.cargo} · {mov.salario}</div>
+                        <div style={{fontSize:13,fontWeight:700}}>{mov.cargo} · {mov.salario}{mov.quantidade>1?" · "+mov.quantidade+" vagas":""}</div>
+                        {mov.motivoRequisicao&&<div style={{fontSize:12,color:C.txm}}>{mov.motivoRequisicao==="substituicao"?"Substituição de "+((todosUsuarios.find(u=>u.id===mov.substituidoId)||users.find(u=>u.id===mov.substituidoId))?.name||"—"):"Aumento de quadro"} · {TIPO_CONTRATACAO[mov.tipoContratacao]||"Efetivo (CLT)"}{mov.turno?" · "+mov.turno:""}{mov.centroCusto?" · "+mov.centroCusto:""}</div>}
                         {mov.requisitos&&<div style={{fontSize:12,color:C.txm}}>{mov.requisitos}</div>}
                         {mov.prazoEncerramento&&<div style={{fontSize:11,color:C.txd}}>Prazo da vaga: {fd(mov.prazoEncerramento)}</div>}
                       </>
