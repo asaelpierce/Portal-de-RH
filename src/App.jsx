@@ -119,7 +119,8 @@ const can=(r,m)=>(RL[r]||0)>=(RL[m]||0);
 const isRHouDev=r=>r==="rh"||r==="dev";
 
 const mu=u=>({id:u.id,name:u.name,email:u.email,role:u.role,setor:u.setor,area:u.area||null,cargo:u.cargo,admissao:u.admissao,gestorId:u.gestor_id,liderId:u.lider_id,skills:u.skills||[],senioridade:u.senioridade||0,telefone:u.telefone||"",fotoUrl:u.foto_url||"",status:u.status||"ativo",cadastro:u.cadastro||null,centroCusto:u.centro_custo||null});
-const mf=f=>({id:f.id,userId:f.user_id,userName:f.user_name,setor:f.setor,tipo:f.tipo,inicio:f.inicio,fim:f.fim,abono:f.abono,status:f.status,liderAprov:f.lider_aprov,gestorAprov:f.gestor_aprov,rhAprov:f.rh_aprov,obs:f.obs,dataVenc:f.data_vencimento,periodoAq:f.periodo_aquisitivo,createdAt:f.created_at,historico:f.historico_edicoes||[],canceladoPor:f.cancelado_por,canceladoMotivo:f.cancelado_motivo,canceladoEm:f.cancelado_em,opcao:f.opcao||(f.tipo==="30dias"?"30":f.tipo==="15dias"?"15":null),adiantamento13:f.adiantamento_13,lancadoPor:f.lancado_por,lancadoPorNome:f.lancado_por_nome,periodoInicio:f.periodo_inicio,periodoFim:f.periodo_fim,emailEnviadoEm:f.email_enviado_em});
+const mf=f=>({id:f.id,userId:f.user_id,userName:f.user_name,setor:f.setor,tipo:f.tipo,inicio:f.inicio,fim:f.fim,abono:f.abono,status:f.status,liderAprov:f.lider_aprov,gestorAprov:f.gestor_aprov,rhAprov:f.rh_aprov,obs:f.obs,dataVenc:f.data_vencimento,periodoAq:f.periodo_aquisitivo,createdAt:f.created_at,historico:f.historico_edicoes||[],canceladoPor:f.cancelado_por,canceladoMotivo:f.cancelado_motivo,canceladoEm:f.cancelado_em,opcao:f.opcao||(f.tipo==="30dias"?"30":f.tipo==="15dias"?"15":null),adiantamento13:f.adiantamento_13,lancadoPor:f.lancado_por,lancadoPorNome:f.lancado_por_nome,periodoInicio:f.periodo_inicio,periodoFim:f.periodo_fim,emailEnviadoEm:f.email_enviado_em,
+  cienteLancador:!!f.ciente_lancador,cienteLancadorEm:f.ciente_lancador_em,cienteColabEm:f.ciente_colaborador_em});
 const mfb=fb=>({id:fb.id,fromId:fb.from_id,fromName:fb.from_name,fromRole:fb.from_role,toId:fb.to_id,toName:fb.to_name,toRole:fb.to_role,tipo:fb.tipo,texto:fb.texto,sigiloso:fb.sigiloso,createdAt:fb.created_at});
 const mch=m=>({id:m.id,fromId:m.from_id,fromName:m.from_name,toId:m.to_id,toName:m.to_name,texto:m.texto,lido:m.lido,createdAt:m.created_at});
 const mav=a=>({id:a.id,avaliadoId:a.avaliado_id,avaliadoName:a.avaliado_name,avaliadorId:a.avaliador_id,avaliadorName:a.avaliador_name,periodo:a.periodo,status:a.status,notas:{qualidade:a.nota_qualidade,produtividade:a.nota_produtividade,trabalhoEquipe:a.nota_trabalho_equipe,pontualidade:a.nota_pontualidade,iniciativa:a.nota_iniciativa},comentario:a.comentario,createdAt:a.created_at});
@@ -801,7 +802,7 @@ function Planner({user,users,ferias,tarefas,setTarefas,setPage}){
 function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast}){
   // ── Fluxo (decisão do RH em 08/10/2026): o colaborador pede ao líder fora do sistema; o LÍDER lança aqui
   // → GESTOR aprova → RH aprova → colaborador vê na tela e recebe e-mail. Saldos vêm da folha (aba Saldos).
-  const VAZIO_LANC={userId:"",periodoKey:"",periodoManual:"",opcao:"",inicio:"",adiantamento13:"",obs:""};
+  const VAZIO_LANC={userId:"",periodoKey:"",periodoManual:"",opcao:"",inicio:"",adiantamento13:"",obs:"",ciente:false};
   const[modalLanc,setModalLanc]=useState(false);const[formLanc,setFormLanc]=useState(VAZIO_LANC);const[erroLanc,setErroLanc]=useState("");
   const[saldos,setSaldos]=useState({carregando:true,imp:null,linhas:[]});const[importando,setImportando]=useState(false);const[buscaSaldo,setBuscaSaldo]=useState("");
   const arqRef=useRef(null);
@@ -876,7 +877,7 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast}){
       status:porLider?"pendente_gestor":"pendente_rh",lider_aprov:porLider?"aprovado":null,gestor_aprov:!porLider&&!isRH?"aprovado":null,rh_aprov:null,
       periodo_aquisitivo:perSel?dataBR(perSel.periodo_inicio)+" a "+dataBR(perSel.periodo_fim):formLanc.periodoManual.trim(),
       periodo_inicio:perSel?.periodo_inicio||null,periodo_fim:perSel?.periodo_fim||null,data_vencimento:perSel?.sugestao||null,
-      lancado_por:user.id,lancado_por_nome:user.name};
+      lancado_por:user.id,lancado_por_nome:user.name,ciente_lancador:!!formLanc.ciente};
     setSaving(true);
     const sb=getSB();
     const{data,error}=sb?await sb.from("ferias").insert([row]).select().single():{data:null,error:{message:"sem conexão"}};
@@ -1107,6 +1108,7 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast}){
                         <span style={{color:C.txm}}>{s.l}</span>
                       </div>
                     ))}
+                    <CienciaFerias f={f} user={user} onOk={d=>setFerias(prev=>prev.map(x=>x.id===f.id?mf(d):x))} showToast={showToast}/>
                     {can(user.role,"lider")&&(
                       <div style={{marginLeft:"auto",display:"flex",gap:6,flexWrap:"wrap"}}>
                         <button onClick={()=>baixarFormulario(f)} title="Baixar formulário de solicitação (Word)" style={{background:"none",border:"1px solid "+C.bdr,borderRadius:7,padding:"4px 10px",fontSize:11,color:C.txm,cursor:"pointer"}}>⬇ Formulário</button>
@@ -1323,6 +1325,9 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast}){
           {fimLanc&&<div style={{fontSize:13,color:C.txm}}>📅 Descanso de <strong>{dataBR(formLanc.inicio)}</strong> a <strong>{dataBR(fimLanc)}</strong> ({opSel.descanso} dias){opSel.abono?" + "+opSel.abono+" dias de abono pecuniário":""}</div>}
           <Sel label="1ª parcela do 13º junto com as férias? *" value={formLanc.adiantamento13} onChange={e=>setFormLanc({...formLanc,adiantamento13:e.target.value})} options={[{value:"",label:"Selecione..."},{value:"sim",label:"Sim"},{value:"nao",label:"Não"}]}/>
           <Tex label="Observações" value={formLanc.obs} onChange={e=>setFormLanc({...formLanc,obs:e.target.value})} placeholder="Opcional..."/>
+          {String(formLanc.userId)!==String(user.id)&&<label style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:13,color:C.txt,cursor:"pointer"}}>
+            <input type="checkbox" checked={!!formLanc.ciente} onChange={e=>setFormLanc({...formLanc,ciente:e.target.checked})} style={{marginTop:3}}/>
+            <span>Colaborador ciente destas férias <span style={{color:C.txd,fontSize:12}}>(quem tiver acesso ao portal também poderá confirmar)</span></span></label>}
           {avisosLanc.map(a=><div key={a} style={{background:C.ambBg,border:"1px solid "+C.amb+"30",borderRadius:8,padding:"8px 12px",color:C.amb,fontSize:12}}>⚠ {a}</div>)}
           {erroLanc&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"9px 14px",color:C.red,fontSize:13}}>{erroLanc}</div>}
           <div style={{fontSize:11,color:C.txd}}>Depois de lançar: {can(user.role,"gestor")?"aprovação do RH":"aprovação do gestor e do RH"}. Na aprovação do RH o colaborador recebe e-mail.</div>
@@ -4730,6 +4735,23 @@ function IntegracaoCurriculos({user}){
         </div>
       </div>
     </Card>);
+}
+
+// Férias: ciência do colaborador (substitui a pergunta "Colaborador ciente?" do Forms KdB 163).
+// Quem lança marca; o próprio colaborador com acesso confirma ("Estou ciente") — só ele grava (regra no banco).
+function CienciaFerias({f,user,onOk,showToast}){
+  const[salvando,setSalvando]=useState(false);
+  const enc=f.status==="cancelado"||f.status==="rejeitado";
+  const dt=d=>d?new Date(d).toLocaleDateString("pt-BR"):"";
+  const chip=(cor,txt,title)=><div title={title} style={{display:"flex",alignItems:"center",gap:4,background:C.s1,borderRadius:7,padding:"4px 10px",fontSize:11}}><span style={{color:cor}}>{cor===C.grn?"✓":"○"}</span><span style={{color:C.txm}}>{txt}</span></div>;
+  const confirmar=async()=>{setSalvando(true);const{data,error}=await getSB().rpc("ferias_confirmar_ciencia",{p_pedido_por:user.id,p_ferias_id:f.id});setSalvando(false);
+    if(error){showToast?.(error.message,"error");return;}onOk(data);showToast?.("Ciência registrada. Obrigado!","success");};
+  if(f.cienteColabEm)return chip(C.grn,`Ciente (confirmado em ${dt(f.cienteColabEm)})`,"O colaborador confirmou no portal");
+  const meu=f.userId===user.id&&!enc;
+  return(<>
+    {f.cienteLancador?chip(C.grn,"Ciente (informado)",`Informado por ${f.lancadoPorNome||"quem lançou"}${f.cienteLancadorEm?" em "+dt(f.cienteLancadorEm):""}`):!enc&&chip(C.txf,"Ciência pendente","Ninguém informou a ciência do colaborador ainda")}
+    {meu&&<button onClick={confirmar} disabled={salvando} style={{background:C.acc,color:"#fff",border:"none",borderRadius:7,padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer"}}>{salvando?"…":"✓ Estou ciente"}</button>}
+  </>);
 }
 
 // ── RELATÓRIOS (RH) ── Relatórios mensais automatizados (21/10/2026). Cada relatório é uma configuração do mesmo
