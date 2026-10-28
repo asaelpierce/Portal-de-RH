@@ -68,8 +68,13 @@
    if(fn==="unimed_obter")return ok(window.__UNI[a.p_competencia]);
    if(fn==="ferias_confirmar_ciencia"){const f=(window.__FERIAS||[]).find(x=>x.id===a.p_ferias_id);if(!f||f.user_id!==u.id)return er("Só o próprio colaborador confirma a ciência das férias dele.");
      f.ciente_colaborador_em=new Date().toISOString();return ok({...f});}
+   if(fn==="ferias_ciencia_ver"||fn==="ferias_ciencia_confirmar_link"){if(a.p_token!=="a1".repeat(18))return fn==="ferias_ciencia_ver"?ok(null):er("Link inválido.");
+     window.__CIENTE=window.__CIENTE||(fn==="ferias_ciencia_confirmar_link"?new Date().toISOString():null);
+     return ok({nome:"Bia",inicio:"2026-12-01",fim:"2026-12-30",dias:30,periodo_aquisitivo:"01/03/2025 a 28/02/2026",abono:false,adiantamento_13:true,status:"em_aprovacao",ciente_em:window.__CIENTE});}
    return ok(null);},
-  functions:{invoke:async()=>({data:null,error:null})},storage:{from:()=>({upload:async()=>({data:{},error:null})})}};
+  functions:{invoke:async(nome,opt)=>{window.__INVOKES=(window.__INVOKES||[]).concat([{nome,body:opt&&opt.body}]);
+    if(nome==="ferias-ciencia")return{data:{ok:true,link:location.origin+"/?ciencia="+"a1".repeat(18),enviado:!!(opt&&opt.body&&opt.body.enviar),para:"bi***@teste.local"},error:null};
+    return{data:null,error:null};}},storage:{from:()=>({upload:async()=>({data:{},error:null})})}};
  window.supabase={createClient:()=>client};
  const f=window.fetch;window.fetch=async(u,o)=>{if(String(u).includes("/functions/v1/secure-proxy")){const b=JSON.parse(o.body);if(b.action==="email"){window.__EMAILS.push(b);return new Response(JSON.stringify({ok:true}));}return new Response(JSON.stringify({ok:true,text:""}));}return f(u,o);};
 })();

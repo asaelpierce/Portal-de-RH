@@ -26,6 +26,22 @@ with sync_playwright() as p:
     pg.close()
     pg=abrir("ana@teste.local"); t=pg.locator("main").inner_text()
     res["F3 RH vê a situação, sem botão (não são férias dele)"]="Ciente (informado)" in t and pg.get_by_role("button",name=re.compile("Estou ciente")).count()==0
+    res["F4 quem gerencia vê 'Enviar link' e 'Copiar link'"]=pg.get_by_role("button",name=re.compile("Enviar link")).count()>=1 and pg.get_by_role("button",name=re.compile("Copiar link")).count()>=1
+    pg.get_by_role("button",name=re.compile("Enviar link")).first.click(); pg.wait_for_timeout(800)
+    inv=pg.evaluate("window.__INVOKES||[]")
+    res["F5 'Enviar link' chama o servidor e avisa para quem foi"]=any(i["nome"]=="ferias-ciencia" and i["body"]["enviar"] for i in inv) and "Link de ciência enviado para bi***@teste.local" in pg.locator("body").inner_text()
+    pg.close()
+    # página pública do link (sem login)
+    pg=b.new_page(viewport={"width":420,"height":800}); pg.on("pageerror",lambda e:errs.append(str(e)[:200]))
+    pg.route("https://cdn.jsdelivr.net/**",lambda r:r.abort()); pg.add_init_script(MOCK)
+    pg.goto("http://localhost:5173/?ciencia="+"a1"*18); pg.wait_for_timeout(1500)
+    t=pg.locator("body").inner_text()
+    res["F6 link abre sem login e mostra as férias"]="Olá, Bia!" in t and "01/12/2026 a 30/12/2026" in t and "30 dias" in t and "Em aprovação" in t and "adiantamento do 13º" in t
+    pg.get_by_role("button",name=re.compile("Estou ciente")).click(); pg.wait_for_timeout(800)
+    res["F7 'Estou ciente' pelo link confirma"]="Você confirmou que está ciente" in pg.locator("body").inner_text()
+    pg.goto("http://localhost:5173/?ciencia="+"b2"*18); pg.wait_for_timeout(1500)
+    res["F8 link inválido: mensagem clara"]="Link inválido ou expirado" in pg.locator("body").inner_text()
+    pg.close()
     res["sem exceções"]=not errs
     if errs: print(errs[:3])
     b.close()

@@ -120,7 +120,7 @@ const isRHouDev=r=>r==="rh"||r==="dev";
 
 const mu=u=>({id:u.id,name:u.name,email:u.email,role:u.role,setor:u.setor,area:u.area||null,cargo:u.cargo,admissao:u.admissao,gestorId:u.gestor_id,liderId:u.lider_id,skills:u.skills||[],senioridade:u.senioridade||0,telefone:u.telefone||"",fotoUrl:u.foto_url||"",status:u.status||"ativo",cadastro:u.cadastro||null,centroCusto:u.centro_custo||null});
 const mf=f=>({id:f.id,userId:f.user_id,userName:f.user_name,setor:f.setor,tipo:f.tipo,inicio:f.inicio,fim:f.fim,abono:f.abono,status:f.status,liderAprov:f.lider_aprov,gestorAprov:f.gestor_aprov,rhAprov:f.rh_aprov,obs:f.obs,dataVenc:f.data_vencimento,periodoAq:f.periodo_aquisitivo,createdAt:f.created_at,historico:f.historico_edicoes||[],canceladoPor:f.cancelado_por,canceladoMotivo:f.cancelado_motivo,canceladoEm:f.cancelado_em,opcao:f.opcao||(f.tipo==="30dias"?"30":f.tipo==="15dias"?"15":null),adiantamento13:f.adiantamento_13,lancadoPor:f.lancado_por,lancadoPorNome:f.lancado_por_nome,periodoInicio:f.periodo_inicio,periodoFim:f.periodo_fim,emailEnviadoEm:f.email_enviado_em,
-  cienteLancador:!!f.ciente_lancador,cienteLancadorEm:f.ciente_lancador_em,cienteColabEm:f.ciente_colaborador_em});
+  cienteLancador:!!f.ciente_lancador,cienteLancadorEm:f.ciente_lancador_em,cienteColabEm:f.ciente_colaborador_em,cienciaVia:f.ciencia_via,cienciaEnviadaEm:f.ciencia_enviada_em});
 const mfb=fb=>({id:fb.id,fromId:fb.from_id,fromName:fb.from_name,fromRole:fb.from_role,toId:fb.to_id,toName:fb.to_name,toRole:fb.to_role,tipo:fb.tipo,texto:fb.texto,sigiloso:fb.sigiloso,createdAt:fb.created_at});
 const mch=m=>({id:m.id,fromId:m.from_id,fromName:m.from_name,toId:m.to_id,toName:m.to_name,texto:m.texto,lido:m.lido,createdAt:m.created_at});
 const mav=a=>({id:a.id,avaliadoId:a.avaliado_id,avaliadoName:a.avaliado_name,avaliadorId:a.avaliador_id,avaliadorName:a.avaliador_name,periodo:a.periodo,status:a.status,notas:{qualidade:a.nota_qualidade,produtividade:a.nota_produtividade,trabalhoEquipe:a.nota_trabalho_equipe,pontualidade:a.nota_pontualidade,iniciativa:a.nota_iniciativa},comentario:a.comentario,createdAt:a.created_at});
@@ -884,6 +884,8 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast}){
     setSaving(false);
     if(error||!data){setErroLanc("Não foi possível lançar as férias. Tente novamente.");console.error(error);return;}
     setFerias(p=>[mf(data),...p]);setModalLanc(false);setFormLanc(VAZIO_LANC);
+    // Férias de outra pessoa: manda o link de ciência para o e-mail do cadastro (ou avisa para copiar o link).
+    if(data.user_id!==user.id)enviarLinkCiencia(data.id,{showToast,silenciosoSemEmail:false});
     showToast?.("Férias lançadas — aguardando "+(porLider?"gestor":"RH")+".","success");
     if(criarTarefaAuto)criarTarefaAuto(`Aprovar Férias: ${colabLanc.name.split(" ")[0]}`,`Período: ${dataBR(row.inicio)} a ${dataBR(row.fim)}.\nLançado por ${user.name}.`,"alta",["férias"],"ferias",data.id);
   };
@@ -1327,7 +1329,7 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast}){
           <Tex label="Observações" value={formLanc.obs} onChange={e=>setFormLanc({...formLanc,obs:e.target.value})} placeholder="Opcional..."/>
           {String(formLanc.userId)!==String(user.id)&&<label style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:13,color:C.txt,cursor:"pointer"}}>
             <input type="checkbox" checked={!!formLanc.ciente} onChange={e=>setFormLanc({...formLanc,ciente:e.target.checked})} style={{marginTop:3}}/>
-            <span>Colaborador ciente destas férias <span style={{color:C.txd,fontSize:12}}>(quem tiver acesso ao portal também poderá confirmar)</span></span></label>}
+            <span>Colaborador ciente destas férias <span style={{color:C.txd,fontSize:12}}>(ao salvar, ele também recebe por e-mail um link para ver as férias e confirmar)</span></span></label>}
           {avisosLanc.map(a=><div key={a} style={{background:C.ambBg,border:"1px solid "+C.amb+"30",borderRadius:8,padding:"8px 12px",color:C.amb,fontSize:12}}>⚠ {a}</div>)}
           {erroLanc&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"9px 14px",color:C.red,fontSize:13}}>{erroLanc}</div>}
           <div style={{fontSize:11,color:C.txd}}>Depois de lançar: {can(user.role,"gestor")?"aprovação do RH":"aprovação do gestor e do RH"}. Na aprovação do RH o colaborador recebe e-mail.</div>
@@ -4746,12 +4748,62 @@ function CienciaFerias({f,user,onOk,showToast}){
   const chip=(cor,txt,title)=><div title={title} style={{display:"flex",alignItems:"center",gap:4,background:C.s1,borderRadius:7,padding:"4px 10px",fontSize:11}}><span style={{color:cor}}>{cor===C.grn?"✓":"○"}</span><span style={{color:C.txm}}>{txt}</span></div>;
   const confirmar=async()=>{setSalvando(true);const{data,error}=await getSB().rpc("ferias_confirmar_ciencia",{p_pedido_por:user.id,p_ferias_id:f.id});setSalvando(false);
     if(error){showToast?.(error.message,"error");return;}onOk(data);showToast?.("Ciência registrada. Obrigado!","success");};
-  if(f.cienteColabEm)return chip(C.grn,`Ciente (confirmado em ${dt(f.cienteColabEm)})`,"O colaborador confirmou no portal");
+  if(f.cienteColabEm)return chip(C.grn,`Ciente (confirmado em ${dt(f.cienteColabEm)}${f.cienciaVia==="link"?" pelo link":""})`,f.cienciaVia==="link"?"O colaborador confirmou pelo link":"O colaborador confirmou no portal");
   const meu=f.userId===user.id&&!enc;
+  const gere=!meu&&!enc&&can(user.role,"lider");
+  const btn={background:"none",border:"1px solid "+C.bdr,borderRadius:7,padding:"4px 10px",fontSize:11,color:C.txm,cursor:"pointer"};
   return(<>
     {f.cienteLancador?chip(C.grn,"Ciente (informado)",`Informado por ${f.lancadoPorNome||"quem lançou"}${f.cienteLancadorEm?" em "+dt(f.cienteLancadorEm):""}`):!enc&&chip(C.txf,"Ciência pendente","Ninguém informou a ciência do colaborador ainda")}
     {meu&&<button onClick={confirmar} disabled={salvando} style={{background:C.acc,color:"#fff",border:"none",borderRadius:7,padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer"}}>{salvando?"…":"✓ Estou ciente"}</button>}
+    {gere&&<><button title="Envia ao colaborador o link para ver as férias e confirmar" onClick={()=>enviarLinkCiencia(f.id,{showToast})} style={btn}>✉ Enviar link</button>
+      <button title="Copia o link para mandar pelo WhatsApp" onClick={()=>copiarLinkCiencia(f.id,{showToast})} style={btn}>🔗 Copiar link</button></>}
   </>);
+}
+
+// Link de ciência (função de servidor ferias-ciencia): envia ao e-mail do cadastro do colaborador ou devolve o link.
+async function enviarLinkCiencia(feriasId,{showToast}={}){
+  try{
+    const{data,error}=await getSB().functions.invoke("ferias-ciencia",{body:{ferias_id:feriasId,enviar:true}});
+    if(error||!data?.ok){showToast?.(data?.error||"Não foi possível enviar o link de ciência.","error");return;}
+    if(data.enviado)showToast?.(`Link de ciência enviado para ${data.para}.`,"success");
+    else if(data.sem_email)showToast?.("O colaborador não tem e-mail no cadastro: use “🔗 Copiar link” e mande pelo WhatsApp.","warn");
+  }catch(e){console.error(e);showToast?.("Não foi possível enviar o link de ciência.","error");}
+}
+async function copiarLinkCiencia(feriasId,{showToast}={}){
+  try{
+    const{data,error}=await getSB().functions.invoke("ferias-ciencia",{body:{ferias_id:feriasId,enviar:false}});
+    if(error||!data?.ok||!data.link){showToast?.(data?.error||"Não foi possível gerar o link.","error");return;}
+    try{await navigator.clipboard.writeText(data.link);showToast?.("Link copiado. Cole no WhatsApp do colaborador.","success");}
+    catch{window.prompt("Copie o link e mande ao colaborador:",data.link);}
+  }catch(e){console.error(e);showToast?.("Não foi possível gerar o link.","error");}
+}
+
+// Página pública do link (?ciencia=<código>): o colaborador vê as férias dele e confirma, sem entrar no portal.
+function CienciaFeriasPublica({token}){
+  const[info,setInfo]=useState(undefined);const[salvando,setSalvando]=useState(false);const[erro,setErro]=useState("");
+  useEffect(()=>{(async()=>{const sb=await initSB();if(!sb){setInfo(null);return;}
+    const{data,error}=await sb.rpc("ferias_ciencia_ver",{p_token:token});setInfo(error||!data?null:data);})();},[token]);
+  const confirmar=async()=>{setErro("");setSalvando(true);const{data,error}=await getSB().rpc("ferias_ciencia_confirmar_link",{p_token:token});setSalvando(false);
+    if(error||!data){setErro(error?.message||"Não foi possível confirmar. Tente de novo.");return;}setInfo(data);};
+  const br=d=>d?String(d).slice(0,10).split("-").reverse().join("/"):"";
+  const SIT={aprovado:["Aprovadas",C.grn],em_aprovacao:["Em aprovação",C.amb],cancelado:["Canceladas",C.red]};
+  const caixa={minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:16,background:C.bg};
+  if(info===undefined)return<div style={caixa}><Spin size={20}/></div>;
+  if(info===null)return<div style={caixa}><Card style={{maxWidth:420,textAlign:"center"}}><div style={{fontSize:28}}>🔒</div><div style={{fontWeight:800,margin:"6px 0"}}>Link inválido ou expirado</div><div style={{fontSize:13,color:C.txm}}>Peça um novo link ao seu líder ou ao RH.</div></Card></div>;
+  const [sit,cor]=SIT[info.status]||SIT.em_aprovacao;
+  return(<div style={caixa}><Card style={{maxWidth:440,width:"100%"}}>
+    <div style={{fontSize:13,color:C.txd}}>Kalenborn · RH</div>
+    <div style={{fontSize:20,fontWeight:800,margin:"4px 0 12px"}}>Olá, {info.nome}! ✈</div>
+    <div style={{fontSize:13,color:C.txm}}>Suas férias</div>
+    <div style={{fontSize:22,fontWeight:800,margin:"2px 0"}}>{br(info.inicio)} a {br(info.fim)}</div>
+    <div style={{fontSize:14,color:C.txm,marginBottom:10}}>{info.dias} dias{info.periodo_aquisitivo?` · período aquisitivo ${info.periodo_aquisitivo}`:""}{info.abono?" · com abono":""}{info.adiantamento_13?" · adiantamento do 13º":""}</div>
+    <div style={{display:"inline-block",fontSize:12,fontWeight:700,color:cor,border:"1px solid "+cor,borderRadius:20,padding:"3px 10px",marginBottom:14}}>{sit}</div>
+    {info.status==="cancelado"?<div style={{fontSize:13,color:C.txm}}>Estas férias foram canceladas. Em caso de dúvida, fale com o seu líder ou com o RH.</div>
+    :info.ciente_em?<div style={{background:C.grnBg||C.s1,borderRadius:10,padding:"10px 14px",fontSize:14,color:C.grn,fontWeight:700}}>✓ Você confirmou que está ciente em {new Date(info.ciente_em).toLocaleString("pt-BR")}.</div>
+    :<><Btn onClick={confirmar} disabled={salvando} style={{width:"100%"}}>{salvando?<Spin size={14}/>:"✓ Estou ciente das minhas férias"}</Btn>
+      <div style={{fontSize:12,color:C.txd,marginTop:8}}>Guarde este link: você pode abrir de novo para consultar suas férias.</div></>}
+    {erro&&<div style={{color:C.red,fontSize:13,marginTop:10}}>{erro}</div>}
+  </Card></div>);
 }
 
 // ── RELATÓRIOS (RH) ── Relatórios mensais automatizados (21/10/2026). Cada relatório é uma configuração do mesmo
@@ -5806,6 +5858,9 @@ export default function App(){
   // Link individual da ficha de admissão (?admissao=<token>): candidato aprovado preenche sem login.
   const admissaoPublica=new URLSearchParams(window.location.search).get("admissao");
   if(admissaoPublica)return<FichaAdmissao token={admissaoPublica}/>;
+  // Link individual de ciência das férias (?ciencia=<código>): o colaborador vê as férias e confirma, sem login.
+  const cienciaPublica=new URLSearchParams(window.location.search).get("ciencia");
+  if(cienciaPublica)return<CienciaFeriasPublica token={cienciaPublica}/>;
   if(eventoPublico)return<FormularioEvento slug={eventoPublico}/>;
   if(!user&&screen==="career")return<CareerPortal vagas={vagasAbertas} carregando={vagasCarregando} onBack={()=>setScreen("login")} onSubmit={c=>setCandidates(p=>[c,...p])} criarTarefaAuto={criarTarefaAuto}/>;
   if(!user&&restaurando)return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",gap:10,color:C.txm,background:C.bg}}><style>{CSS}</style><Spin size={18}/> Carregando…</div>;
