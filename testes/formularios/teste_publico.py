@@ -28,7 +28,9 @@ with sync_playwright() as p:
     res["P4 enviado ao RH com opção 12, sem matrícula"]="Pedido enviado ao RH" in pg.locator("body").inner_text() and env["p_tipo"]=="ferias" and env["p_dados"]["opcao"]=="12" and env["p_dados"]["descanso"]==12 and "solicitante_matricula" not in env["p_dados"]
     pg.context.close()
     pg=abrir(BASE+"/?form=ferias")
-    res["P4b opção 20 + 10 de abono disponível"]=pg.get_by_text("20 dias em descanso e 10 dias de abono pecuniário").count()==1
+    rot=[l.strip() for l in pg.locator("label:has(input[name=op])").all_inner_texts()]
+    t=pg.locator("body").inner_text().lower()
+    res["P4b opções em ordem (10, 15, 30, outro), sem abono e sem 13º"]=rot[:3]==["10 dias em descanso","15 dias em descanso","30 dias em descanso"] and rot[3].startswith("Outro") and len(rot)==4 and "abono" not in t and "13º" not in t
     pg.context.close()
     pg=abrir(BASE+"/?form=movimentacao")
     pg.get_by_label("Seu nome *").select_option("1"); pg.get_by_label("Colaborador *").select_option("2")

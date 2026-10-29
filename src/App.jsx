@@ -5138,7 +5138,7 @@ function FormularioPublico({tipo}){
   const enviar=async()=>{
     setErro("");setEnviando(true);
     const d={solicitante_id:parseInt(f.solicitante_id)};
-    if(tipo==="ferias")Object.assign(d,{user_id:parseInt(f.user_id),inicio:f.inicio,descanso:op?.descanso,abono:op?.abono||0,opcao:op?.id,periodo_aquisitivo:f.periodo||"",adiantamento_13:f.adiantamento_13,ciente:!!f.ciente,obs:f.obs||""});
+    if(tipo==="ferias")Object.assign(d,{user_id:parseInt(f.user_id),inicio:f.inicio,descanso:op?.descanso,opcao:op?.id,periodo_aquisitivo:f.periodo||"",ciente:!!f.ciente,obs:f.obs||""});
     if(tipo==="admissao")Object.assign(d,{setor:f.setor||"",superior_id:parseInt(f.superior_id)||null,quantidade:parseInt(f.quantidade)||1,cargo:f.cargo||"",turno:f.turno||"",salario:f.salario||"",
       perfil_idade_sexo:f.perfil_idade_sexo||"",tipo_contratacao:f.tipo_contratacao,tipo_contratacao_outro:f.tipo_contratacao_outro||"",tipo_vaga:f.tipo_vaga||"",tipo_vaga_outro:f.tipo_vaga_outro||"",
       prazo_encerramento:f.prazo||"",motivo_requisicao:f.motivo_requisicao||"",motivo_requisicao_outro:f.motivo_requisicao_outro||"",
@@ -5179,11 +5179,10 @@ function FormularioPublico({tipo}){
         <div style={grid}><Inp label="Data de início *" type="date" value={f.inicio||""} onChange={e=>set("inicio",e.target.value)}/>
           <Inp label="Período aquisitivo" value={f.periodo||""} onChange={e=>set("periodo",e.target.value)} placeholder="Ex.: 01/03/2025 a 28/02/2026"/></div>
         <div><div style={{fontSize:12,fontWeight:600,color:C.txm,marginBottom:6}}>Opção *</div>
-          {OPCOES_FERIAS.map(o=><label key={o.id} style={{display:"flex",gap:8,alignItems:"center",fontSize:13,marginBottom:4,cursor:"pointer"}}><input type="radio" name="op" checked={f.opcao===o.id} onChange={()=>set("opcao",o.id)}/>{o.label}</label>)}
+          {OPCOES_FERIAS.filter(o=>!o.abono).map(o=><label key={o.id} style={{display:"flex",gap:8,alignItems:"center",fontSize:13,marginBottom:4,cursor:"pointer"}}><input type="radio" name="op" checked={f.opcao===o.id} onChange={()=>set("opcao",o.id)}/>{o.label}</label>)}
           <label style={{display:"flex",gap:8,alignItems:"center",fontSize:13,cursor:"pointer"}}><input type="radio" name="op" checked={f.opcao==="outro"} onChange={()=>set("opcao","outro")}/>Outro:
             <input aria-label="Quantos dias em descanso" type="number" min={5} max={30} value={f.diasOutro||""} onFocus={()=>set("opcao","outro")} onChange={e=>{set("opcao","outro");set("diasOutro",e.target.value);}} style={{width:56,background:C.s1,border:"1px solid "+C.bdr,borderRadius:6,padding:"3px 6px",color:C.txt}}/> dias em descanso</label></div>
-        {op&&f.inicio&&<div style={{fontSize:13,color:C.txm}}>Período de gozo: {dataBR(f.inicio)} a {dataBR(addDias(f.inicio,op.descanso-1))} · Total: <b>{op.descanso} dias</b>{op.abono?` + ${op.abono} de abono`:""} ({op.descanso} dias).</div>}
-        <Sel label="Adiantamento do 13º?" value={f.adiantamento_13} onChange={e=>set("adiantamento_13",e.target.value)} options={[{value:"",label:"(não informado)"},{value:"sim",label:"Sim"},{value:"nao",label:"Não"}]}/>
+        {op&&f.inicio&&<div style={{fontSize:13,color:C.txm}}>Período de gozo: {dataBR(f.inicio)} a {dataBR(addDias(f.inicio,op.descanso-1))} · Total: <b>{op.descanso} dias</b>.</div>}
         <label style={{display:"flex",gap:8,alignItems:"center",fontSize:13,cursor:"pointer"}}><input type="checkbox" checked={!!f.ciente} onChange={e=>set("ciente",e.target.checked)}/>Colaborador ciente destas férias</label>
         <Tex label="Observação" value={f.obs||""} onChange={e=>set("obs",e.target.value)} rows={2}/>
       </>}

@@ -24,10 +24,11 @@ export const br = iso => iso ? iso.split("-").reverse().join("/") : "—";
 
 // As 4 opções do formulário oficial "Solicitação de Férias" (mantidas exatamente como no papel).
 export const OPCOES_FERIAS = [
-  { id: "30",   label: "30 dias em descanso",                               descanso: 30, abono: 0,  doc: "30 DIAS EM DESCANSO" },
-  { id: "15",   label: "15 dias em descanso",                               descanso: 15, abono: 0,  doc: "15 DIAS EM DESCANSO" },
-  { id: "5+10", label: "5 dias em descanso e 10 dias de abono pecuniário",  descanso: 5,  abono: 10, doc: "05 DIAS EM DESCANSO E 10 DIAS DE ABONO" },
+  // em ordem de dias (pedido do Asael); as com abono pecuniário só aparecem para o RH, no portal
   { id: "10",   label: "10 dias em descanso",                               descanso: 10, abono: 0,  doc: "10  DIAS EM DESCANSO" },
+  { id: "15",   label: "15 dias em descanso",                               descanso: 15, abono: 0,  doc: "15 DIAS EM DESCANSO" },
+  { id: "30",   label: "30 dias em descanso",                               descanso: 30, abono: 0,  doc: "30 DIAS EM DESCANSO" },
+  { id: "5+10", label: "5 dias em descanso e 10 dias de abono pecuniário",  descanso: 5,  abono: 10, doc: "05 DIAS EM DESCANSO E 10 DIAS DE ABONO" },
   // opções pedidas pela Mariele (29/10/2026); "Outro: ___ dias" é um número livre (5 a 30) guardado como "12", "18"...
   { id: "20+10", label: "20 dias em descanso e 10 dias de abono pecuniário", descanso: 20, abono: 10, doc: "20 DIAS EM DESCANSO E 10 DIAS DE ABONO" },
 ];
