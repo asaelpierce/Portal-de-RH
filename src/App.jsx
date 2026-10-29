@@ -3920,7 +3920,7 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
                       </>
                     ):(
                       <>
-                        <div style={{fontSize:13,fontWeight:700}}>{TIPO_DEM[mov.tipoDemissao]} · Último dia: {fd(mov.ultimoDia)}</div>
+                        <div style={{fontSize:13,fontWeight:700}}>{TIPO_DEM[mov.tipoDemissao]||"Desligamento"} · {mov.origem==="formulario"?"Data desejada":"Último dia"}: {mov.ultimoDia?fd(mov.ultimoDia):"—"}</div>
                         {mov.gestorObs&&<div style={{fontSize:12,color:C.txm}}>{mov.gestorObs}</div>}
                       </>
                     )}
@@ -5147,7 +5147,7 @@ function FormularioPublico({tipo}){
     if(tipo==="movimentacao"){const prop={};["cargo","salario","setor","centro_custo"].forEach(k=>{const v=f.proposta[k];if(v!==undefined&&String(v).trim()!=="")prop[k]=String(v).trim();});
       const tipos=[...(prop.cargo?["funcao"]:[]),...(prop.salario?["salario"]:[]),...(prop.setor||prop.centro_custo?["transferencia"]:[])];
       Object.assign(d,{user_id:parseInt(f.user_id),salario_atual:f.salario_atual||"",tipos,proposta:prop,data_vigencia:f.vigencia||"",motivo:f.motivo||"",diretoria_ciente:f.diretoria_ciente||""});}
-    if(tipo==="demissao")Object.assign(d,{user_id:parseInt(f.user_id),motivo:f.motivo||""});
+    if(tipo==="demissao")Object.assign(d,{user_id:parseInt(f.user_id),ultimo_dia:f.ultimo_dia||"",motivo:f.motivo||""});
     const{data,error}=await getSB().rpc("form_publico_enviar",{p_tipo:tipo,p_dados:d});
     setEnviando(false);if(error){setErro(error.message);return;}setOk(data);
   };
@@ -5164,7 +5164,7 @@ function FormularioPublico({tipo}){
       &&(!["demissao","promocao"].includes(f.motivo_requisicao)||f.substituido_id)&&(f.motivo_requisicao!=="outro"||f.motivo_requisicao_outro)
       &&(f.tipo_contratacao!=="outro"||f.tipo_contratacao_outro)&&(f.tipo_vaga!=="outra"||f.tipo_vaga_outro):
     tipo==="movimentacao"?f.user_id&&f.vigencia&&f.motivo&&f.diretoria_ciente&&["cargo","salario","setor","centro_custo"].some(k=>String(f.proposta[k]??"").trim()):
-    f.user_id&&f.motivo);
+    f.user_id&&f.ultimo_dia&&f.motivo);
   return(<div style={caixa}><div style={{width:"100%",maxWidth:720,display:"flex",flexDirection:"column",gap:14}}>
     <div><div style={{fontSize:13,color:C.txd}}>Kalenborn · RH</div><div style={{fontSize:22,fontWeight:800}}>{TIT[tipo]}</div></div>
     <Card><div style={{fontSize:14,fontWeight:700,marginBottom:10}}>Quem está pedindo (requisitante)</div>
@@ -5222,6 +5222,7 @@ function FormularioPublico({tipo}){
         </div>
         <div style={{fontSize:12,color:C.txd}}>Preencha só o que muda (cargo, salário e/ou local).</div>
       </>}
+      {tipo==="demissao"&&<Inp label="Data desejada para o desligamento *" type="date" min={hojeISO()} value={f.ultimo_dia||""} onChange={e=>set("ultimo_dia",e.target.value)}/>}
       {(tipo==="movimentacao"||tipo==="demissao")&&<Tex label="Justificativa *" value={f.motivo||""} onChange={e=>set("motivo",e.target.value)} rows={3}/>}
       {tipo==="movimentacao"&&<div>{rot("Diretoria ciente? *")}{radios("dcm",f.diretoria_ciente,[["sim","Sim"],["nao","Não"]],v=>set("diretoria_ciente",v))}</div>}
       {erro&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"9px 14px",color:C.red,fontSize:13}}>{erro}</div>}

@@ -59,6 +59,16 @@ with sync_playwright() as p:
     d=pg.evaluate("window.__FORM_ENVIADO")["p_dados"]
     res["P7b requisição com as perguntas do Forms"]=d["setor"]=="producao" and d["superior_id"]==1 and d["tipo_contratacao"]=="temporario" and d["tipo_vaga"]=="sigilosa" and d["motivo_requisicao"]=="demissao" and d["substituido_id"]==3 and d["prazo_encerramento"]=="2026-11-30" and d["requisitos_comportamentais"]=="Proatividade" and d["diretoria_ciente"]=="sim" and d["perfil_idade_sexo"]=="indiferente"
     pg.context.close()
+    pg=abrir(BASE+"/?form=demissao")
+    pg.get_by_label("Seu nome *").select_option("1"); pg.get_by_label("Colaborador *").select_option("2")
+    pg.get_by_label("Justificativa *").fill("Desempenho abaixo do esperado")
+    enviar=pg.get_by_role("button",name=re.compile("Enviar ao RH"))
+    sem_data=enviar.is_disabled()
+    pg.get_by_label("Data desejada para o desligamento *").fill("2026-11-06")
+    enviar.click(); pg.wait_for_timeout(600)
+    d=pg.evaluate("window.__FORM_ENVIADO")["p_dados"]
+    res["P8 demissão: data desejada obrigatória e enviada"]=sem_data and d["ultimo_dia"]=="2026-11-06" and "Pedido enviado ao RH" in pg.locator("body").inner_text()
+    pg.context.close()
     # RH logado copia o link SEM login
     pg=abrir(BASE+"/")
     pg.fill("input[type=email]","ana@teste.local"); pg.fill("input[type=password]","x"); pg.get_by_role("button",name=re.compile("Entrar")).click(); pg.wait_for_timeout(1300)
