@@ -30,7 +30,7 @@ with sync_playwright() as p:
     res["M5 cartão da movimentação com tipos e vigência"]="Bia Colab" in t and "Transferência de setor/centro de custo" in t and "vigência" in t
     pg.get_by_role("button",name=re.compile("Detalhar e enviar")).first.click(); pg.wait_for_timeout(500)
     t=pg.get_by_role("dialog").inner_text()
-    res["M6 gestor vê de → para"]="Atual" in t and "Proposto" in t and "REVESTIMENTO - MÃO DE OBRA" in t and "(não fica no portal)" in t
+    res["M6 gestor vê de → para"]="Atual" in t and "Proposto" in t and "REVESTIMENTO - MÃO DE OBRA" in t and "(não informado)" in t
     pg.get_by_role("dialog").get_by_role("button",name=re.compile("Enviar ao RH")).click(); pg.wait_for_timeout(600)
     pg.get_by_role("button",name=re.compile("Decidir")).first.click(); pg.wait_for_timeout(500)
     res["M7 RH vê o aviso de atualização do cadastro"]="aprovar atualiza o cadastro na data de vigência" in pg.get_by_role("dialog").inner_text()

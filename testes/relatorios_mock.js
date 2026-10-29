@@ -87,7 +87,7 @@
        aprendizes:ap,sem_nascimento:a.p_ativos.filter(x=>!/aprendiz/i.test(x.cargo)).map(x=>x.nome),
        exclusoes:[{nome:"PEDRO SAIU",cpf:"33322211100",nascimento:"1995-05-05",centro_custo:"CORTE",status_portal:"desligado",desligamento:"2026-10-15"}]});}
    if(fn==="centro_custo_ajustar"){window.__CCU=window.__CCU||{};window.__AJUSTES=(window.__AJUSTES||[]).concat([a]);window.__CCU[a.p_usuario_id]=a.p_centro_custo;return ok({mudou:true,para:a.p_centro_custo});}
-   if(fn==="form_publico_contexto")return ok({solicitantes:[{id:1,nome:"Ana RH",equipe:[2,3]},{id:3,nome:"Maria Titular",equipe:[3]}],colaboradores:USERS.filter(x=>x.status==="ativo").map(x=>({id:x.id,nome:x.name,cargo:"",setor:x.setor})),
+   if(fn==="form_publico_contexto")return ok({solicitantes:[{id:1,nome:"Ana RH",equipe:[2,3]},{id:3,nome:"Maria Titular",equipe:[3]}],colaboradores:USERS.filter(x=>x.status==="ativo").map(x=>({id:x.id,nome:x.name,cargo:"Auxiliar",setor:x.setor,admissao:"2024-03-01",centro_custo:x.centro_custo})),
      lideres:USERS.filter(x=>x.role!=="colaborador").map(x=>({id:x.id,nome:x.name})),gestores:USERS.filter(x=>x.role==="rh").map(x=>({id:x.id,nome:x.name})),
      centros_custo:["RECURSOS HUMANOS","VULCANIZACAO - MÃO DE OBRA"],areas:["vulcanizacao"]});
    if(fn==="form_publico_enviar"){const MAT={1:"100",2:"200",3:"300"};window.__FORM_ENVIADO=a;

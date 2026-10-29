@@ -136,9 +136,13 @@ const mex=e=>({id:e.id,userId:e.user_id,userName:e.user_name,tipo:e.tipo,data:e.
 const mtk=t=>({id:t.id,titulo:t.titulo,desc:t.descricao||"",coluna:t.coluna,prio:t.prioridade,respId:t.responsavel_id,respName:t.responsavel_name||"",setor:t.setor||"",venc:t.data_vencimento,tags:t.tags||[],ordem:t.ordem||0,criadoPorId:t.criado_por_id,criadoPorName:t.criado_por_name||"",createdAt:t.created_at,origemTipo:t.origem_tipo||null,origemId:t.origem_id||null});
 const mmv=m=>({id:m.id,tipo:m.tipo,status:m.status,solicitanteId:m.solicitante_id,solicitanteName:m.solicitante_name,nome:m.nome,email:m.email,cargo:m.cargo,setor:m.setor,liderId:m.lider_id,gestorId:m.gestor_id,dataPrevista:m.data_prevista,motivo:m.motivo,userId:m.user_id,tipoDemissao:m.tipo_demissao,ultimoDia:m.ultimo_dia,liderParecer:m.lider_parecer,liderObs:m.lider_obs,liderEm:m.lider_em,gestorParecer:m.gestor_parecer,gestorObs:m.gestor_obs,gestorEm:m.gestor_em,rhDecisao:m.rh_decisao,rhObs:m.rh_obs,rhEm:m.rh_em,rhId:m.rh_id,createdAt:m.created_at,salario:m.salario,requisitos:m.requisitos,prazoEncerramento:m.prazo_encerramento,vagaCriadaId:m.vaga_criada_id,
   movTipos:m.mov_tipos||[],atual:m.atual||null,proposta:m.proposta||null,aplicadoEm:m.aplicado_em,
-  motivoRequisicao:m.motivo_requisicao,substituidoId:m.substituido_id,quantidade:m.quantidade||1,tipoContratacao:m.tipo_contratacao,turno:m.turno,centroCusto:m.centro_custo});
+  motivoRequisicao:m.motivo_requisicao,substituidoId:m.substituido_id,quantidade:m.quantidade||1,tipoContratacao:m.tipo_contratacao,turno:m.turno,centroCusto:m.centro_custo,
+  motivoRequisicaoOutro:m.motivo_requisicao_outro,tipoContratacaoOutro:m.tipo_contratacao_outro,tipoVaga:m.tipo_vaga,tipoVagaOutro:m.tipo_vaga_outro,superiorId:m.superior_id,
+  perfilIdadeSexo:m.perfil_idade_sexo,requisitosComportamentais:m.requisitos_comportamentais,observacoes:m.observacoes,diretoriaCiente:m.diretoria_ciente,origem:m.origem});
+const MOTIVO_REQ={aumento_quadro:"Aumento do quadro",substituicao:"Substituição",demissao:"Demissão",promocao:"Promoção",outro:"Outra"};
 // Requisição de pessoal (substitui o Forms KdB 181)
 const TIPO_CONTRATACAO={clt:"Efetivo (CLT)",temporario:"Temporário",aprendiz:"Aprendiz",estagio:"Estágio"};
+const TIPO_CONTRATACAO_FORM={clt:"Efetivo",temporario:"Temporário",outro:"Outra"};
 // Movimentação de pessoal (substitui o Forms KdB 133): tipos e campos da proposta.
 const MOV_TIPOS={promocao:"Promoção",salario:"Alteração salarial",transferencia:"Transferência de setor/centro de custo",funcao:"Mudança de função",horario:"Mudança de horário/turno",lideranca:"Troca de líder/gestor"};
 const MOV_CAMPOS={cargo:"Cargo",salario:"Salário",setor:"Setor",area:"Área",centro_custo:"Centro de custo",horario:"Horário/turno",lider_id:"Líder",gestor_id:"Gestor"};
@@ -3564,7 +3568,7 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
   const DeParaMov=({mov})=>(<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
     <thead><tr><th style={{textAlign:"left",padding:"4px 6px",color:C.txd}}>Campo</th><th style={{textAlign:"left",padding:"4px 6px",color:C.txd}}>Atual</th><th style={{textAlign:"left",padding:"4px 6px",color:C.txd}}>Proposto</th></tr></thead>
     <tbody>{Object.entries(mov.proposta||{}).map(([k,v])=><tr key={k}><td style={{padding:"4px 6px",borderTop:"1px solid "+C.bdr}}>{MOV_CAMPOS[k]||k}</td>
-      <td style={{padding:"4px 6px",borderTop:"1px solid "+C.bdr,color:C.txm}}>{k==="salario"||k==="horario"?"(não fica no portal)":valorMov(k,mov.atual?.[k])}</td>
+      <td style={{padding:"4px 6px",borderTop:"1px solid "+C.bdr,color:C.txm}}>{k==="salario"?(mov.atual?.salario||"(não informado)"):k==="horario"?"(não fica no portal)":valorMov(k,mov.atual?.[k])}</td>
       <td style={{padding:"4px 6px",borderTop:"1px solid "+C.bdr,fontWeight:700}}>{valorMov(k,v)}</td></tr>)}</tbody></table></div>);
 
   // ── Etapa 2 (Gestor): detalha admissão — cargo, salário, requisitos, prazo — segue direto pro RH ──
@@ -3692,7 +3696,8 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
                     {mov.motivo&&<Chip label={"Líder: "+mov.motivo.substring(0,40)+(mov.motivo.length>40?"…":"")} color={C.amb}/>}
                     {mov.gestorEm&&<Chip label="✓ Detalhado pelo Gestor" color={C.blu}/>}
                     {mov.rhDecisao&&<Chip label={"RH: "+(mov.rhDecisao==="aprovado"?"✓ Aprovado":"✗ Rejeitado")} color={mov.rhDecisao==="aprovado"?C.grn:C.red}/>}
-                    {mov.vagaCriadaId&&<Chip label={"📋 Vaga #"+mov.vagaCriadaId+" criada"} color={C.pur}/>}
+                    {mov.vagaCriadaId&&<Chip label={"📋 Vaga #"+mov.vagaCriadaId+" criada"+(mov.tipoVaga==="sigilosa"?" (sigilosa, não publicada)":"")} color={C.pur}/>}
+                    {mov.origem==="formulario"&&<Chip label="📨 via formulário" color={C.txm}/>}
                     {mov.tipo==="movimentacao"&&mov.status==="aprovado"&&<Chip label={mov.aplicadoEm?"✓ Cadastro atualizado em "+fd(mov.aplicadoEm):"⏳ Atualiza o cadastro em "+fd(mov.dataPrevista)} color={mov.aplicadoEm?C.grn:C.amb}/>}
                   </div>
 
@@ -3862,7 +3867,8 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
               {/* ── MOVIMENTAÇÃO: de → para (gestor e RH) ── */}
               {mov.tipo==="movimentacao"&&(ehGestor||ehRH)&&<div style={{background:C.s1,borderRadius:10,padding:"10px 12px"}}>
                 <div style={{fontSize:12,color:C.txd,marginBottom:4}}>{(mov.movTipos||[]).map(t=>MOV_TIPOS[t]||t).join(", ")} · vigência {fd(mov.dataPrevista)}</div>
-                <DeParaMov mov={mov}/>{mov.gestorObs&&<div style={{fontSize:12,color:C.txm,marginTop:6}}>Gestor: {mov.gestorObs}</div>}</div>}
+                <DeParaMov mov={mov}/>{mov.gestorObs&&<div style={{fontSize:12,color:C.txm,marginTop:6}}>Gestor: {mov.gestorObs}</div>}
+                {mov.diretoriaCiente!=null&&<div style={{fontSize:12,color:C.txm,marginTop:4}}>Diretoria ciente: <b>{mov.diretoriaCiente?"Sim":"Não"}</b>{mov.atual?.admissao?" · Admissão: "+fd(mov.atual.admissao):""}</div>}</div>}
               {ehGestor&&mov.tipo==="movimentacao"&&(
                 <>
                   <Inp label="Data de vigência *" type="date" value={formGestorMov.vigencia} onChange={e=>setFormGestorMov({...formGestorMov,vigencia:e.target.value})}/>
@@ -3898,7 +3904,17 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
                     {mov.tipo==="admissao"?(
                       <>
                         <div style={{fontSize:13,fontWeight:700}}>{mov.cargo} · {mov.salario}{mov.quantidade>1?" · "+mov.quantidade+" vagas":""}</div>
-                        {mov.motivoRequisicao&&<div style={{fontSize:12,color:C.txm}}>{mov.motivoRequisicao==="substituicao"?"Substituição de "+((todosUsuarios.find(u=>u.id===mov.substituidoId)||users.find(u=>u.id===mov.substituidoId))?.name||"—"):"Aumento de quadro"} · {TIPO_CONTRATACAO[mov.tipoContratacao]||"Efetivo (CLT)"}{mov.turno?" · "+mov.turno:""}{mov.centroCusto?" · "+mov.centroCusto:""}</div>}
+                        {mov.motivoRequisicao&&<div style={{fontSize:12,color:C.txm}}>{MOTIVO_REQ[mov.motivoRequisicao]||mov.motivoRequisicao}{mov.motivoRequisicaoOutro?": "+mov.motivoRequisicaoOutro:""}{mov.substituidoId?" — "+((todosUsuarios.find(u=>u.id===mov.substituidoId)||users.find(u=>u.id===mov.substituidoId))?.name||"—"):""} · {mov.tipoContratacao==="outro"?(mov.tipoContratacaoOutro||"Outra"):(TIPO_CONTRATACAO[mov.tipoContratacao]||"Efetivo (CLT)")}{mov.turno?" · "+mov.turno:""}{mov.centroCusto?" · "+mov.centroCusto:""}</div>}
+                        {(mov.tipoVaga||mov.superiorId||mov.perfilIdadeSexo||mov.requisitosComportamentais||mov.observacoes||mov.diretoriaCiente!=null||mov.prazoEncerramento)&&<div style={{fontSize:12,color:C.txm,display:"flex",flexDirection:"column",gap:2}}>
+                          {mov.tipoVaga&&<div>Tipo de vaga: <b>{mov.tipoVaga==="sigilosa"?"Sigilosa (não será publicada)":mov.tipoVaga==="aberta"?"Aberta":(mov.tipoVagaOutro||"Outra")}</b></div>}
+                          {mov.superiorId&&<div>Superior imediato: {(todosUsuarios.find(u=>u.id===mov.superiorId)||users.find(u=>u.id===mov.superiorId))?.name||"—"}</div>}
+                          {mov.prazoEncerramento&&<div>Prazo de contratação: {fd(mov.prazoEncerramento)}</div>}
+                          {mov.perfilIdadeSexo&&<div>Idade e sexo preferenciais (uso interno): {mov.perfilIdadeSexo}</div>}
+                          {mov.requisitos&&<div>Requisitos técnicos: {mov.requisitos}</div>}
+                          {mov.requisitosComportamentais&&<div>Requisitos comportamentais: {mov.requisitosComportamentais}</div>}
+                          {mov.observacoes&&<div>Observações: {mov.observacoes}</div>}
+                          {mov.diretoriaCiente!=null&&<div>Diretoria ciente: <b>{mov.diretoriaCiente?"Sim":"Não"}</b></div>}
+                        </div>}
                         {mov.requisitos&&<div style={{fontSize:12,color:C.txm}}>{mov.requisitos}</div>}
                         {mov.prazoEncerramento&&<div style={{fontSize:11,color:C.txd}}>Prazo da vaga: {fd(mov.prazoEncerramento)}</div>}
                       </>
@@ -5115,15 +5131,23 @@ function FormularioPublico({tipo}){
   const solicitantes=ctx.solicitantes||[];
   const equipe=new Set((solicitantes.find(x=>String(x.id)===String(f.solicitante_id))||{}).equipe||[]);
   const daEquipe=ctx.colaboradores.filter(u=>equipe.has(u.id));
+  const colab=ctx.colaboradores.find(u=>String(u.id)===String(f.user_id));
+  const radios=(nome,valor,lista,onChange)=><div style={{display:"flex",flexWrap:"wrap",gap:"6px 16px"}}>{lista.map(([v,l])=><label key={v} style={{display:"flex",gap:6,alignItems:"center",fontSize:13,cursor:"pointer"}}>
+    <input type="radio" name={nome} checked={valor===v} onChange={()=>onChange(v)}/>{l}</label>)}</div>;
+  const rot=t=><div style={{fontSize:12,fontWeight:600,color:C.txm,marginBottom:6}}>{t}</div>;
   const enviar=async()=>{
     setErro("");setEnviando(true);
     const d={solicitante_id:parseInt(f.solicitante_id)};
     if(tipo==="ferias")Object.assign(d,{user_id:parseInt(f.user_id),inicio:f.inicio,descanso:op?.descanso,abono:op?.abono||0,opcao:op?.id,periodo_aquisitivo:f.periodo||"",adiantamento_13:f.adiantamento_13,ciente:!!f.ciente,obs:f.obs||""});
-    if(tipo==="admissao")Object.assign(d,{gestor_id:parseInt(f.gestor_id),setor:f.setor||"",cargo:f.cargo||"",salario:f.salario||"",requisitos:f.requisitos||"",motivo:f.motivo||"",
-      motivo_requisicao:f.motivo_requisicao||"",substituido_id:f.motivo_requisicao==="substituicao"?parseInt(f.substituido_id):null,quantidade:parseInt(f.quantidade)||1,tipo_contratacao:f.tipo_contratacao,turno:f.turno||"",centro_custo:f.centro_custo||""});
-    if(tipo==="movimentacao"){const prop={};camposMov.forEach(k=>{const v=f.proposta[k];if(v!==undefined&&String(v).trim()!=="")prop[k]=k.endsWith("_id")?parseInt(v):String(v).trim();});
-      Object.assign(d,{user_id:parseInt(f.user_id),gestor_id:parseInt(f.gestor_id),tipos:f.tipos,proposta:prop,data_vigencia:f.vigencia||"",motivo:f.motivo||""});}
-    if(tipo==="demissao")Object.assign(d,{user_id:parseInt(f.user_id),gestor_id:parseInt(f.gestor_id),motivo:f.motivo||""});
+    if(tipo==="admissao")Object.assign(d,{setor:f.setor||"",superior_id:parseInt(f.superior_id)||null,quantidade:parseInt(f.quantidade)||1,cargo:f.cargo||"",turno:f.turno||"",salario:f.salario||"",
+      perfil_idade_sexo:f.perfil_idade_sexo||"",tipo_contratacao:f.tipo_contratacao,tipo_contratacao_outro:f.tipo_contratacao_outro||"",tipo_vaga:f.tipo_vaga||"",tipo_vaga_outro:f.tipo_vaga_outro||"",
+      prazo_encerramento:f.prazo||"",motivo_requisicao:f.motivo_requisicao||"",motivo_requisicao_outro:f.motivo_requisicao_outro||"",
+      substituido_id:["demissao","promocao"].includes(f.motivo_requisicao)?parseInt(f.substituido_id):null,
+      requisitos:f.requisitos||"",requisitos_comportamentais:f.comportamentais||"",observacoes:f.observacoes||"",diretoria_ciente:f.diretoria_ciente||""});
+    if(tipo==="movimentacao"){const prop={};["cargo","salario","setor","centro_custo"].forEach(k=>{const v=f.proposta[k];if(v!==undefined&&String(v).trim()!=="")prop[k]=String(v).trim();});
+      const tipos=[...(prop.cargo?["funcao"]:[]),...(prop.salario?["salario"]:[]),...(prop.setor||prop.centro_custo?["transferencia"]:[])];
+      Object.assign(d,{user_id:parseInt(f.user_id),salario_atual:f.salario_atual||"",tipos,proposta:prop,data_vigencia:f.vigencia||"",motivo:f.motivo||"",diretoria_ciente:f.diretoria_ciente||""});}
+    if(tipo==="demissao")Object.assign(d,{user_id:parseInt(f.user_id),motivo:f.motivo||""});
     const{data,error}=await getSB().rpc("form_publico_enviar",{p_tipo:tipo,p_dados:d});
     setEnviando(false);if(error){setErro(error.message);return;}setOk(data);
   };
@@ -5136,18 +5160,21 @@ function FormularioPublico({tipo}){
   const grid={display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12};
   const pronto=f.solicitante_id&&(
     tipo==="ferias"?f.user_id&&f.inicio&&op:
-    tipo==="admissao"?f.gestor_id&&f.cargo&&f.salario&&f.motivo&&f.requisitos&&f.motivo_requisicao&&(f.motivo_requisicao!=="substituicao"||f.substituido_id):
-    tipo==="movimentacao"?f.user_id&&f.gestor_id&&f.tipos.length&&f.vigencia&&f.motivo&&camposMov.some(k=>String(f.proposta[k]??"").trim()):
-    f.user_id&&f.gestor_id&&f.motivo);
+    tipo==="admissao"?f.setor&&f.superior_id&&f.cargo&&f.turno&&f.salario&&f.tipo_vaga&&f.motivo_requisicao&&f.requisitos&&f.diretoria_ciente
+      &&(!["demissao","promocao"].includes(f.motivo_requisicao)||f.substituido_id)&&(f.motivo_requisicao!=="outro"||f.motivo_requisicao_outro)
+      &&(f.tipo_contratacao!=="outro"||f.tipo_contratacao_outro)&&(f.tipo_vaga!=="outra"||f.tipo_vaga_outro):
+    tipo==="movimentacao"?f.user_id&&f.vigencia&&f.motivo&&f.diretoria_ciente&&["cargo","salario","setor","centro_custo"].some(k=>String(f.proposta[k]??"").trim()):
+    f.user_id&&f.motivo);
   return(<div style={caixa}><div style={{width:"100%",maxWidth:720,display:"flex",flexDirection:"column",gap:14}}>
     <div><div style={{fontSize:13,color:C.txd}}>Kalenborn · RH</div><div style={{fontSize:22,fontWeight:800}}>{TIT[tipo]}</div></div>
-    <Card><div style={{fontSize:14,fontWeight:700,marginBottom:10}}>Quem está pedindo</div>
+    <Card><div style={{fontSize:14,fontWeight:700,marginBottom:10}}>Quem está pedindo (requisitante)</div>
       <Sel label="Seu nome *" value={f.solicitante_id||""} onChange={e=>setF(x=>({...x,solicitante_id:e.target.value,user_id:"",substituido_id:""}))} options={opts(solicitantes.map(u=>({value:u.id,label:u.nome})))}/>
       <div style={{fontSize:12,color:C.txd,marginTop:6}}>Depois de escolher o seu nome, aparecem só as pessoas da sua equipe. Se o seu nome não estiver na lista, fale com o RH.</div>
     </Card>
     <Card><div style={{display:"flex",flexDirection:"column",gap:12}}>
       {(tipo==="ferias"||tipo==="movimentacao"||tipo==="demissao")&&<Sel label="Colaborador *" value={f.user_id||""} onChange={e=>set("user_id",e.target.value)} options={opts(pessoas(daEquipe),f.solicitante_id?"Selecione...":"Escolha primeiro o seu nome")}/>}
-      {tipo!=="ferias"&&<Sel label="Gestor responsável *" value={f.gestor_id||""} onChange={e=>set("gestor_id",e.target.value)} options={opts(ctx.gestores.map(u=>({value:u.id,label:u.nome})))}/>}
+      {colab&&tipo!=="admissao"&&<div style={{fontSize:12,color:C.txm,background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"8px 12px"}}>
+        Função: <b>{colab.cargo||"—"}</b> · Setor: <b>{SL[colab.setor]||colab.setor||"—"}</b>{tipo==="movimentacao"?<> · Admissão: <b>{colab.admissao?dataBR(colab.admissao):"—"}</b> · Local atual: <b>{colab.centro_custo||"—"}</b></>:null}</div>}
       {tipo==="ferias"&&<>
         <div style={grid}><Inp label="Data de início *" type="date" value={f.inicio||""} onChange={e=>set("inicio",e.target.value)}/>
           <Inp label="Período aquisitivo" value={f.periodo||""} onChange={e=>set("periodo",e.target.value)} placeholder="Ex.: 01/03/2025 a 28/02/2026"/></div>
@@ -5155,39 +5182,49 @@ function FormularioPublico({tipo}){
           {OPCOES_FERIAS.map(o=><label key={o.id} style={{display:"flex",gap:8,alignItems:"center",fontSize:13,marginBottom:4,cursor:"pointer"}}><input type="radio" name="op" checked={f.opcao===o.id} onChange={()=>set("opcao",o.id)}/>{o.label}</label>)}
           <label style={{display:"flex",gap:8,alignItems:"center",fontSize:13,cursor:"pointer"}}><input type="radio" name="op" checked={f.opcao==="outro"} onChange={()=>set("opcao","outro")}/>Outro:
             <input aria-label="Quantos dias em descanso" type="number" min={5} max={30} value={f.diasOutro||""} onFocus={()=>set("opcao","outro")} onChange={e=>{set("opcao","outro");set("diasOutro",e.target.value);}} style={{width:56,background:C.s1,border:"1px solid "+C.bdr,borderRadius:6,padding:"3px 6px",color:C.txt}}/> dias em descanso</label></div>
-        {op&&f.inicio&&<div style={{fontSize:13,color:C.txm}}>Férias de {dataBR(f.inicio)} a {dataBR(addDias(f.inicio,op.descanso-1))} ({op.descanso} dias{op.abono?` + ${op.abono} de abono`:""}).</div>}
+        {op&&f.inicio&&<div style={{fontSize:13,color:C.txm}}>Período de gozo: {dataBR(f.inicio)} a {dataBR(addDias(f.inicio,op.descanso-1))} · Total: <b>{op.descanso} dias</b>{op.abono?` + ${op.abono} de abono`:""} ({op.descanso} dias).</div>}
         <Sel label="Adiantamento do 13º?" value={f.adiantamento_13} onChange={e=>set("adiantamento_13",e.target.value)} options={[{value:"",label:"(não informado)"},{value:"sim",label:"Sim"},{value:"nao",label:"Não"}]}/>
         <label style={{display:"flex",gap:8,alignItems:"center",fontSize:13,cursor:"pointer"}}><input type="checkbox" checked={!!f.ciente} onChange={e=>set("ciente",e.target.checked)}/>Colaborador ciente destas férias</label>
         <Tex label="Observação" value={f.obs||""} onChange={e=>set("obs",e.target.value)} rows={2}/>
       </>}
       {tipo==="admissao"&&<>
+        <div style={{fontSize:12,color:C.txd}}>Data da solicitação: {dataBR(hojeISO())}</div>
         <div style={grid}>
-          <Sel label="Setor" value={f.setor||""} onChange={e=>set("setor",e.target.value)} options={opts(Object.entries(SL).map(([a,b])=>({value:a,label:b})))}/>
+          <Sel label="Setor requisitante *" value={f.setor||""} onChange={e=>set("setor",e.target.value)} options={opts(Object.entries(SL).map(([a,b])=>({value:a,label:b})))}/>
+          <Sel label="Superior imediato *" value={f.superior_id||""} onChange={e=>set("superior_id",e.target.value)} options={opts(ctx.lideres.map(u=>({value:u.id,label:u.nome})))}/>
+          <Inp label="Número de vagas *" type="number" value={f.quantidade} onChange={e=>set("quantidade",e.target.value)}/>
           <Inp label="Cargo *" value={f.cargo||""} onChange={e=>set("cargo",e.target.value)}/>
+          <Inp label="Horário de trabalho *" value={f.turno||""} onChange={e=>set("turno",e.target.value)} placeholder="Ex.: 7h às 17h, seg. a sex."/>
           <Inp label="Salário *" value={f.salario||""} onChange={e=>set("salario",e.target.value)} placeholder="Ex.: R$ 1.900,00"/>
-          <Sel label="Motivo da requisição *" value={f.motivo_requisicao||""} onChange={e=>set("motivo_requisicao",e.target.value)} options={opts([{value:"aumento_quadro",label:"Aumento de quadro"},{value:"substituicao",label:"Substituição"}])}/>
-          {f.motivo_requisicao==="substituicao"&&<Sel label="Quem será substituído? *" value={f.substituido_id||""} onChange={e=>set("substituido_id",e.target.value)} options={opts(pessoas(daEquipe),f.solicitante_id?"Selecione...":"Escolha primeiro o seu nome")}/>}
-          <Inp label="Quantidade de vagas *" type="number" value={f.quantidade} onChange={e=>set("quantidade",e.target.value)}/>
-          <Sel label="Tipo de contratação *" value={f.tipo_contratacao} onChange={e=>set("tipo_contratacao",e.target.value)} options={Object.entries(TIPO_CONTRATACAO).map(([k,v])=>({value:k,label:v}))}/>
-          <Inp label="Turno / horário" value={f.turno||""} onChange={e=>set("turno",e.target.value)}/>
-          <Sel label="Centro de custo" value={f.centro_custo||""} onChange={e=>set("centro_custo",e.target.value)} options={opts([...ctx.centros_custo].sort().map(c=>({value:c,label:c})),"(definir depois)")}/>
+          <Inp label="Idade e sexo preferenciais" value={f.perfil_idade_sexo||""} onChange={e=>set("perfil_idade_sexo",e.target.value)} placeholder="Uso interno do RH"/>
+          <Inp label="Prazo de contratação" type="date" value={f.prazo||""} onChange={e=>set("prazo",e.target.value)}/>
         </div>
-        <Tex label="O que você busca no colaborador? *" value={f.requisitos||""} onChange={e=>set("requisitos",e.target.value)} rows={2}/>
+        <div>{rot("Tipo de contratação *")}{radios("tc",f.tipo_contratacao,[["clt","Efetivo"],["temporario","Temporário"],["outro","Outra"]],v=>set("tipo_contratacao",v))}
+          {f.tipo_contratacao==="outro"&&<div style={{marginTop:6}}><Inp label="Qual? *" value={f.tipo_contratacao_outro||""} onChange={e=>set("tipo_contratacao_outro",e.target.value)}/></div>}</div>
+        <div>{rot("Tipo de vaga *")}{radios("tv",f.tipo_vaga,[["sigilosa","Sigilosa (o nome da empresa não é divulgado)"],["aberta","Aberta (será divulgado o nome da empresa)"],["outra","Outra"]],v=>set("tipo_vaga",v))}
+          {f.tipo_vaga==="outra"&&<div style={{marginTop:6}}><Inp label="Qual? *" value={f.tipo_vaga_outro||""} onChange={e=>set("tipo_vaga_outro",e.target.value)}/></div>}</div>
+        <div>{rot("Motivo da requisição *")}{radios("mr",f.motivo_requisicao,[["aumento_quadro","Aumento do quadro"],["demissao","Demissão"],["promocao","Promoção"],["outro","Outra"]],v=>setF(x=>({...x,motivo_requisicao:v,substituido_id:""})))}
+          {["demissao","promocao"].includes(f.motivo_requisicao)&&<div style={{marginTop:6}}><Sel label={f.motivo_requisicao==="demissao"?"Quem saiu? *":"Quem foi promovido? *"} value={f.substituido_id||""} onChange={e=>set("substituido_id",e.target.value)} options={opts(pessoas(daEquipe),f.solicitante_id?"Selecione...":"Escolha primeiro o seu nome")}/></div>}
+          {f.motivo_requisicao==="outro"&&<div style={{marginTop:6}}><Inp label="Qual? *" value={f.motivo_requisicao_outro||""} onChange={e=>set("motivo_requisicao_outro",e.target.value)}/></div>}</div>
+        <Tex label="Quais os requisitos técnicos? *" value={f.requisitos||""} onChange={e=>set("requisitos",e.target.value)} rows={2} placeholder="Ex.: escolaridade, tempo de experiência, experiência específica, informática"/>
+        <Tex label="Quais os requisitos comportamentais?" value={f.comportamentais||""} onChange={e=>set("comportamentais",e.target.value)} rows={2} placeholder="Ex.: atenção, agilidade, proatividade, comunicação"/>
+        <Tex label="Observações adicionais" value={f.observacoes||""} onChange={e=>set("observacoes",e.target.value)} rows={2}/>
+        <div>{rot("Diretoria ciente? *")}{radios("dc",f.diretoria_ciente,[["sim","Sim"],["nao","Não"]],v=>set("diretoria_ciente",v))}</div>
       </>}
       {tipo==="movimentacao"&&<>
-        <div><div style={{fontSize:12,fontWeight:600,color:C.txm,marginBottom:6}}>Tipo de movimentação *</div>
-          <div style={{display:"flex",flexWrap:"wrap",gap:"6px 16px"}}>{Object.entries(MOV_TIPOS).map(([k,l])=><label key={k} style={{display:"flex",gap:6,alignItems:"center",fontSize:13,cursor:"pointer"}}>
-            <input type="checkbox" checked={f.tipos.includes(k)} onChange={e=>set("tipos",e.target.checked?[...f.tipos,k]:f.tipos.filter(x=>x!==k))}/>{l}</label>)}</div></div>
-        {camposMov.length>0&&<div style={grid}>{camposMov.map(k=>{const v=f.proposta[k]??"";
-          if(k==="setor")return<Sel key={k} label="Novo setor" value={v} onChange={e=>setP(k,e.target.value)} options={opts(Object.entries(SL).map(([a,b])=>({value:a,label:b})),"(não muda)")}/>;
-          if(k==="area")return<Sel key={k} label="Nova área" value={v} onChange={e=>setP(k,e.target.value)} options={opts([...ctx.areas].sort().map(a=>({value:a,label:a})),"(não muda)")}/>;
-          if(k==="centro_custo")return<Sel key={k} label="Novo centro de custo" value={v} onChange={e=>setP(k,e.target.value)} options={opts([...ctx.centros_custo].sort().map(a=>({value:a,label:a})),"(não muda)")}/>;
-          if(k==="lider_id")return<Sel key={k} label="Novo líder" value={v} onChange={e=>setP(k,e.target.value)} options={opts(ctx.lideres.map(u=>({value:u.id,label:u.nome})),"(não muda)")}/>;
-          if(k==="gestor_id")return<Sel key={k} label="Novo gestor" value={v} onChange={e=>setP(k,e.target.value)} options={opts(ctx.gestores.map(u=>({value:u.id,label:u.nome})),"(não muda)")}/>;
-          return<Inp key={k} label={k==="cargo"?"Novo cargo":k==="salario"?"Novo salário":"Novo horário/turno"} value={v} onChange={e=>setP(k,e.target.value)}/>;})}</div>}
-        <Inp label="Data de vigência *" type="date" value={f.vigencia||""} onChange={e=>set("vigencia",e.target.value)}/>
+        <div style={{fontSize:12,color:C.txd}}>Data da solicitação: {dataBR(hojeISO())}</div>
+        <div style={grid}>
+          <Inp label="Salário atual" value={f.salario_atual||""} onChange={e=>set("salario_atual",e.target.value)} placeholder="Ex.: R$ 2.000,00"/>
+          <Inp label="Novo cargo" value={f.proposta.cargo||""} onChange={e=>setP("cargo",e.target.value)} placeholder={colab?.cargo?"Hoje: "+colab.cargo:""}/>
+          <Inp label="Novo salário" value={f.proposta.salario||""} onChange={e=>setP("salario",e.target.value)}/>
+          <Inp label="Data a ser considerada para reajuste *" type="date" value={f.vigencia||""} onChange={e=>set("vigencia",e.target.value)}/>
+          <Sel label="Novo local de trabalho (setor)" value={f.proposta.setor||""} onChange={e=>setP("setor",e.target.value)} options={opts(Object.entries(SL).map(([a,b])=>({value:a,label:b})),"(não muda)")}/>
+          <Sel label="Novo local de trabalho (centro de custo)" value={f.proposta.centro_custo||""} onChange={e=>setP("centro_custo",e.target.value)} options={opts([...ctx.centros_custo].sort().map(a=>({value:a,label:a})),"(não muda)")}/>
+        </div>
+        <div style={{fontSize:12,color:C.txd}}>Preencha só o que muda (cargo, salário e/ou local).</div>
       </>}
-      {tipo!=="ferias"&&<Tex label="Justificativa *" value={f.motivo||""} onChange={e=>set("motivo",e.target.value)} rows={3}/>}
+      {(tipo==="movimentacao"||tipo==="demissao")&&<Tex label="Justificativa *" value={f.motivo||""} onChange={e=>set("motivo",e.target.value)} rows={3}/>}
+      {tipo==="movimentacao"&&<div>{rot("Diretoria ciente? *")}{radios("dcm",f.diretoria_ciente,[["sim","Sim"],["nao","Não"]],v=>set("diretoria_ciente",v))}</div>}
       {erro&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"9px 14px",color:C.red,fontSize:13}}>{erro}</div>}
       <div style={{display:"flex",justifyContent:"flex-end"}}><Btn onClick={enviar} disabled={!pronto||enviando} title={!pronto?"Preencha os campos com *":""}>{enviando?<Spin size={14} color="#fff"/>:null} Enviar ao RH</Btn></div>
     </div></Card>
