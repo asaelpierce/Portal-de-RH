@@ -20,7 +20,7 @@ with sync_playwright() as p:
     pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
     if pg.get_by_role("dialog").count(): pg.get_by_role("dialog").get_by_role("button",name="Cancelar").click(); pg.wait_for_timeout(300)
     pg.get_by_role("button",name="Copiar link · Movimentação").click(); pg.wait_for_timeout(300)
-    res["L3 RH copia o link certo"]=pg.evaluate("navigator.clipboard.readText()")==BASE+"/?abrir=movimentacao" and "Link copiado" in pg.locator("body").inner_text()
+    res["L3 RH copia o link certo (sem login)"]=pg.evaluate("navigator.clipboard.readText()")==BASE+"/?form=movimentacao" and "Link copiado" in pg.locator("body").inner_text()
     pg.context.close()
     pg,_=abrir(BASE+"/?abrir=ferias","ana@teste.local")
     res["L4 ?abrir=ferias abre o lançamento de férias"]=pg.get_by_role("dialog").count()==1 and "férias" in pg.get_by_role("dialog").inner_text().lower()

@@ -28,7 +28,14 @@ export const OPCOES_FERIAS = [
   { id: "15",   label: "15 dias em descanso",                               descanso: 15, abono: 0,  doc: "15 DIAS EM DESCANSO" },
   { id: "5+10", label: "5 dias em descanso e 10 dias de abono pecuniário",  descanso: 5,  abono: 10, doc: "05 DIAS EM DESCANSO E 10 DIAS DE ABONO" },
   { id: "10",   label: "10 dias em descanso",                               descanso: 10, abono: 0,  doc: "10  DIAS EM DESCANSO" },
+  // opções pedidas pela Mariele (29/10/2026); "Outro: ___ dias" é um número livre (5 a 30) guardado como "12", "18"...
+  { id: "20+10", label: "20 dias em descanso e 10 dias de abono pecuniário", descanso: 20, abono: 10, doc: "20 DIAS EM DESCANSO E 10 DIAS DE ABONO" },
 ];
+// Opção a partir do que está gravado: as da lista ou "N dias em descanso" (número livre).
+export const opcaoFerias = (id) => OPCOES_FERIAS.find(o => o.id === id)
+  || (/^\d{1,2}$/.test(String(id || "")) && +id >= 5 && +id <= 30 ? { id: String(id), label: `${+id} dias em descanso`, descanso: +id, abono: 0, doc: null, livre: true } : null);
+// Valor aceito na coluna ferias.tipo (o banco só aceita 30/15/5+10/10/outro).
+export const tipoFerias = (id) => (["30", "15", "5+10", "10"].includes(String(id)) ? String(id) : "outro");
 
 // ── ZIP mínimo ────────────────────────────────────────────────────────────────
 async function inflar(bytes) {
@@ -144,7 +151,7 @@ const escXml = s => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
 export async function preencherFormularioFerias(modeloBuf, d) {
   const arq = await zipLer(modeloBuf);
   let xml = new TextDecoder().decode(arq.get("word/document.xml"));
-  const op = OPCOES_FERIAS.find(o => o.id === d.opcao);
+  const op = opcaoFerias(d.opcao);
   const faltou = [];
   const noParagrafo = (contem, fn, rotulo) => {
     let achou = false;
@@ -159,8 +166,11 @@ export async function preencherFormularioFerias(modeloBuf, d) {
   const marcar = p => p.replace(/\(\s*\)/, "(X)");
   noParagrafo("FUNCIONÁRIO:", anexar("FUNCIONÁRIO: ", `${d.nome}${d.cadastro ? " (cadastro " + d.cadastro + ")" : ""}`), "funcionário");
   noParagrafo("DATA DE INÍCIO DO GOZO:", anexar("DATA DE INÍCIO DO GOZO: ", br(d.inicio)), "data de início");
-  if (op) noParagrafo(op.doc, marcar, "opção");
-  else faltou.push("opção");
+  // Opção: a linha dela no modelo; se não houver (opção nova ou número livre), a linha "( ) ____ DIAS EM DESCANSO".
+  const linhaLivre = (n) => p => marcar(p.replace(/_{2,}/, String(n).padStart(2, "0")));
+  if (op && op.doc && xml.includes(op.doc.split(" ")[0]) && [...xml.matchAll(/<w:p[ >][\s\S]*?<\/w:p>/g)].some(m => [...m[0].matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map(t => t[1]).join("").includes(op.doc))) noParagrafo(op.doc, marcar, "opção");
+  else if (op && op.abono === 0) noParagrafo("DIAS EM DESCANSO.", linhaLivre(op.descanso), `opção "${op.label}" (o modelo não tem a linha "( ) ____ DIAS EM DESCANSO")`);
+  else faltou.push(op ? `opção "${op.label}" (não existe no modelo do formulário)` : "opção");
   noParagrafo("PERIDO AQUISITIVO DE:", anexar("FÉRIAS RELATIVA AO PERIDO AQUISITIVO DE: ", d.periodo || ""), "período aquisitivo");
   if (d.adiantamento13 === true) noParagrafo(") SIM", marcar, "13º sim");
   if (d.adiantamento13 === false) noParagrafo(") NÃO", marcar, "13º não");

@@ -11,7 +11,7 @@ import { lerVariosUnimed, familiasParaVincular, calcularUnimed, competenciaRelat
 import { gerarFichaBrit, dadosKitDaAdmissao } from "./fichaBrit.js";
 import { DOCUMENTOS_ADMISSAO, preencherDocx, faltandoPara, TIPOS_AVISO, TIPOS_RESCISAO, SUGESTAO_RESCISAO, DESCONTOS_MARCAR, MODELO_RESCISAO, trocasRescisao } from "./documentosAdmissao.js";
 // Leitura do relatório de saldos da folha BRIT e geração do formulário Word de férias (ver o arquivo para o porquê).
-import { lerRelatorioFerias, preencherFormularioFerias, OPCOES_FERIAS, addDias, diasEntre, addAnos, br as dataBR, emailFeriasAprovadasHtml } from "./feriasFolha.js";
+import { lerRelatorioFerias, preencherFormularioFerias, OPCOES_FERIAS, opcaoFerias, tipoFerias, addDias, diasEntre, addAnos, br as dataBR, emailFeriasAprovadasHtml } from "./feriasFolha.js";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Legend, ReferenceLine } from "recharts";
 
 const SB_URL=import.meta.env.VITE_SUPABASE_URL||"https://zybkcpvdptabxkxpieuv.supabase.co";
@@ -121,7 +121,7 @@ const isRHouDev=r=>r==="rh"||r==="dev";
 
 const mu=u=>({id:u.id,name:u.name,email:u.email,role:u.role,setor:u.setor,area:u.area||null,cargo:u.cargo,admissao:u.admissao,gestorId:u.gestor_id,liderId:u.lider_id,skills:u.skills||[],senioridade:u.senioridade||0,telefone:u.telefone||"",fotoUrl:u.foto_url||"",status:u.status||"ativo",cadastro:u.cadastro||null,centroCusto:u.centro_custo||null});
 const mf=f=>({id:f.id,userId:f.user_id,userName:f.user_name,setor:f.setor,tipo:f.tipo,inicio:f.inicio,fim:f.fim,abono:f.abono,status:f.status,liderAprov:f.lider_aprov,gestorAprov:f.gestor_aprov,rhAprov:f.rh_aprov,obs:f.obs,dataVenc:f.data_vencimento,periodoAq:f.periodo_aquisitivo,createdAt:f.created_at,historico:f.historico_edicoes||[],canceladoPor:f.cancelado_por,canceladoMotivo:f.cancelado_motivo,canceladoEm:f.cancelado_em,opcao:f.opcao||(f.tipo==="30dias"?"30":f.tipo==="15dias"?"15":null),adiantamento13:f.adiantamento_13,lancadoPor:f.lancado_por,lancadoPorNome:f.lancado_por_nome,periodoInicio:f.periodo_inicio,periodoFim:f.periodo_fim,emailEnviadoEm:f.email_enviado_em,
-  cienteLancador:!!f.ciente_lancador,cienteLancadorEm:f.ciente_lancador_em,cienteColabEm:f.ciente_colaborador_em,cienciaVia:f.ciencia_via,cienciaEnviadaEm:f.ciencia_enviada_em});
+  cienteLancador:!!f.ciente_lancador,cienteLancadorEm:f.ciente_lancador_em,cienteColabEm:f.ciente_colaborador_em,cienciaVia:f.ciencia_via,cienciaEnviadaEm:f.ciencia_enviada_em,origem:f.origem});
 const mfb=fb=>({id:fb.id,fromId:fb.from_id,fromName:fb.from_name,fromRole:fb.from_role,toId:fb.to_id,toName:fb.to_name,toRole:fb.to_role,tipo:fb.tipo,texto:fb.texto,sigiloso:fb.sigiloso,createdAt:fb.created_at});
 const mch=m=>({id:m.id,fromId:m.from_id,fromName:m.from_name,toId:m.to_id,toName:m.to_name,texto:m.texto,lido:m.lido,createdAt:m.created_at});
 const mav=a=>({id:a.id,avaliadoId:a.avaliado_id,avaliadoName:a.avaliado_name,avaliadorId:a.avaliador_id,avaliadorName:a.avaliador_name,periodo:a.periodo,status:a.status,notas:{qualidade:a.nota_qualidade,produtividade:a.nota_produtividade,trabalhoEquipe:a.nota_trabalho_equipe,pontualidade:a.nota_pontualidade,iniciativa:a.nota_iniciativa},comentario:a.comentario,createdAt:a.created_at});
@@ -812,7 +812,7 @@ function Planner({user,users,ferias,tarefas,setTarefas,setPage}){
 function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast,abrirAgora,limparAbrir}){
   // ── Fluxo (decisão do RH em 08/10/2026): o colaborador pede ao líder fora do sistema; o LÍDER lança aqui
   // → GESTOR aprova → RH aprova → colaborador vê na tela e recebe e-mail. Saldos vêm da folha (aba Saldos).
-  const VAZIO_LANC={userId:"",periodoKey:"",periodoManual:"",opcao:"",inicio:"",adiantamento13:"",obs:"",ciente:false};
+  const VAZIO_LANC={userId:"",periodoKey:"",periodoManual:"",opcao:"",diasOutro:"",inicio:"",adiantamento13:"",obs:"",ciente:false};
   const[modalLanc,setModalLanc]=useState(false);const[formLanc,setFormLanc]=useState(VAZIO_LANC);const[erroLanc,setErroLanc]=useState("");
   // Link direto (?abrir=ferias): abre o lançamento logo após o login.
   useEffect(()=>{if(abrirAgora==="ferias"){setFormLanc(VAZIO_LANC);setErroLanc("");setModalLanc(true);limparAbrir?.();}},[abrirAgora]);
@@ -869,7 +869,7 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast,abrirAgor
   const colabLanc=users.find(u=>String(u.id)===String(formLanc.userId));
   const periodosLanc=saldosDe(colabLanc?.cadastro).filter(l=>Number(l.saldo)>0);
   const perSel=periodosLanc.find(l=>String(l.id)===formLanc.periodoKey);
-  const opSel=OPCOES_FERIAS.find(o=>o.id===formLanc.opcao);
+  const opSel=formLanc.opcao==="outro"?opcaoFerias(formLanc.diasOutro):OPCOES_FERIAS.find(o=>o.id===formLanc.opcao);
   const fimLanc=formLanc.inicio&&opSel?addDias(formLanc.inicio,opSel.descanso-1):"";
   const avisosLanc=[];
   if(perSel&&opSel&&opSel.descanso+opSel.abono>Number(perSel.saldo))avisosLanc.push(`Esta opção usa ${opSel.descanso+opSel.abono} dias, mas o saldo do período é ${Number(perSel.saldo)} dias.`);
@@ -884,7 +884,7 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast,abrirAgor
     if(!perSel&&!formLanc.periodoManual.trim()){setErroLanc("Escolha o período aquisitivo.");return;}
     // Status inicial pela etapa de quem lança: líder → aguarda gestor; gestor ou RH → aguarda RH.
     const porLider=!can(user.role,"gestor");
-    const row={user_id:colabLanc.id,user_name:colabLanc.name,setor:colabLanc.setor,tipo:opSel.id,opcao:opSel.id,
+    const row={user_id:colabLanc.id,user_name:colabLanc.name,setor:colabLanc.setor,tipo:tipoFerias(opSel.id),opcao:opSel.id,
       inicio:formLanc.inicio,fim:fimLanc,abono:opSel.abono>0,adiantamento_13:formLanc.adiantamento13==="sim",obs:formLanc.obs.trim()||null,
       status:porLider?"pendente_gestor":"pendente_rh",lider_aprov:porLider?"aprovado":null,gestor_aprov:!porLider&&!isRH?"aprovado":null,rh_aprov:null,
       periodo_aquisitivo:perSel?dataBR(perSel.periodo_inicio)+" a "+dataBR(perSel.periodo_fim):formLanc.periodoManual.trim(),
@@ -907,7 +907,7 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast,abrirAgor
   const enviarEmailAprovacao=async f=>{
     const colab=users.find(u=>u.id===f.userId);
     if(!colab?.email){showToast?.("Férias aprovadas, mas "+f.userName+" não tem e-mail cadastrado.","error");return false;}
-    const op=OPCOES_FERIAS.find(o=>o.id===f.opcao);
+    const op=opcaoFerias(f.opcao);
     const dias=f.inicio&&f.fim?diasEntre(f.inicio,f.fim)+1:null;
     const corpo=emailFeriasAprovadasHtml({nome:f.userName,inicio:f.inicio,fim:f.fim,dias,abono:op?.abono||0,periodo:f.periodoAq});
     const res=await sendPAEmail(colab.email,`Férias aprovadas — ${dataBR(f.inicio)} a ${dataBR(f.fim)}`,corpo);
@@ -920,7 +920,7 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast,abrirAgor
   // Formulário oficial "Solicitação de Férias" preenchido (modelo do RH em public/modelos).
   const baixarFormulario=async f=>{
     try{
-      if(!f.opcao)throw new Error("Defina a opção do formulário (30, 15, 5+10 ou 10 dias) editando esta férias.");
+      if(!f.opcao)throw new Error("Defina a opção do formulário (30, 20+10, 15, 5+10, 10 ou outro número de dias) editando esta férias.");
       const modelo=await (await fetch("/modelos/solicitacao_ferias.docx")).arrayBuffer();
       const cad=users.find(u=>u.id===f.userId)?.cadastro;
       const blob=await preencherFormularioFerias(modelo,{nome:f.userName,cadastro:cad,inicio:f.inicio,opcao:f.opcao,periodo:f.periodoAq||"",adiantamento13:f.adiantamento13});
@@ -967,7 +967,7 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast,abrirAgor
     };
     const novoHistorico=[...(modalEdit.historico||[]),entradaHistorico];
     const{data}=await sb.from("ferias").update({
-      inicio:formEdit.inicio,fim:formEdit.fim,tipo:formEdit.opcao||formEdit.tipo,abono:formEdit.abono,
+      inicio:formEdit.inicio,fim:formEdit.fim,tipo:formEdit.opcao?tipoFerias(formEdit.opcao):formEdit.tipo,abono:formEdit.abono,
       opcao:formEdit.opcao||null,adiantamento_13:formEdit.adiantamento13==="sim"?true:formEdit.adiantamento13==="nao"?false:null,
       obs:formEdit.obs,periodo_aquisitivo:formEdit.periodoAq||null,
       historico_edicoes:novoHistorico,
@@ -1097,7 +1097,7 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast,abrirAgor
                     <span>📅 {fd(f.inicio)} → {fd(f.fim)}</span>
                     {f.abono&&<span style={{color:C.amb}}>💰 Abono</span>}
                     {f.periodoAq&&<span>📋 {f.periodoAq}</span>}
-                    {f.opcao&&<span>🗂 {OPCOES_FERIAS.find(o=>o.id===f.opcao)?.label||f.opcao}</span>}
+                    {f.opcao&&<span>🗂 {opcaoFerias(f.opcao)?.label||f.opcao}</span>}{f.origem==="formulario"&&<span title="Pedido feito pelo link, sem login">📨 via formulário</span>}
                     {f.adiantamento13!=null&&<span>13º junto: {f.adiantamento13?"sim":"não"}</span>}
                     {f.lancadoPorNome&&<span>Lançado por {f.lancadoPorNome}</span>}
                     {isRH&&f.status==="aprovado"&&<span style={{color:f.emailEnviadoEm?C.grn:C.amb}}>{f.emailEnviadoEm?"✉ e-mail enviado":"✉ e-mail não enviado"}</span>}
@@ -1334,6 +1334,8 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast,abrirAgor
             <div style={{fontSize:12,fontWeight:600,color:C.txm,marginBottom:6,letterSpacing:".02em",textTransform:"uppercase"}}>Opção (formulário oficial) *</div>
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
               {OPCOES_FERIAS.map(o=><label key={o.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,cursor:"pointer"}}><input type="radio" name="opcaoFerias" checked={formLanc.opcao===o.id} onChange={()=>setFormLanc({...formLanc,opcao:o.id})}/>{o.label}</label>)}
+              <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,cursor:"pointer"}}><input type="radio" name="opcaoFerias" checked={formLanc.opcao==="outro"} onChange={()=>setFormLanc({...formLanc,opcao:"outro"})}/>Outro:
+                <input aria-label="Quantos dias em descanso" type="number" min={5} max={30} value={formLanc.diasOutro} onFocus={()=>setFormLanc(f=>({...f,opcao:"outro"}))} onChange={e=>setFormLanc({...formLanc,opcao:"outro",diasOutro:e.target.value})} style={{width:56,background:C.s1,border:"1px solid "+C.bdr,borderRadius:6,padding:"3px 6px",color:C.txt}}/> dias em descanso</label>
             </div>
           </div>
           <Inp label="Data de início do gozo *" type="date" value={formLanc.inicio} onChange={e=>setFormLanc({...formLanc,inicio:e.target.value})}/>
@@ -4940,11 +4942,12 @@ const FORM_LINKS={
   movimentacao:{page:"movimentacoes",rotulo:"Pedir movimentação de pessoal (antigo Forms KdB 133)",min:"lider"},
   demissao:{page:"movimentacoes",rotulo:"Pedir demissão",min:"lider"},
 };
-const linkFormulario=chave=>`${window.location.origin}/?abrir=${chave}`;
+const linkFormulario=chave=>`${window.location.origin}/?abrir=${chave}`;   // RH (com login)
+const linkPublico=chave=>`${window.location.origin}/?form=${chave}`;        // líderes, gestores e colaboradores (sem login)
 async function copiarTexto(txt,showToast,msg){try{await navigator.clipboard.writeText(txt);showToast?.(msg||"Link copiado.","success");}catch{window.prompt("Copie o link:",txt);}}
 function BotoesLinks({chaves,showToast}){
-  return(<div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}><span style={{fontSize:12,color:C.txd}}>🔗 Links para mandar:</span>
-    {chaves.map(k=><button key={k} title={linkFormulario(k)} onClick={()=>copiarTexto(linkFormulario(k),showToast,`Link copiado: ${FORM_LINKS[k].rotulo}. Cole no Teams ou no e-mail.`)}
+  return(<div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}><span style={{fontSize:12,color:C.txd}}>🔗 Links para mandar (abrem sem login):</span>
+    {chaves.map(k=><button key={k} title={linkPublico(k)} onClick={()=>copiarTexto(linkPublico(k),showToast,`Link copiado (sem login): ${FORM_LINKS[k].rotulo}. Cole no Teams ou no e-mail.`)}
       style={{background:C.s1,border:"1px solid "+C.bdr,borderRadius:7,padding:"4px 10px",fontSize:11,color:C.txm,cursor:"pointer"}}>Copiar link · {k==="ferias"?"Férias":k==="admissao"?"Admissão":k==="movimentacao"?"Movimentação":"Demissão"}</button>)}</div>);
 }
 const RELATORIOS_MENSAIS=[
@@ -5091,6 +5094,104 @@ function TabelaUnimed({rel,ctx}){
     <div style={{fontSize:13,border:"1px solid "+C.bdr,borderRadius:8,padding:"8px 12px"}}><b>Descontos em folha:</b> {brl(totDesc)} em {(rel.descontos||[]).length} colaboradores (detalhe na planilha, aba “Descontos em folha”).
       {(rel.rescisao||[]).length>0&&<> <b style={{color:C.red}}>Rescisão:</b> {(rel.rescisao||[]).map(x=>`${x.colaborador} ${brl(x.total)}`).join(", ")}.</>}</div>
   </div>);
+}
+
+// ── FORMULÁRIO SEM LOGIN ── (substitui os Forms KdB 163/181/133). Quem pede se identifica pelo nome + matrícula da
+// folha (conferida no banco: form_publico_enviar); o pedido vai direto para o RH.
+function FormularioPublico({tipo}){
+  const[ctx,setCtx]=useState(null);const[f,setF]=useState({tipos:[],proposta:{},quantidade:"1",tipo_contratacao:"clt",adiantamento_13:"",opcao:""});
+  const[enviando,setEnviando]=useState(false);const[erro,setErro]=useState("");const[ok,setOk]=useState(null);
+  useEffect(()=>{(async()=>{const sb=await initSB();if(!sb){setCtx(false);return;}const{data,error}=await sb.rpc("form_publico_contexto");setCtx(error?false:data);})();},[]);
+  const set=(k,v)=>setF(x=>({...x,[k]:v}));const setP=(k,v)=>setF(x=>({...x,proposta:{...x.proposta,[k]:v}}));
+  const TIT={ferias:"✈ Programação de Férias",admissao:"📋 Requisição de Pessoal",movimentacao:"⇄ Movimentação de Pessoal",demissao:"➖ Pedido de Demissão"};
+  const caixa={minHeight:"100vh",display:"flex",justifyContent:"center",padding:"24px 14px",background:C.bg};
+  if(ctx===null)return<div style={{...caixa,alignItems:"center"}}><Spin size={20}/></div>;
+  if(ctx===false)return<div style={{...caixa,alignItems:"center"}}><Card style={{maxWidth:420}}>Não foi possível carregar o formulário. Tente de novo em instantes.</Card></div>;
+  const op=f.opcao==="outro"?opcaoFerias(f.diasOutro):OPCOES_FERIAS.find(o=>o.id===f.opcao);
+  const camposMov=[...new Set((f.tipos||[]).flatMap(t=>MOV_CAMPOS_POR_TIPO[t]||[]))];
+  const opts=(lista,vazio="Selecione...")=>[{value:"",label:vazio},...lista];
+  const pessoas=l=>l.map(u=>({value:u.id,label:u.nome+(u.cargo?" — "+u.cargo:"")}));
+  const solicitantes=tipo==="ferias"?ctx.colaboradores:ctx.lideres;
+  const enviar=async()=>{
+    setErro("");setEnviando(true);
+    const d={solicitante_id:parseInt(f.solicitante_id),solicitante_matricula:f.matricula||""};
+    if(tipo==="ferias")Object.assign(d,{user_id:parseInt(f.user_id),inicio:f.inicio,descanso:op?.descanso,abono:op?.abono||0,opcao:op?.id,periodo_aquisitivo:f.periodo||"",adiantamento_13:f.adiantamento_13,ciente:!!f.ciente,obs:f.obs||""});
+    if(tipo==="admissao")Object.assign(d,{gestor_id:parseInt(f.gestor_id),setor:f.setor||"",cargo:f.cargo||"",salario:f.salario||"",requisitos:f.requisitos||"",motivo:f.motivo||"",
+      motivo_requisicao:f.motivo_requisicao||"",substituido_id:f.motivo_requisicao==="substituicao"?parseInt(f.substituido_id):null,quantidade:parseInt(f.quantidade)||1,tipo_contratacao:f.tipo_contratacao,turno:f.turno||"",centro_custo:f.centro_custo||""});
+    if(tipo==="movimentacao"){const prop={};camposMov.forEach(k=>{const v=f.proposta[k];if(v!==undefined&&String(v).trim()!=="")prop[k]=k.endsWith("_id")?parseInt(v):String(v).trim();});
+      Object.assign(d,{user_id:parseInt(f.user_id),gestor_id:parseInt(f.gestor_id),tipos:f.tipos,proposta:prop,data_vigencia:f.vigencia||"",motivo:f.motivo||""});}
+    if(tipo==="demissao")Object.assign(d,{user_id:parseInt(f.user_id),gestor_id:parseInt(f.gestor_id),motivo:f.motivo||""});
+    const{data,error}=await getSB().rpc("form_publico_enviar",{p_tipo:tipo,p_dados:d});
+    setEnviando(false);if(error){setErro(error.message);return;}setOk(data);
+  };
+  if(ok)return(<div style={{...caixa,alignItems:"center"}}><Card style={{maxWidth:460,textAlign:"center"}}>
+    <div style={{fontSize:30}}>✅</div><div style={{fontSize:18,fontWeight:800,margin:"6px 0"}}>Pedido enviado ao RH</div>
+    <div style={{fontSize:14,color:C.txm}}>{TIT[tipo]}{ok.colaborador?` · ${ok.colaborador}`:""} · nº {ok.id}</div>
+    <div style={{fontSize:13,color:C.txd,margin:"10px 0 16px"}}>O RH vai analisar e dar retorno.</div>
+    <Btn v="outline" onClick={()=>{setOk(null);setF({tipos:[],proposta:{},quantidade:"1",tipo_contratacao:"clt",adiantamento_13:"",opcao:"",solicitante_id:f.solicitante_id,matricula:f.matricula});}}>Fazer outro pedido</Btn>
+  </Card></div>);
+  const grid={display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12};
+  const pronto=f.solicitante_id&&f.matricula&&(
+    tipo==="ferias"?f.user_id&&f.inicio&&op:
+    tipo==="admissao"?f.gestor_id&&f.cargo&&f.salario&&f.motivo&&f.requisitos&&f.motivo_requisicao&&(f.motivo_requisicao!=="substituicao"||f.substituido_id):
+    tipo==="movimentacao"?f.user_id&&f.gestor_id&&f.tipos.length&&f.vigencia&&f.motivo&&camposMov.some(k=>String(f.proposta[k]??"").trim()):
+    f.user_id&&f.gestor_id&&f.motivo);
+  return(<div style={caixa}><div style={{width:"100%",maxWidth:720,display:"flex",flexDirection:"column",gap:14}}>
+    <div><div style={{fontSize:13,color:C.txd}}>Kalenborn · RH</div><div style={{fontSize:22,fontWeight:800}}>{TIT[tipo]}</div></div>
+    <Card><div style={{fontSize:14,fontWeight:700,marginBottom:10}}>Quem está pedindo</div>
+      <div style={grid}>
+        <Sel label="Seu nome *" value={f.solicitante_id||""} onChange={e=>set("solicitante_id",e.target.value)} options={opts(solicitantes.map(u=>({value:u.id,label:u.nome})))}/>
+        <Inp label="Sua matrícula da folha *" value={f.matricula||""} onChange={e=>set("matricula",e.target.value)} placeholder="Está no seu contracheque"/>
+      </div>
+      <div style={{fontSize:12,color:C.txd,marginTop:6}}>A matrícula confirma que é você. {tipo!=="ferias"?"Este pedido é feito por líderes e gestores.":"Líderes e gestores pedem as férias da equipe; o colaborador pode pedir as próprias."}</div>
+    </Card>
+    <Card><div style={{display:"flex",flexDirection:"column",gap:12}}>
+      {(tipo==="ferias"||tipo==="movimentacao"||tipo==="demissao")&&<Sel label="Colaborador *" value={f.user_id||""} onChange={e=>set("user_id",e.target.value)} options={opts(pessoas(ctx.colaboradores))}/>}
+      {tipo!=="ferias"&&<Sel label="Gestor responsável *" value={f.gestor_id||""} onChange={e=>set("gestor_id",e.target.value)} options={opts(ctx.gestores.map(u=>({value:u.id,label:u.nome})))}/>}
+      {tipo==="ferias"&&<>
+        <div style={grid}><Inp label="Data de início *" type="date" value={f.inicio||""} onChange={e=>set("inicio",e.target.value)}/>
+          <Inp label="Período aquisitivo" value={f.periodo||""} onChange={e=>set("periodo",e.target.value)} placeholder="Ex.: 01/03/2025 a 28/02/2026"/></div>
+        <div><div style={{fontSize:12,fontWeight:600,color:C.txm,marginBottom:6}}>Opção *</div>
+          {OPCOES_FERIAS.map(o=><label key={o.id} style={{display:"flex",gap:8,alignItems:"center",fontSize:13,marginBottom:4,cursor:"pointer"}}><input type="radio" name="op" checked={f.opcao===o.id} onChange={()=>set("opcao",o.id)}/>{o.label}</label>)}
+          <label style={{display:"flex",gap:8,alignItems:"center",fontSize:13,cursor:"pointer"}}><input type="radio" name="op" checked={f.opcao==="outro"} onChange={()=>set("opcao","outro")}/>Outro:
+            <input aria-label="Quantos dias em descanso" type="number" min={5} max={30} value={f.diasOutro||""} onFocus={()=>set("opcao","outro")} onChange={e=>{set("opcao","outro");set("diasOutro",e.target.value);}} style={{width:56,background:C.s1,border:"1px solid "+C.bdr,borderRadius:6,padding:"3px 6px",color:C.txt}}/> dias em descanso</label></div>
+        {op&&f.inicio&&<div style={{fontSize:13,color:C.txm}}>Férias de {dataBR(f.inicio)} a {dataBR(addDias(f.inicio,op.descanso-1))} ({op.descanso} dias{op.abono?` + ${op.abono} de abono`:""}).</div>}
+        <Sel label="Adiantamento do 13º?" value={f.adiantamento_13} onChange={e=>set("adiantamento_13",e.target.value)} options={[{value:"",label:"(não informado)"},{value:"sim",label:"Sim"},{value:"nao",label:"Não"}]}/>
+        <label style={{display:"flex",gap:8,alignItems:"center",fontSize:13,cursor:"pointer"}}><input type="checkbox" checked={!!f.ciente} onChange={e=>set("ciente",e.target.checked)}/>Colaborador ciente destas férias</label>
+        <Tex label="Observação" value={f.obs||""} onChange={e=>set("obs",e.target.value)} rows={2}/>
+      </>}
+      {tipo==="admissao"&&<>
+        <div style={grid}>
+          <Sel label="Setor" value={f.setor||""} onChange={e=>set("setor",e.target.value)} options={opts(Object.entries(SL).map(([a,b])=>({value:a,label:b})))}/>
+          <Inp label="Cargo *" value={f.cargo||""} onChange={e=>set("cargo",e.target.value)}/>
+          <Inp label="Salário *" value={f.salario||""} onChange={e=>set("salario",e.target.value)} placeholder="Ex.: R$ 1.900,00"/>
+          <Sel label="Motivo da requisição *" value={f.motivo_requisicao||""} onChange={e=>set("motivo_requisicao",e.target.value)} options={opts([{value:"aumento_quadro",label:"Aumento de quadro"},{value:"substituicao",label:"Substituição"}])}/>
+          {f.motivo_requisicao==="substituicao"&&<Sel label="Quem será substituído? *" value={f.substituido_id||""} onChange={e=>set("substituido_id",e.target.value)} options={opts(pessoas(ctx.colaboradores))}/>}
+          <Inp label="Quantidade de vagas *" type="number" value={f.quantidade} onChange={e=>set("quantidade",e.target.value)}/>
+          <Sel label="Tipo de contratação *" value={f.tipo_contratacao} onChange={e=>set("tipo_contratacao",e.target.value)} options={Object.entries(TIPO_CONTRATACAO).map(([k,v])=>({value:k,label:v}))}/>
+          <Inp label="Turno / horário" value={f.turno||""} onChange={e=>set("turno",e.target.value)}/>
+          <Sel label="Centro de custo" value={f.centro_custo||""} onChange={e=>set("centro_custo",e.target.value)} options={opts([...ctx.centros_custo].sort().map(c=>({value:c,label:c})),"(definir depois)")}/>
+        </div>
+        <Tex label="O que você busca no colaborador? *" value={f.requisitos||""} onChange={e=>set("requisitos",e.target.value)} rows={2}/>
+      </>}
+      {tipo==="movimentacao"&&<>
+        <div><div style={{fontSize:12,fontWeight:600,color:C.txm,marginBottom:6}}>Tipo de movimentação *</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:"6px 16px"}}>{Object.entries(MOV_TIPOS).map(([k,l])=><label key={k} style={{display:"flex",gap:6,alignItems:"center",fontSize:13,cursor:"pointer"}}>
+            <input type="checkbox" checked={f.tipos.includes(k)} onChange={e=>set("tipos",e.target.checked?[...f.tipos,k]:f.tipos.filter(x=>x!==k))}/>{l}</label>)}</div></div>
+        {camposMov.length>0&&<div style={grid}>{camposMov.map(k=>{const v=f.proposta[k]??"";
+          if(k==="setor")return<Sel key={k} label="Novo setor" value={v} onChange={e=>setP(k,e.target.value)} options={opts(Object.entries(SL).map(([a,b])=>({value:a,label:b})),"(não muda)")}/>;
+          if(k==="area")return<Sel key={k} label="Nova área" value={v} onChange={e=>setP(k,e.target.value)} options={opts([...ctx.areas].sort().map(a=>({value:a,label:a})),"(não muda)")}/>;
+          if(k==="centro_custo")return<Sel key={k} label="Novo centro de custo" value={v} onChange={e=>setP(k,e.target.value)} options={opts([...ctx.centros_custo].sort().map(a=>({value:a,label:a})),"(não muda)")}/>;
+          if(k==="lider_id")return<Sel key={k} label="Novo líder" value={v} onChange={e=>setP(k,e.target.value)} options={opts(ctx.lideres.map(u=>({value:u.id,label:u.nome})),"(não muda)")}/>;
+          if(k==="gestor_id")return<Sel key={k} label="Novo gestor" value={v} onChange={e=>setP(k,e.target.value)} options={opts(ctx.gestores.map(u=>({value:u.id,label:u.nome})),"(não muda)")}/>;
+          return<Inp key={k} label={k==="cargo"?"Novo cargo":k==="salario"?"Novo salário":"Novo horário/turno"} value={v} onChange={e=>setP(k,e.target.value)}/>;})}</div>}
+        <Inp label="Data de vigência *" type="date" value={f.vigencia||""} onChange={e=>set("vigencia",e.target.value)}/>
+      </>}
+      {tipo!=="ferias"&&<Tex label="Justificativa *" value={f.motivo||""} onChange={e=>set("motivo",e.target.value)} rows={3}/>}
+      {erro&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"9px 14px",color:C.red,fontSize:13}}>{erro}</div>}
+      <div style={{display:"flex",justifyContent:"flex-end"}}><Btn onClick={enviar} disabled={!pronto||enviando} title={!pronto?"Preencha os campos com *":""}>{enviando?<Spin size={14} color="#fff"/>:null} Enviar ao RH</Btn></div>
+    </div></Card>
+  </div></div>);
 }
 
 // Conferência do rateio: quem está no centro de custo (só na tela) e correção manual (grava no cadastro, com registro).
@@ -6107,6 +6208,9 @@ export default function App(){
   // Link individual de ciência das férias (?ciencia=<código>): o colaborador vê as férias e confirma, sem login.
   const cienciaPublica=new URLSearchParams(window.location.search).get("ciencia");
   if(cienciaPublica)return<CienciaFeriasPublica token={cienciaPublica}/>;
+  // Formulários sem login (?form=ferias|admissao|movimentacao|demissao): substituem os Forms; vão direto ao RH.
+  const formPublico=new URLSearchParams(window.location.search).get("form");
+  if(FORM_LINKS[formPublico])return<FormularioPublico tipo={formPublico}/>;
   if(eventoPublico)return<FormularioEvento slug={eventoPublico}/>;
   if(!user&&screen==="career")return<CareerPortal vagas={vagasAbertas} carregando={vagasCarregando} onBack={()=>setScreen("login")} onSubmit={c=>setCandidates(p=>[c,...p])} criarTarefaAuto={criarTarefaAuto}/>;
   if(!user&&restaurando)return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",gap:10,color:C.txm,background:C.bg}}><style>{CSS}</style><Spin size={18}/> Carregando…</div>;
