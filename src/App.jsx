@@ -6,6 +6,7 @@ import { carregarPdfJs, textoDoPdf, lerDemonstrativoVG, gerarPlanilhaVG, emailRe
 import { lerFaturaOdonto, gerarPlanilhaOdonto, emailResumoOdonto, itensConferenciaOdonto } from "./odontoBradesco.js";
 import { lerRelatorioAraujo, gerarPlanilhaAraujo, emailResumoAraujo, itensConferenciaAraujo } from "./araujo.js";
 import { lerRelacaoSesi, gerarPlanilhaSesi, emailResumoSesi, itensConferenciaSesi } from "./sesi.js";
+import { lerAtivosBrit, gerarPlanilhaMovPrudential } from "./seguroMovimentacao.js";
 import { lerVariosUnimed, familiasParaVincular, calcularUnimed, competenciaRelatorio, gerarPlanilhaUnimed, emailResumoUnimed, itensConferenciaUnimed, CONTRATOS as CONTRATOS_UNIMED } from "./unimed.js";
 import { gerarFichaBrit, dadosKitDaAdmissao } from "./fichaBrit.js";
 import { DOCUMENTOS_ADMISSAO, preencherDocx, faltandoPara, TIPOS_AVISO, TIPOS_RESCISAO, SUGESTAO_RESCISAO, DESCONTOS_MARCAR, MODELO_RESCISAO, trocasRescisao } from "./documentosAdmissao.js";
@@ -4928,7 +4929,8 @@ const RELATORIOS_MENSAIS=[
    itens:r=>itensConferencia(r.conferencia),planilha:gerarPlanilhaVG,email:emailResumoVG,arquivo:c=>`seguro_vida_rateio_${c}.xlsx`,
    titRateio:r=>`Rateio de ${nomeCompetencia(r.competencia)}`,
    resumo:r=>`${r.pessoas} segurados · ${(r.rateio||[]).length} centros de custo`,qtd:["Pessoas",x=>x.pessoas],qtdTotal:r=>r.pessoas,
-   resumoHist:h=>`${h.pessoas} segurados`},
+   resumoHist:h=>`${h.pessoas} segurados`,
+   extra:(p)=><MovPrudential {...p}/>},
   {chave:"odonto",icone:"🦷",titulo:"Plano odontológico (Bradesco) — rateio por centro de custo",
    descricao:<>Anexe a <b>Fatura Técnica</b> (PDF) da Bradesco Dental. O portal soma os lançamentos de cada beneficiário (mensalidade, inclusões e devoluções), lança os <b>dependentes no titular</b> e usa o <b>centro de custo da folha da BRIT</b> do colaborador responsável.</>,
    arraste:"Arraste o PDF da Bradesco Dental ou clique para escolher",sub:"Fatura Técnica com o boleto",
@@ -4981,6 +4983,42 @@ const RELATORIOS_MENSAIS=[
    resumoHist:h=>`${h.colaboradores} colaboradores com desconto`,
    tabela:r=><TabelaUnimed rel={r}/>,vinculosUnimed:true},
 ];
+
+// Seguro de vida: movimentação para a Prudential (inclusões e exclusões) a partir da lista de ATIVOS da BRIT,
+// comparada no banco com os segurados do último demonstrativo guardado (seguro_vida_movimentacao).
+function MovPrudential({user,showToast}){
+  const[res,setRes]=useState(null);const[proc,setProc]=useState(false);const[erro,setErro]=useState("");const[arq,setArq]=useState("");const ref=useRef(null);
+  const carregar=async f=>{setErro("");if(!f)return;if(!/\.xlsx$/i.test(f.name)){setErro("Anexe a lista de ativos em Excel (.xlsx).");return;}
+    setProc(true);
+    try{const{ativos}=await lerAtivosBrit(await f.arrayBuffer());
+      const{data,error}=await getSB().rpc("seguro_vida_movimentacao",{p_pedido_por:user.id,p_ativos:ativos});
+      if(error)throw new Error(error.message);setRes(data);setArq(f.name);}
+    catch(e){console.error(e);setErro(e.message||"Não foi possível ler a lista.");}
+    setProc(false);if(ref.current)ref.current.value="";};
+  const baixar=()=>{const hoje=new Date().toISOString().slice(0,10);
+    const url=URL.createObjectURL(new Blob([gerarPlanilhaMovPrudential(res,hoje)],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})),a=document.createElement("a");
+    a.href=url;a.download=`prudential_movimentacao_${hoje}.xlsx`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);};
+  const lista=(itens,f)=>itens.length?itens.map(f).join(", "):"nenhuma";
+  const br=d=>d?String(d).slice(0,10).split("-").reverse().join("/"):"";
+  return(<Card>
+    <div style={{fontSize:15,fontWeight:800,marginBottom:4}}>📋 Movimentação para a Prudential (inclusões e exclusões)</div>
+    <div style={{fontSize:13,color:C.txm,marginBottom:12}}>Carregue a lista de <b>colaboradores ativos</b> da folha (BRIT). O portal compara com os segurados do último demonstrativo e monta a listagem de quem <b>entra</b> e quem <b>sai</b>, com o centro de resultado, para mandar à seguradora.</div>
+    <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+      <Btn v="outline" onClick={()=>ref.current?.click()} disabled={proc}>{proc?<Spin size={14}/>:"📥"} Carregar colaboradores ativos (BRIT)</Btn>
+      {arq&&<span style={{fontSize:12,color:C.txd}}>{arq}</span>}
+      <input ref={ref} type="file" accept=".xlsx" style={{display:"none"}} onChange={e=>carregar(e.target.files[0])}/>
+    </div>
+    {erro&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"9px 14px",color:C.red,fontSize:13,marginTop:12}}>{erro}</div>}
+    {res&&<div style={{marginTop:14,display:"flex",flexDirection:"column",gap:8,fontSize:13}}>
+      <div style={{color:C.txm}}>Base: demonstrativo de <b>{nomeCompetencia(res.base_competencia)}</b> ({res.segurados_base} segurados) · lista com {res.ativos} ativos</div>
+      <div style={{borderLeft:"3px solid "+C.grn,background:C.s1,borderRadius:6,padding:"8px 12px"}}><b>Inclusões ({res.inclusoes.length}):</b> <span style={{color:C.txm}}>{lista(res.inclusoes,i=>`${i.nome} (${i.centro_custo||"sem CC"}${i.admissao?", admissão "+br(i.admissao):""})`)}</span></div>
+      <div style={{borderLeft:"3px solid "+C.red,background:C.s1,borderRadius:6,padding:"8px 12px"}}><b>Exclusões ({res.exclusoes.length}):</b> <span style={{color:C.txm}}>{lista(res.exclusoes,e=>`${e.nome}${e.desligamento?" (desligado em "+br(e.desligamento)+")":e.status_portal==="ativo"?" (ATIVO no portal — conferir)":""}`)}</span></div>
+      {(res.sem_nascimento.length>0||res.aprendizes.length>0)&&<div style={{borderLeft:"3px solid "+C.amb,background:C.s1,borderRadius:6,padding:"8px 12px"}}><b>Verificar:</b> <span style={{color:C.txm}}>
+        {res.sem_nascimento.length>0&&<>sem data de nascimento: {res.sem_nascimento.join(", ")}. </>}{res.aprendizes.length>0&&<>aprendizes fora do seguro: {res.aprendizes.map(a=>a.nome).join(", ")}.</>}</span></div>}
+      <div><Btn onClick={baixar}>⬇ Baixar listagem para a Prudential</Btn></div>
+    </div>}
+  </Card>);
+}
 
 // Unimed: liga as famílias ao cadastro (banco), calcula rateio e descontos (src/unimed.js) e guarda o mês (banco).
 async function unimedProcessar(user,arquivos,arq,competencia){
@@ -5087,6 +5125,7 @@ function RelatorioMensal({cfg,user,users,showToast}){
         </div>
         {erro&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"9px 14px",color:C.red,fontSize:13,marginTop:12}}>{erro}</div>}
       </Card>
+      {cfg.extra&&cfg.extra({user,showToast})}
 
       {rel&&<Card>
         <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",alignItems:"flex-start",marginBottom:12}}>

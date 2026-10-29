@@ -20,7 +20,7 @@ with sync_playwright() as p:
     pg=pagina(); entrar(pg,"ana@teste.local")
     pg.locator("nav").get_by_text("Relatórios",exact=True).click(); pg.wait_for_timeout(600)
     res["T1 RH abre Relatórios; histórico vazio"]="Seguro de vida — rateio por centro de custo" in pg.locator("main").inner_text() and "Nenhum mês gerado ainda" in pg.locator("[data-relatorio=seguro]").inner_text()
-    pg.locator("[data-relatorio=seguro] input[type=file]").set_input_files(os.path.join(AQUI,"demonstrativo_ficticio.pdf")); pg.wait_for_timeout(3500)
+    pg.locator("[data-relatorio=seguro] input[type=file][accept^=\".pdf\"]").set_input_files(os.path.join(AQUI,"demonstrativo_ficticio.pdf")); pg.wait_for_timeout(3500)
     t=pg.locator("[data-relatorio=seguro]").inner_text().replace("\xa0"," ")   # moeda usa espaço não separável
     res["T2 lê o PDF e mostra o rateio de outubro/2026"]="Rateio de outubro/2026" in t and "R$ 21,81" in t and "3 segurados" in t
     res["T3 rateio por centro de custo (folha)"]="VULCANIZACAO - MÃO DE OBRA" in t and "ADMINISTRATIVE BOARD" in t and "SEM CENTRO DE CUSTO (verificar)" in t
@@ -44,7 +44,7 @@ with sync_playwright() as p:
     c.drawString(40,H-50,"Prudential VG EXPRESS"); c.drawString(40,H-75,"RELATÓRIO DE MOVIMENTAÇÃO"); c.drawString(600,H-105,"2026/11")
     c.drawString(60,H-150,"MARIA DA SILVA TESTE"); c.drawString(330,H-150,"111.444.777-35"); c.drawString(410,H-150,"10/02/1990"); c.drawString(470,H-150,"01/05/2026"); c.drawRightString(700,H-150,"41.696,00"); c.drawRightString(790,H-150,"4,47")
     c.drawString(560,H-163,"TOTAL:"); c.drawRightString(700,H-163,"41.696,00"); c.drawRightString(790,H-163,"99,99"); c.save()
-    pg.locator("[data-relatorio=seguro] input[type=file]").set_input_files(ruim); pg.wait_for_timeout(3000)
+    pg.locator("[data-relatorio=seguro] input[type=file][accept^=\".pdf\"]").set_input_files(ruim); pg.wait_for_timeout(3000)
     res["T8 total que não confere: recusa e não grava"]="não bate com o total do PDF" in pg.locator("[data-relatorio=seguro]").inner_text() and "2026-11" not in json.dumps(pg.evaluate("Object.keys(window.__REL)"))
     pg.close()
     pg=pagina(); entrar(pg,"bia@teste.local")

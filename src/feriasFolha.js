@@ -79,13 +79,17 @@ export function zipEscrever(entradas) {
 }
 
 // ── Relatório de saldos da folha (FPPF001 "Relatório Coleta") ───────────────────
-const desesc = s => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+// Desfaz os códigos do XML, inclusive os numéricos (&#195; = "Ã", &#xC3; = "Ã"), que alguns programas usam para acentos.
+// &amp; por último, para não transformar "&amp;#195;" (texto literal) em "Ã".
+const desesc = s => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+  .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))).replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+  .replace(/&amp;/g, "&");
 const serialParaISO = v => { const n = Number(v); if (!Number.isFinite(n) || n < 20000) return null; return new Date(Date.UTC(1899, 11, 30 + Math.round(n))).toISOString().slice(0, 10); };
 const brParaISO = s => { const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec((s || "").trim()); return m ? `${m[3]}-${m[2]}-${m[1]}` : null; };
-const dataCel = v => serialParaISO(v) || brParaISO(v);
+export const dataCel = v => serialParaISO(v) || brParaISO(v);
 const numCel = v => { if (v == null || v === "") return null; const n = Number(String(v).replace(",", ".")); return Number.isFinite(n) ? n : null; };
 
-function linhasPlanilha(arquivos) {
+export function linhasPlanilha(arquivos) {
   const nomeSheet = [...arquivos.keys()].find(k => /(^|\/)sheet1\.xml$/i.test(k));
   if (!nomeSheet) throw new Error("Planilha não encontrada dentro do arquivo.");
   const dec = new TextDecoder(), x = dec.decode(arquivos.get(nomeSheet));

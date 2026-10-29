@@ -81,6 +81,10 @@
    if(fn==="mov_detalhar"){const r=window.__MOVS.find(x=>x.id===a.p_id);Object.assign(r,{status:"pendente_rh",gestor_em:new Date().toISOString(),gestor_obs:a.p_dados.obs||null,data_prevista:a.p_dados.data_vigencia||r.data_prevista});return ok({...r});}
    if(fn==="mov_decidir"){const r=window.__MOVS.find(x=>x.id===a.p_id);const hoje=new Date().toISOString().slice(0,10);
      Object.assign(r,{status:a.p_decisao,rh_decisao:a.p_decisao,rh_em:new Date().toISOString(),aplicado_em:a.p_decisao==="aprovado"&&r.data_prevista<=hoje?new Date().toISOString():null});return ok({movimentacao:{...r},vaga:null});}
+   if(fn==="seguro_vida_movimentacao"){window.__ATIVOS_ENVIADOS=a.p_ativos;const ap=a.p_ativos.filter(x=>/aprendiz/i.test(x.cargo));
+     return ok({base_competencia:"2026-09",segurados_base:79,ativos:a.p_ativos.length,inclusoes:a.p_ativos.filter(x=>!/aprendiz/i.test(x.cargo)).map(x=>({...x,nascimento:null})),
+       aprendizes:ap,sem_nascimento:a.p_ativos.filter(x=>!/aprendiz/i.test(x.cargo)).map(x=>x.nome),
+       exclusoes:[{nome:"PEDRO SAIU",cpf:"33322211100",nascimento:"1995-05-05",centro_custo:"CORTE",status_portal:"desligado",desligamento:"2026-10-15"}]});}
    return ok(null);},
   functions:{invoke:async(nome,opt)=>{window.__INVOKES=(window.__INVOKES||[]).concat([{nome,body:opt&&opt.body}]);
     if(nome==="ferias-ciencia")return{data:{ok:true,link:location.origin+"/?ciencia="+"a1".repeat(18),enviado:!!(opt&&opt.body&&opt.body.enviar),para:"bi***@teste.local"},error:null};
