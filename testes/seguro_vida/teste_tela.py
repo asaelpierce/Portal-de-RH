@@ -38,8 +38,8 @@ with sync_playwright() as p:
     res["T7 mês aparece no histórico"]="Outubro/2026" in pg.locator("main").inner_text() or "outubro/2026" in pg.locator("[data-relatorio=seguro]").inner_text().split("Histórico")[1]
     # Conferência: abrir o centro de custo, ver as pessoas e corrigir
     seg=pg.locator("[data-relatorio=seguro]")
-    seg.get_by_role("button",name="Ver pessoas de VULCANIZACAO - MÃO DE OBRA").click(); pg.wait_for_timeout(300)
-    res["T10 ▸ mostra quem está no centro de custo (só na tela)"]="MARIA DA SILVA TESTE" in seg.inner_text()
+    seg.locator("tr",has=pg.get_by_role("button",name="Ver pessoas de VULCANIZACAO - MÃO DE OBRA")).locator("td").first.click(position={"x":120,"y":8}); pg.wait_for_timeout(300)   # clicar no nome do centro (não na setinha)
+    res["T10 clicar na linha mostra quem está no centro de custo (só na tela)"]="MARIA DA SILVA TESTE" in seg.inner_text()
     seg.get_by_label("Centro de custo de MARIA DA SILVA TESTE").select_option("RECURSOS HUMANOS")
     seg.get_by_role("button",name="Corrigir").first.click(); pg.wait_for_timeout(1200)
     aj=pg.evaluate("window.__AJUSTES||[]")

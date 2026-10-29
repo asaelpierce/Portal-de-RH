@@ -4950,7 +4950,8 @@ const RELATORIOS_MENSAIS=[
    refazer:(user,r)=>getSB().rpc("odonto_conferir",{p_pedido_por:user.id,p_competencia:r.competencia,p_vigencia:r.vigencia||"",p_arquivo:r.arquivo_nome||"",
      p_beneficiarios:(r.linhas||[]).map(b=>({certificado:b.certificado,seq:b.seq,nome:b.nome,nascimento:b.nascimento,parentesco:b.parentesco,lancamentos:b.lancamentos,valor:b.valor}))}),
    vinculos:true,
-   pessoas:r=>Object.values((r.linhas||[]).reduce((g,l)=>{const k=l.certificado;g[k]=g[k]||{cc:l.centro_custo||SEM_CC,uid:l.responsavel_id,nome:l.responsavel||l.titular,n:0,v:0};g[k].n++;g[k].v+=Number(l.valor);return g;},{}))
+   pessoas:r=>Object.values((r.linhas||[]).reduce((g,l)=>{const k=l.certificado;g[k]=g[k]||{cc:l.centro_custo||SEM_CC,uid:l.responsavel_id,nome:l.responsavel||l.titular,n:0,v:0,beneficiarios:[]};
+       g[k].n++;g[k].v+=Number(l.valor);g[k].beneficiarios.push({nome:l.nome,detalhe:l.parentesco||"",info:brl(l.valor)});return g;},{}))
      .map(x=>({...x,info:`${x.n} beneficiário${x.n>1?"s":""} · ${brl(x.v)}`}))},
   {chave:"araujo",icone:"💊",titulo:"Convênio Drogaria Araujo — rateio por centro de custo",
    descricao:<>Anexe o <b>Relatório Total Compras agrupado por Funcionário e Período</b> (PDF) da Araujo. O portal rateia o <b>Total Convênio</b> de cada funcionário pelo <b>centro de custo da folha da BRIT</b>, achando cada um pela matrícula (ou pelo nome, se a matrícula da Araujo estiver diferente).</>,
@@ -4994,7 +4995,11 @@ const RELATORIOS_MENSAIS=[
    resumo:r=>`${(r.arquivos||[]).length} PDFs · descontos em folha ${brl((r.descontos||[]).reduce((a,d)=>a+d.total,0))} (${(r.descontos||[]).length} colaboradores)`,
    resumoHist:h=>`${h.colaboradores} colaboradores com desconto`,
    tabela:(r,ctx)=><TabelaUnimed rel={r} ctx={ctx}/>,vinculosUnimed:true,
-   pessoasContrato:(r,c)=>(r.linhas||[]).filter(l=>l.contrato===c&&!l.desligado).map(l=>({cc:l.centro_custo||SEM_CC,uid:l.usuario_id,nome:l.colaborador||l.titular,info:`mensalidade ${brl(l.mensalidade)} · coparticipação ${brl(l.copart)}`})),
+   pessoasContrato:(r,c)=>(r.linhas||[]).filter(l=>l.contrato===c&&!l.desligado).map(l=>{
+     const uso={};(l.itens||[]).forEach(i=>{uso[i.nome]=(uso[i.nome]||0)+Number(i.valor);});
+     const ben=[...(l.beneficiarios||[]).map(b=>({nome:b.nome,detalhe:b.faixa?"faixa "+b.faixa:"",info:"mensalidade "+brl(b.valor)})),
+       ...Object.entries(uso).map(([n,v])=>({nome:n,detalhe:"usou a coparticipação",info:brl(v)}))];
+     return{cc:l.centro_custo||SEM_CC,uid:l.usuario_id,nome:l.colaborador||l.titular,info:`mensalidade ${brl(l.mensalidade)} · coparticipação ${brl(l.copart)}`,beneficiarios:ben};}),
    botaoExtra:{rotulo:"⬇ Descontos em folha (BRIT)",titulo:"Planilha com os descontos por colaborador e a lista da rescisão (tem nomes: para a folha)",gerar:gerarDescontosUnimed,arquivo:c=>`unimed_descontos_folha_${c}.xlsx`}},
 ];
 
@@ -5051,7 +5056,7 @@ function TabelaUnimed({rel,ctx}){
       <div style={{fontSize:13,fontWeight:700,marginBottom:4}}>Contrato {r.contrato} — {r.nome}</div>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr><th style={{...th,textAlign:"left"}}>Centro de custo</th><th style={{...th,textAlign:"right"}}>Mensalidade</th><th style={{...th,textAlign:"right"}}>Coparticipação</th><th style={{...th,textAlign:"right"}}>Total</th></tr></thead>
         <tbody>{r.centros.map(c=>{const k=r.contrato+"|"+c.centro_custo;return<Fragment key={c.centro_custo}>
-          <tr><td style={td}>{ctx&&<button aria-expanded={!!ctx.aberto[k]} aria-label={"Ver pessoas de "+c.centro_custo} onClick={()=>ctx.setAberto(a=>({...a,[k]:!a[k]}))} style={{background:"none",border:"none",cursor:"pointer",color:C.txm,padding:"0 6px 0 0"}}>{ctx.aberto[k]?"▾":"▸"}</button>}{c.centro_custo}</td><td style={{...td,textAlign:"right"}}>{brl(c.mensalidade)}</td><td style={{...td,textAlign:"right"}}>{brl(c.copart)}</td><td style={{...td,textAlign:"right"}}>{brl(c.total)}</td></tr>
+          <tr onClick={ctx?()=>ctx.setAberto(a=>({...a,[k]:!a[k]})):undefined} style={ctx?{cursor:"pointer"}:undefined} title={ctx?"Clique para ver quem está neste centro de custo":undefined}><td style={td}>{ctx&&<button aria-expanded={!!ctx.aberto[k]} aria-label={"Ver pessoas de "+c.centro_custo} onClick={e=>{e.stopPropagation();ctx.setAberto(a=>({...a,[k]:!a[k]}));}} style={{background:"none",border:"none",cursor:"pointer",color:C.txm,padding:"0 6px 0 0"}}>{ctx.aberto[k]?"▾":"▸"}</button>}{c.centro_custo}</td><td style={{...td,textAlign:"right"}}>{brl(c.mensalidade)}</td><td style={{...td,textAlign:"right"}}>{brl(c.copart)}</td><td style={{...td,textAlign:"right"}}>{brl(c.total)}</td></tr>
           {ctx&&ctx.aberto[k]&&<tr><td colSpan={4} style={{padding:"4px 8px 10px 26px",borderBottom:"1px solid "+C.bdr}}><PessoasDoCentro pessoas={RELATORIOS_MENSAIS.find(x=>x.chave==="unimed").pessoasContrato(rel,r.contrato).filter(p=>p.cc===c.centro_custo)} ccs={ctx.ccs} corrigir={ctx.corrigir}/></td></tr>}
         </Fragment>;})}
           <tr><td style={{padding:"6px 8px",fontWeight:800}}>Subtotal</td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:800}}>{brl(r.mensalidade)}</td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:800}}>{brl(r.copart)}</td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:800}}>{brl(r.mensalidade+r.copart)}</td></tr></tbody></table></div>))}
@@ -5062,12 +5067,17 @@ function TabelaUnimed({rel,ctx}){
 
 // Conferência do rateio: quem está no centro de custo (só na tela) e correção manual (grava no cadastro, com registro).
 function PessoasDoCentro({pessoas,ccs,corrigir}){
-  const[esc,setEsc]=useState({});const[salvando,setSalvando]=useState(null);
+  const[esc,setEsc]=useState({});const[salvando,setSalvando]=useState(null);const[benAberto,setBenAberto]=useState({});
   if(!pessoas.length)return<div style={{fontSize:12,color:C.txd}}>Ninguém neste centro de custo.</div>;
   const sel={background:C.s1,border:"1px solid "+C.bdr,borderRadius:7,padding:"3px 6px",color:C.txt,fontSize:12,maxWidth:260};
   return(<div style={{display:"flex",flexDirection:"column",gap:4}}>{pessoas.sort((a,b)=>String(a.nome).localeCompare(String(b.nome))).map((p,i)=>(
     <div key={(p.uid||"x")+"-"+i} style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",fontSize:12}}>
-      <span style={{minWidth:200,flex:"1 1 200px"}}>{p.nome} <span style={{color:C.txd}}>· {p.info}</span></span>
+      <span style={{minWidth:200,flex:"1 1 200px"}}>{p.beneficiarios?.length
+        ?<button aria-expanded={!!benAberto[i]} onClick={()=>setBenAberto(b=>({...b,[i]:!b[i]}))} title="Ver os beneficiários" style={{background:"none",border:"none",padding:0,cursor:"pointer",color:C.txt,fontSize:12,textAlign:"left"}}>
+            <span style={{color:C.txm}}>{benAberto[i]?"▾":"▸"}</span> <span style={{textDecoration:"underline dotted"}}>{p.nome}</span></button>
+        :p.nome} <span style={{color:C.txd}}>· {p.info}</span>
+        {p.beneficiarios?.length>0&&benAberto[i]&&<div style={{margin:"4px 0 2px 16px",display:"flex",flexDirection:"column",gap:2}}>{p.beneficiarios.map((b,j)=>
+          <div key={j} style={{color:C.txm}}>• {b.nome}{b.detalhe?<span style={{color:C.txd}}> ({b.detalhe})</span>:null} <span style={{color:C.txd}}>· {b.info}</span></div>)}</div>}</span>
       {p.uid?<><select aria-label={"Centro de custo de "+p.nome} style={sel} value={esc[i]??""} onChange={e=>setEsc(x=>({...x,[i]:e.target.value}))}>
           <option value="">Mudar para…</option>{ccs.filter(c=>c!==p.cc).map(c=><option key={c} value={c}>{c}</option>)}</select>
         <button disabled={!esc[i]||salvando===i} onClick={async()=>{setSalvando(i);const ok=await corrigir(p.uid,esc[i],p.nome);setSalvando(null);if(ok)setEsc(x=>({...x,[i]:""}));}}
@@ -5188,11 +5198,11 @@ function RelatorioMensal({cfg,user,users,showToast}){
         </div>
         {cfg.vinculos&&<VinculosOdonto rel={rel} users={users} user={user} showToast={showToast} onRefazer={refazer}/>}
         {cfg.vinculosUnimed&&<VinculosUnimed rel={rel} users={users} user={user} showToast={showToast} onRefazer={refazer}/>}
-        {cfg.pessoas&&<div style={{fontSize:12,color:C.txd,marginBottom:6}}>Clique em ▸ para ver quem está em cada centro de custo e corrigir se precisar (os nomes aparecem só aqui; a planilha e o e-mail saem sem nomes).</div>}
+        {cfg.pessoas&&<div style={{fontSize:12,color:C.txd,marginBottom:6}}>Clique num centro de custo para ver quem está nele (e no nome para ver os beneficiários); corrija se precisar (os nomes aparecem só aqui; a planilha e o e-mail saem sem nomes).</div>}
         {cfg.tabela?cfg.tabela(rel,ctx):<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr>{["Centro de custo",cfg.qtd[0],"Valor"].map((h,i)=><th key={h} style={{textAlign:i?"right":"left",padding:"6px 8px",borderBottom:"1px solid "+C.bdr,color:C.txd,fontWeight:600}}>{h}</th>)}</tr></thead>
           <tbody>{(rel.rateio||[]).map(r=><Fragment key={r.centro_custo}>
-            <tr><td style={td}>{cfg.pessoas?<button aria-expanded={!!aberto[r.centro_custo]} aria-label={"Ver pessoas de "+r.centro_custo} onClick={()=>setAberto(a=>({...a,[r.centro_custo]:!a[r.centro_custo]}))} style={{background:"none",border:"none",cursor:"pointer",color:C.txm,padding:"0 6px 0 0"}}>{aberto[r.centro_custo]?"▾":"▸"}</button>:null}{r.centro_custo}</td><td style={{...td,textAlign:"right"}}>{cfg.qtd[1](r)}</td><td style={{...td,textAlign:"right"}}>{brl(r.valor)}</td></tr>
+            <tr onClick={cfg.pessoas?()=>setAberto(a=>({...a,[r.centro_custo]:!a[r.centro_custo]})):undefined} style={cfg.pessoas?{cursor:"pointer"}:undefined} title={cfg.pessoas?"Clique para ver quem está neste centro de custo":undefined}><td style={td}>{cfg.pessoas?<button aria-expanded={!!aberto[r.centro_custo]} aria-label={"Ver pessoas de "+r.centro_custo} onClick={e=>{e.stopPropagation();setAberto(a=>({...a,[r.centro_custo]:!a[r.centro_custo]}));}} style={{background:"none",border:"none",cursor:"pointer",color:C.txm,padding:"0 6px 0 0"}}>{aberto[r.centro_custo]?"▾":"▸"}</button>:null}{r.centro_custo}</td><td style={{...td,textAlign:"right"}}>{cfg.qtd[1](r)}</td><td style={{...td,textAlign:"right"}}>{brl(r.valor)}</td></tr>
             {cfg.pessoas&&aberto[r.centro_custo]&&<tr><td colSpan={3} style={{padding:"4px 8px 10px 26px",borderBottom:"1px solid "+C.bdr}}><PessoasDoCentro pessoas={cfg.pessoas(rel).filter(p=>p.cc===r.centro_custo)} ccs={ccs} corrigir={corrigir}/></td></tr>}
           </Fragment>)}
             <tr><td style={{padding:"6px 8px",fontWeight:800}}>TOTAL</td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:800}}>{cfg.qtdTotal(rel)}</td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:800}}>{brl(rel.total)}</td></tr></tbody>

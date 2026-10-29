@@ -36,6 +36,10 @@ with sync_playwright() as p:
     a2=d2.value; c2="/tmp/unimed_desc.xlsx"; a2.save_as(c2); wd=openpyxl.load_workbook(c2)
     desc=[[c.value for c in r] for r in wd["Descontos em folha"].iter_rows(min_row=3)]
     res["U8b descontos em folha em arquivo separado (Maria 60,50 + 3,60)"]=a2.suggested_filename=="unimed_descontos_folha_2026-10.xlsx" and wd.sheetnames==["Descontos em folha","Rescisão"] and any(r[0]=="Maria Titular" and r[3]==60.5 and r[4]==3.6 for r in desc)
+    un.locator("tr",has=pg.get_by_role("button",name="Ver pessoas de REVESTIMENTO - MÃO DE OBRA")).locator("td").first.click(position={"x":120,"y":8}); pg.wait_for_timeout(300)
+    un.get_by_role("button",name=re.compile("Maria Titular")).click(); pg.wait_for_timeout(300)
+    t=un.inner_text()
+    res["U10 família: beneficiários da mensalidade e quem usou a coparticipação"]="FILHO DA MARIA" in t and "usou a coparticipação" in t
     res["U9 histórico e os cinco cartões"]="outubro/2026" in un.inner_text().split("Histórico")[1].lower() and all(pg.locator(f"[data-relatorio={k}]").count()==1 for k in ("seguro","odonto","araujo","sesi","unimed"))
     res["sem exceções"]=not errs
     if errs: print(errs[:3])

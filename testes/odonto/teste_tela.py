@@ -37,6 +37,10 @@ with sync_playwright() as p:
     res["O8 planilha: só Rateio, sem nomes"]=arq.suggested_filename=="odonto_rateio_2026-10.xlsx" and wb.sheetnames==["Rateio"] and "PEDRO" not in tudo and "MARIA" not in tudo
     od.get_by_role("button",name="Ver pessoas de CORTE CERAMICA MAO DE OBRA").click(); pg.wait_for_timeout(300)
     res["O10 ▸ mostra o titular e os beneficiários do centro de custo"]="Pedro Saiu" in od.inner_text() and "1 beneficiário" in od.inner_text()
+    od.locator("tr",has=pg.get_by_role("button",name="Ver pessoas de REVESTIMENTO - MÃO DE OBRA")).locator("td").first.click(position={"x":120,"y":8}); pg.wait_for_timeout(300)
+    od.get_by_role("button",name=re.compile("Maria Titular")).click(); pg.wait_for_timeout(300)
+    t=od.inner_text()
+    res["O11 clicar no nome do titular mostra os beneficiários pelo nome"]="JOAO DEPENDENTE TESTE" in t and "Filho(a)" in t and "MARIA TITULAR TESTE" in t
     res["O9 histórico do odonto"]="outubro/2026" in od.inner_text().split("Histórico")[1].lower()
     res["sem exceções"]=not errs
     if errs: print(errs[:3])
