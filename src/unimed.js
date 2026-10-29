@@ -159,11 +159,20 @@ export function calcularUnimed(arquivos, vinculos) {
     const ordenados = [...f.itens].sort((x, y) => y.valor - x.valor);
     const cobertos = ordenados.slice(0, COBERTOS_POR_MES), resto = ordenados.slice(COBERTOS_POR_MES);
     const empresaCopart = r2(cobertos.reduce((a, i) => a + i.valor, 0));
-    const descCopart = diretoria ? 0 : r2(resto.reduce((a, i) => a + i.valor, 0) * DESCONTO_COPART);
+    // Detalhe por beneficiário (titular e dependentes) — para a planilha de descontos em folha.
+    const benOrd = [...f.beneficiarios].sort((x, y) => x.codigo.localeCompare(y.codigo));
+    const pessoasDet = new Map();
+    benOrd.forEach((b, k) => pessoasDet.set(b.codigo, { codigo: b.codigo, nome: b.nome, faixa: b.faixa || "", papel: k === 0 ? "Titular" : "Dependente",
+      mensalidade: diretoria ? (k === 0 ? DESCONTO_DIRETORIA : 0) : descontoBeneficiario(f.contrato, b).valor, copart: 0, restoCopart: 0 }));
+    resto.forEach((i) => { if (!pessoasDet.has(i.codigo)) pessoasDet.set(i.codigo, { codigo: i.codigo, nome: i.nome, faixa: "", papel: i.codigo.endsWith("000") ? "Titular" : "Dependente", mensalidade: 0, copart: 0, restoCopart: 0 });
+      pessoasDet.get(i.codigo).restoCopart += i.valor; });
+    const detalhe = [...pessoasDet.values()].map((d) => ({ ...d, copart: diretoria ? 0 : r2(d.restoCopart * DESCONTO_COPART) }))
+      .map(({ restoCopart, ...d }) => ({ ...d, total: r2(d.mensalidade + d.copart) }));
+    const descCopart = r2(detalhe.reduce((a, d) => a + d.copart, 0));
     return { contrato: f.contrato, familia: f.familia, titular, usuario_id: v.usuario_id || null, colaborador: v.colaborador || null, cadastro: v.cadastro || null,
       centro_custo: v.centro_custo || null, status: v.status || null, data_desligamento: v.data_desligamento || null,
       desligado: v.status === "desligado", diretoria, beneficiarios: f.beneficiarios, itens: ordenados.map((i, k) => ({ ...i, coberto: k < COBERTOS_POR_MES })),
-      mensalidade: f.mensalidade, copart: f.copart, empresa_copart: diretoria ? f.copart : empresaCopart,
+      mensalidade: f.mensalidade, copart: f.copart, empresa_copart: diretoria ? f.copart : empresaCopart, detalhe,
       desconto_mensalidade: descMens, desconto_copart: descCopart, desconto_total: r2(descMens + descCopart) };
   }).sort((a, b) => a.contrato.localeCompare(b.contrato) || (a.colaborador || a.titular).localeCompare(b.colaborador || b.titular));
 
@@ -177,8 +186,9 @@ export function calcularUnimed(arquivos, vinculos) {
 
   // Descontos em folha por colaborador (somando contratos) e rescisão
   const porPessoa = (lista) => { const g = {};
-    lista.forEach((l) => { const k = l.colaborador || l.titular; g[k] = g[k] || { colaborador: k, cadastro: l.cadastro, centro_custo: l.centro_custo, data_desligamento: l.data_desligamento, mensalidade: 0, copart: 0 };
-      g[k].mensalidade = r2(g[k].mensalidade + l.desconto_mensalidade); g[k].copart = r2(g[k].copart + l.desconto_copart); });
+    lista.forEach((l) => { const k = l.colaborador || l.titular; g[k] = g[k] || { colaborador: k, cadastro: l.cadastro, centro_custo: l.centro_custo, data_desligamento: l.data_desligamento, mensalidade: 0, copart: 0, beneficiarios: [] };
+      g[k].mensalidade = r2(g[k].mensalidade + l.desconto_mensalidade); g[k].copart = r2(g[k].copart + l.desconto_copart);
+      (l.detalhe || []).forEach((d) => g[k].beneficiarios.push({ ...d, contrato: l.contrato })); });
     return Object.values(g).map((x) => ({ ...x, total: r2(x.mensalidade + x.copart) })).filter((x) => x.total !== 0).sort((a, b) => a.colaborador.localeCompare(b.colaborador)); };
   const descontos = porPessoa(linhas.filter((l) => !l.desligado)), rescisao = porPessoa(linhas.filter((l) => l.desligado));
 
@@ -247,16 +257,28 @@ export function gerarPlanilhaUnimed(rel) {
 // Planilha dos DESCONTOS EM FOLHA (vai para a BRIT lançar no contracheque): por colaborador — precisa dos nomes.
 export function gerarDescontosUnimed(rel) {
   const H = (a) => a.map((v) => ({ v, estilo: "cabecalho" })), N = (v) => ({ v, estilo: "negrito" });
-  const desc = (lista) => lista.map((d) => [d.colaborador, d.cadastro || "", d.centro_custo || "", d.mensalidade, d.copart, d.total]);
+  const linhas = (lista) => {
+    const out = [];
+    lista.forEach((d) => {
+      (d.beneficiarios || []).forEach((b) => out.push([d.colaborador, d.cadastro || "", d.centro_custo || "", b.nome, b.papel, b.faixa || "", CONTRATOS[b.contrato] || b.contrato, b.mensalidade, b.copart, b.total]));
+      out.push([N(`Subtotal — ${d.colaborador}`), "", "", "", "", "", "", N(d.mensalidade), N(d.copart), N(d.total)]);
+    });
+    return out;
+  };
   const soma = (k) => r2((rel.descontos || []).reduce((a, d) => a + d[k], 0));
+  const cab = H(["Colaborador", "Matrícula", "Centro de custo", "Beneficiário", "Titular/Dependente", "Faixa", "Contrato", "Mensalidade (R$)", "Coparticipação (R$)", "Total (R$)"]);
+  const larg = [36, 11, 36, 38, 16, 11, 22, 15, 17, 12];
   return gerarXlsx([
-    { nome: "Descontos em folha", larguras: [40, 12, 40, 16, 18, 14], cabecalho: 1, linhas: [
-      [{ v: `Unimed — descontos em folha — ${nomeCompetencia(rel.competencia)} (mensalidade pela tabela de desconto ${TABELA_DESCONTO_VIGENCIA}, por faixa etária, com teto aos 59+ / diretoria R$ 1,00; coparticipação 50% após 2 procedimentos por família)`, estilo: "titulo" }],
-      H(["Colaborador", "Matrícula", "Centro de custo", "Mensalidade (R$)", "Coparticipação (R$)", "Total (R$)"]), ...desc(rel.descontos || []),
+    { nome: "Descontos em folha", larguras: larg, cabecalho: 1, linhas: [
+      [{ v: `Unimed — descontos em folha — ${nomeCompetencia(rel.competencia)} (mensalidade pela tabela de desconto ${TABELA_DESCONTO_VIGENCIA}, por faixa etária, com teto aos 59+ / diretoria R$ 1,00; coparticipação 50% após 2 procedimentos por família) — titular e dependentes, com subtotal por colaborador (valor a lançar na folha)`, estilo: "titulo" }],
+      cab, ...linhas(rel.descontos || []),
+      [N("TOTAL"), "", "", "", "", "", "", N(soma("mensalidade")), N(soma("copart")), N(soma("total"))]] },
+    { nome: "Rescisão", larguras: larg, cabecalho: 1, linhas: [
+      [{ v: "Desligados — lançar na rescisão (titular e dependentes)", estilo: "titulo" }], cab, ...linhas(rel.rescisao || [])] },
+    { nome: "Resumo por colaborador", larguras: [40, 12, 40, 16, 18, 14], cabecalho: 0, linhas: [
+      H(["Colaborador", "Matrícula", "Centro de custo", "Mensalidade (R$)", "Coparticipação (R$)", "Total (R$)"]),
+      ...(rel.descontos || []).map((d) => [d.colaborador, d.cadastro || "", d.centro_custo || "", d.mensalidade, d.copart, d.total]),
       [N("TOTAL"), "", "", N(soma("mensalidade")), N(soma("copart")), N(soma("total"))]] },
-    { nome: "Rescisão", larguras: [40, 12, 40, 16, 18, 14], cabecalho: 1, linhas: [
-      [{ v: "Desligados — lançar na rescisão (fora do rateio)", estilo: "titulo" }],
-      H(["Desligado", "Matrícula", "Centro de custo", "Mensalidade (R$)", "Coparticipação (R$)", "Total (R$)"]), ...desc(rel.rescisao || [])] },
   ]);
 }
 

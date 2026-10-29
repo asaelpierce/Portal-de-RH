@@ -81,10 +81,14 @@ const x = celulas(arq);
 ok("P1 rateio: só a aba Rateio e sem nomes", JSON.stringify(x.abas) === JSON.stringify(["Rateio"]) && !/Maria|MARIA|Pedro|PEDRO|Joao|JOAO|Diretor|FILHO/.test(x.txt));
 const arqD = path.join(tmp, "d.xlsx"); fs.writeFileSync(arqD, U.gerarDescontosUnimed(rel));
 const d = JSON.parse(execSync(`python3 -c "
-import openpyxl,json; wb=openpyxl.load_workbook('${arqD}'); d=wb['Descontos em folha']; rs=wb['Rescisão']
-print(json.dumps({'abas':wb.sheetnames,'desc':[[c.value for c in row] for row in d.iter_rows(min_row=3)],'resc':[[c.value for c in row] for row in rs.iter_rows(min_row=3)]}))"`).toString());
-ok("P2 descontos em folha (arquivo separado): Maria 28,31 + 8,60 = 36,91 e total", JSON.stringify(d.abas) === JSON.stringify(["Descontos em folha", "Rescisão"]) && d.desc.some((l) => l[0] === "Maria Titular" && l[3] === 28.31 && l[4] === 8.6 && l[5] === 36.91) && d.desc[d.desc.length - 1][0] === "TOTAL");
-ok("P3 rescisão com o desligado (arquivo separado)", d.resc.length === 1 && d.resc[0][0] === "Pedro Saiu");
+import openpyxl,json; wb=openpyxl.load_workbook('${arqD}'); d=wb['Descontos em folha']; rs=wb['Rescisão']; rz=wb['Resumo por colaborador']
+print(json.dumps({'abas':wb.sheetnames,'desc':[[c.value for c in row] for row in d.iter_rows(min_row=3)],'resc':[[c.value for c in row] for row in rs.iter_rows(min_row=3)],'resumo':[[c.value for c in row] for row in rz.iter_rows(min_row=2)]}))"`).toString());
+ok("P2 abas: descontos por beneficiário, rescisão e resumo", JSON.stringify(d.abas) === JSON.stringify(["Descontos em folha", "Rescisão", "Resumo por colaborador"]));
+ok("P2b titular na linha dele: MARIA TITULAR, 34 a 38, mensalidade 18,98, copart 5,00", d.desc.some((l) => l[0] === "Maria Titular" && l[3] === "MARIA TITULAR" && l[4] === "Titular" && l[5] === "34 a 38" && l[7] === 18.98 && l[8] === 5));
+ok("P2c DEPENDENTE na linha dele: FILHO DA MARIA, 0 a 18, mensalidade 9,33, copart 3,60", d.desc.some((l) => l[0] === "Maria Titular" && l[3] === "FILHO DA MARIA" && l[4] === "Dependente" && l[5] === "0 a 18" && l[7] === 9.33 && l[8] === 3.6));
+ok("P2d subtotal do colaborador = soma do titular e dependentes (28,31 + 8,60 = 36,91)", d.desc.some((l) => l[0] === "Subtotal — Maria Titular" && l[7] === 28.31 && l[8] === 8.6 && l[9] === 36.91) && d.desc[d.desc.length - 1][0] === "TOTAL");
+ok("P2e resumo por colaborador igual ao subtotal", d.resumo.some((l) => l[0] === "Maria Titular" && l[5] === 36.91));
+ok("P3 rescisão com o desligado (beneficiário + subtotal)", d.resc.some((l) => l[0] === "Pedro Saiu" && l[3] === "PEDRO SAIU") && d.resc.some((l) => l[0] === "Subtotal — Pedro Saiu"));
 // Aviso de reajuste: fatura com preços ~11% maiores que a tabela → aviso; preços iguais à tabela → sem aviso
 const fam = (n, faixa, valor) => ({ codigo: String(n).padStart(14, "9") + "000", familia: String(n).padStart(14, "9"), nome: "B" + n, faixa, modulos: [{ valor, desconto: 0, credito: 0, debito: 0 }], valor });
 const arqRe = [{ tipo: "mensalidade", contrato: "0309917", competencia: "2026-10", soma: 0, beneficiarios: [fam(1, "0 a 18", 94.12), fam(2, "29 a 33", 171.29), fam(3, "54 a 58", 338.29)] }];
