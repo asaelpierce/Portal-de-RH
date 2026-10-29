@@ -317,7 +317,7 @@ const NAV=[
 const NAV_FLAT=NAV.flatMap(g=>g.items);
 
 // LOGIN
-function Login({onLogin,onPortal}){
+function Login({onLogin,onPortal,aviso}){
   const[email,setEmail]=useState("");const[pass,setPass]=useState("");const[err,setErr]=useState("");const[loading,setLoading]=useState(false);
   // Removido o "Acesso rápido": ele trazia e-mail e senha reais no bundle público — qualquer
   // pessoa que abrisse a página entrava como RH. Para testes, use contas de teste em ambiente local.
@@ -353,6 +353,7 @@ function Login({onLogin,onPortal}){
           </div>
         </div>
         <div style={{background:C.s1,border:"1px solid "+C.bdrHi,borderRadius:16,padding:28}}>
+          {aviso&&<div role="status" style={{background:C.accBg,border:"1px solid "+C.acc+"40",borderRadius:10,padding:"10px 14px",fontSize:13,color:C.txt,marginBottom:16}}>📋 {aviso}<div style={{fontSize:12,color:C.txm,marginTop:4}}>Use o seu e-mail e a sua senha do portal. Não sabe a senha? Peça ao RH.</div></div>}
           <div style={{marginBottom:22}}><div style={{fontSize:22,fontWeight:700,marginBottom:4}}>Bem-vindo de volta</div><div style={{fontSize:13,color:C.txm}}>Portal de gestão de pessoas</div></div>
           <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:16}}>
             <Inp label="E-mail" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="nome@kalenborn.com.br"/>
@@ -808,11 +809,13 @@ function Planner({user,users,ferias,tarefas,setTarefas,setPage}){
 }
 
 // FÉRIAS
-function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast}){
+function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast,abrirAgora,limparAbrir}){
   // ── Fluxo (decisão do RH em 08/10/2026): o colaborador pede ao líder fora do sistema; o LÍDER lança aqui
   // → GESTOR aprova → RH aprova → colaborador vê na tela e recebe e-mail. Saldos vêm da folha (aba Saldos).
   const VAZIO_LANC={userId:"",periodoKey:"",periodoManual:"",opcao:"",inicio:"",adiantamento13:"",obs:"",ciente:false};
   const[modalLanc,setModalLanc]=useState(false);const[formLanc,setFormLanc]=useState(VAZIO_LANC);const[erroLanc,setErroLanc]=useState("");
+  // Link direto (?abrir=ferias): abre o lançamento logo após o login.
+  useEffect(()=>{if(abrirAgora==="ferias"){setFormLanc(VAZIO_LANC);setErroLanc("");setModalLanc(true);limparAbrir?.();}},[abrirAgora]);
   const[saldos,setSaldos]=useState({carregando:true,imp:null,linhas:[]});const[importando,setImportando]=useState(false);const[buscaSaldo,setBuscaSaldo]=useState("");
   const arqRef=useRef(null);
   const[tab,setTab]=useState("lista");const[modal,setModal]=useState(false);
@@ -1053,6 +1056,7 @@ function Ferias({user,users,ferias,setFerias,criarTarefaAuto,showToast}){
     <div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:20}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
         <div><div style={{fontSize:22,fontWeight:800,letterSpacing:"-.02em"}}>Férias</div><div style={{fontSize:13,color:C.txm,marginTop:2}}>{isRH?"Controle total — RH pode editar, aprovar ou cancelar qualquer registro":"Controle completo de períodos"}</div></div>
+        {can(user.role,"rh")&&<BotoesLinks chaves={["ferias"]} showToast={showToast}/>}
         {can(user.role,"lider")&&<Btn onClick={()=>{setFormLanc(VAZIO_LANC);setErroLanc("");setModalLanc(true);}}>+ Lançar férias</Btn>}
       </div>
       <div style={{display:"flex",gap:3,background:C.s2,borderRadius:10,padding:3,border:"1px solid "+C.bdr,width:"fit-content",flexWrap:"wrap"}}>
@@ -3444,7 +3448,7 @@ function GestBeneficios({user,users,benCatalogo,setBenCatalogo,benUsuarios,setBe
 
 
 // MOVIMENTAÇÕES — Admissão e Demissão (escala Líder → Gestor → RH)
-function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,setVagas,showToast}){
+function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,setVagas,showToast,abrirAgora,limparAbrir}){
   // Admissão/Demissão grava pelas funções do banco (mov_abrir/mov_detalhar/mov_decidir), que conferem o perfil em cada
   // etapa. Antes gravava direto na tabela — bloqueado pelo banco — e a falha não aparecia (a janela só não fechava).
   const erroMov=(error,padrao)=>showToast?.(error?.message||padrao,"error");
@@ -3484,6 +3488,14 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
 
   const isRH=can(user.role,"rh");
   const gestores=users.filter(u=>can(u.role,"gestor"));
+  // Link direto (?abrir=admissao|movimentacao|demissao): abre o formulário logo após o login.
+  useEffect(()=>{
+    if(abrirAgora==="admissao"){setFormAdmLider({...ADM_VAZIA,gestorId:can(user.role,"gestor")?String(user.id):""});setModalNova("admissao");}
+    else if(abrirAgora==="movimentacao"){setFormMov({...MOV_VAZIA,gestorId:can(user.role,"gestor")?String(user.id):"",vigencia:hojeISO()});setModalNova("movimentacao");}
+    else if(abrirAgora==="demissao")setModalNova("demissao");
+    else return;
+    limparAbrir?.();
+  },[abrirAgora]);
 
   const TIPO_DEM={sem_justa_causa:"Sem justa causa",justa_causa:"Justa causa",pedido_demissao:"Pedido do colaborador",acordo:"Acordo (distrato)",fim_contrato:"Fim de contrato"};
   const STAGE={pendente_lider:{l:"Aguard. Líder",c:C.amb,n:1},pendente_gestor:{l:"Aguard. Gestor",c:C.blu,n:2},pendente_rh:{l:"Aguard. RH",c:C.pur,n:3},aprovado:{l:"Aprovado",c:C.grn,n:4},rejeitado:{l:"Rejeitado",c:C.red,n:4}};
@@ -3613,6 +3625,7 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
         <div>
           <div style={{fontSize:22,fontWeight:800,letterSpacing:"-.02em"}}>⇄ Admissão, Demissão e Movimentação</div>
           <div style={{fontSize:13,color:C.txm,marginTop:2}}>Líder solicita → Gestor detalha → RH decide e efetiva</div>
+          {isRH&&<div style={{marginTop:8}}><BotoesLinks chaves={["admissao","movimentacao","demissao"]} showToast={showToast}/></div>}
         </div>
         <div style={{display:"flex",gap:8}}>
           {can(user.role,"lider")&&<Btn v="success" onClick={()=>{setFormAdmLider(f=>({...f,gestorId:can(user.role,"gestor")?String(user.id):f.gestorId}));setModalNova("admissao");}}>+ Pedir admissão</Btn>}
@@ -4919,6 +4932,21 @@ function CienciaFeriasPublica({token}){
 // cartão (RelatorioMensal): ler o PDF → conferir no banco → rateio, conferência, planilha, e-mail e histórico.
 // Seguro de vida (Prudential): src/seguroVida.js. Plano odontológico (Bradesco Dental): src/odontoBradesco.js.
 const SEM_CC="SEM CENTRO DE CUSTO (verificar)";
+// Links diretos dos formulários (substituem os links dos Forms KdB 163/181/133): ?abrir=<chave> → após o login, o portal
+// vai para a página e abre a janela do formulário.
+const FORM_LINKS={
+  ferias:{page:"ferias",rotulo:"Lançar férias (antigo Forms KdB 163)",min:"lider"},
+  admissao:{page:"movimentacoes",rotulo:"Pedir admissão — Requisição de Pessoal (antigo Forms KdB 181)",min:"lider"},
+  movimentacao:{page:"movimentacoes",rotulo:"Pedir movimentação de pessoal (antigo Forms KdB 133)",min:"lider"},
+  demissao:{page:"movimentacoes",rotulo:"Pedir demissão",min:"lider"},
+};
+const linkFormulario=chave=>`${window.location.origin}/?abrir=${chave}`;
+async function copiarTexto(txt,showToast,msg){try{await navigator.clipboard.writeText(txt);showToast?.(msg||"Link copiado.","success");}catch{window.prompt("Copie o link:",txt);}}
+function BotoesLinks({chaves,showToast}){
+  return(<div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}><span style={{fontSize:12,color:C.txd}}>🔗 Links para mandar:</span>
+    {chaves.map(k=><button key={k} title={linkFormulario(k)} onClick={()=>copiarTexto(linkFormulario(k),showToast,`Link copiado: ${FORM_LINKS[k].rotulo}. Cole no Teams ou no e-mail.`)}
+      style={{background:C.s1,border:"1px solid "+C.bdr,borderRadius:7,padding:"4px 10px",fontSize:11,color:C.txm,cursor:"pointer"}}>Copiar link · {k==="ferias"?"Férias":k==="admissao"?"Admissão":k==="movimentacao"?"Movimentação":"Demissão"}</button>)}</div>);
+}
 const RELATORIOS_MENSAIS=[
   {chave:"seguro",icone:"🛡",titulo:"Seguro de vida — rateio por centro de custo",
    descricao:<>Anexe o <b>Relatório de Movimentação</b> (PDF) que a Prudential envia todo mês. O portal lê os segurados, aplica o <b>centro de custo da folha da BRIT</b>, soma por centro de custo e aponta o que precisa de atenção.</>,
@@ -5952,6 +5980,9 @@ export default function App(){
   
   // Cada aviso novo cancela o temporizador do anterior (senão o sumiço agendado do aviso antigo apagava o novo antes da hora).
   const toastTimer=useRef(null);
+  // Link direto de formulário (?abrir=...): guardado ao abrir a página; aplicado depois do login.
+  const[abrirPendente,setAbrirPendente]=useState(()=>{const k=new URLSearchParams(window.location.search).get("abrir");return FORM_LINKS[k]?k:null;});
+  const[abrirAgora,setAbrirAgora]=useState(null);
   const showToast=(msg,type="success")=>{setToast({msg,type});clearTimeout(toastTimer.current);toastTimer.current=setTimeout(()=>setToast(null),4000);};
   useEffect(()=>{initSB().then(sb=>{if(sb)setSbReady(true);else setSbReady(false);});},[]);
   
@@ -6005,7 +6036,13 @@ export default function App(){
     setLoading(false);
   };
   
-  const handleLogin=async u=>{setUser(u);setPage("dashboard");await loadAll(u);};
+  const handleLogin=async u=>{setUser(u);
+    const f=abrirPendente&&FORM_LINKS[abrirPendente];
+    if(f){if(can(u.role,f.min)){setPage(f.page);setAbrirAgora(abrirPendente);}
+      else{setPage("dashboard");setTimeout(()=>showToast("Este formulário é para líderes, gestores e RH. Fale com o RH se precisar.","warn"),300);}
+      setAbrirPendente(null);try{window.history.replaceState(null,"",window.location.pathname);}catch{}}
+    else setPage("dashboard");
+    await loadAll(u);};
   // Sessão do Supabase guardada: ao abrir/recarregar o portal, entra direto (antes recarregar deslogava).
   const[restaurando,setRestaurando]=useState(true);
   useEffect(()=>{(async()=>{
@@ -6073,14 +6110,14 @@ export default function App(){
   if(eventoPublico)return<FormularioEvento slug={eventoPublico}/>;
   if(!user&&screen==="career")return<CareerPortal vagas={vagasAbertas} carregando={vagasCarregando} onBack={()=>setScreen("login")} onSubmit={c=>setCandidates(p=>[c,...p])} criarTarefaAuto={criarTarefaAuto}/>;
   if(!user&&restaurando)return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",gap:10,color:C.txm,background:C.bg}}><style>{CSS}</style><Spin size={18}/> Carregando…</div>;
-  if(!user)return<Login onLogin={handleLogin} onPortal={abrirPortalVagas}/>;
+  if(!user)return<Login onLogin={handleLogin} onPortal={abrirPortalVagas} aviso={abrirPendente?`Entre para abrir: ${FORM_LINKS[abrirPendente].rotulo}`:""}/>;
   if(loading&&users.length===0)return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,flexDirection:"column",gap:16}}><style>{CSS}</style><Spin size={36}/><div style={{fontSize:14,color:C.txd}}>Carregando dados...</div></div>;
   
   // Por quê: as telas contavam e listavam também desligados e contas sem situação ativa (totais do Painel,
   // headcount, equipes, seletores, chat). Elas recebem só os ATIVOS; a lista completa fica em todosUsuarios
   // (e a tela Colaboradores recebe tudo, para o RH poder "Mostrar desligados").
   const usuariosAtivos=users.filter(u=>u.status==="ativo");
-  const props={user,users:usuariosAtivos,todosUsuarios:users,setUsers,ferias,setFerias,feedbacks,setFeedbacks,chat,setChat,avaliacoes,setAvaliacoes,candidates,setCandidates,vagas:vagasAbertas,vagasTodas:vagas,setVagas,talentos,setTalentos,comunicados,setComunicados,exames,setExames,tarefas,setTarefas,criarTarefaAuto,pulses,setPulses,nps,setNps,benCatalogo,setBenCatalogo,benUsuarios,setBenUsuarios,benSolicits,setBenSolicits,movs,setMovs,showToast};
+  const props={user,users:usuariosAtivos,todosUsuarios:users,setUsers,ferias,setFerias,feedbacks,setFeedbacks,chat,setChat,avaliacoes,setAvaliacoes,candidates,setCandidates,vagas:vagasAbertas,vagasTodas:vagas,setVagas,talentos,setTalentos,comunicados,setComunicados,exames,setExames,tarefas,setTarefas,criarTarefaAuto,pulses,setPulses,nps,setNps,benCatalogo,setBenCatalogo,benUsuarios,setBenUsuarios,benSolicits,setBenSolicits,movs,setMovs,showToast,abrirAgora,limparAbrir:()=>setAbrirAgora(null)};
   
   const renderPage=()=>{
     switch(page){
