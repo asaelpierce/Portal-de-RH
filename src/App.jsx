@@ -5423,6 +5423,34 @@ function VinculosOdonto({rel,users,user,showToast,onRefazer}){
   </div>);
 }
 
+// Avisos no canal do RH no Teams (Power Automate): a URL do gatilho HTTP fica guardada no banco, fechada, e só aparece
+// mascarada. A cada pedido pelos formulários o banco avisa; e há um lembrete diário (dias úteis, 8h) de pendências.
+function AvisosTeams({user}){
+  const[st,setSt]=useState(null);const[url,setUrl]=useState("");const[msg,setMsg]=useState(null);const[ocupado,setOcupado]=useState("");
+  const carregar=async()=>{const{data,error}=await getSB().rpc("teams_config_status",{p_pedido_por:user.id});setSt(error?{erro:error.message}:data);};
+  useEffect(()=>{carregar();},[]);
+  const salvar=async apagar=>{setOcupado("salvar");setMsg(null);
+    const{data,error}=await getSB().rpc("teams_config_salvar",{p_pedido_por:user.id,p_url:apagar?"":url.trim()});setOcupado("");
+    if(error){setMsg({t:"erro",x:error.message});return;}setSt(data);setUrl("");setMsg({t:"ok",x:apagar?"URL removida: os avisos estão desligados.":"URL salva. Clique em “Enviar teste” para conferir no canal."});};
+  const testar=async()=>{setOcupado("testar");setMsg(null);const{data,error}=await getSB().rpc("teams_testar",{p_pedido_por:user.id});setOcupado("");
+    if(error){setMsg({t:"erro",x:error.message});return;}
+    setMsg(data?.enviado?{t:"ok",x:"Teste enviado. Em alguns segundos deve aparecer no canal do RH. Se não aparecer, confira o fluxo no Power Automate (histórico de execuções)."}:{t:"erro",x:"Nenhuma URL configurada."});};
+  return(<Card>
+    <div style={{fontSize:14,fontWeight:700,marginBottom:4}}>🔔 Avisos no Teams (canal do RH)</div>
+    <div style={{fontSize:12,color:C.txm,marginBottom:12}}>Cole aqui a URL do gatilho <b>“Quando uma solicitação HTTP é recebida”</b> do fluxo do Power Automate. O portal avisa o canal a cada pedido feito pelos formulários (férias, requisição, movimentação, demissão) e manda um <b>lembrete às 8h nos dias úteis</b> com as pendências de prazo chegando ou paradas.</div>
+    {st===null?<Spin size={14}/>:st.erro?<div style={{color:C.red,fontSize:13}}>{st.erro}</div>:
+      <div style={{fontSize:13,marginBottom:10}}>Situação: {st.configurado?<><b style={{color:C.grn}}>ligado</b> <span style={{color:C.txd,fontSize:12}}>· {st.mascarado} · atualizado por {st.atualizado_por||"—"} em {st.atualizado_em?new Date(st.atualizado_em).toLocaleString("pt-BR"):"—"}</span></>:<b style={{color:C.txd}}>desligado (nenhuma URL)</b>}</div>}
+    <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end"}}>
+      <div style={{flex:"1 1 320px"}}><Inp label="URL do gatilho HTTP (Power Automate)" type="password" value={url} onChange={e=>setUrl(e.target.value)} placeholder="https://prod-…logic.azure.com/workflows/…"/></div>
+      <Btn onClick={()=>salvar(false)} disabled={!url.trim()||!!ocupado}>{ocupado==="salvar"?<Spin size={12} color="#fff"/>:null} Salvar</Btn>
+      <Btn v="outline" onClick={testar} disabled={!st?.configurado||!!ocupado}>{ocupado==="testar"?<Spin size={12}/>:"📨"} Enviar teste</Btn>
+      {st?.configurado&&<Btn v="ghost" onClick={()=>{if(window.confirm("Desligar os avisos do Teams (apagar a URL)?"))salvar(true);}} disabled={!!ocupado}>Desligar</Btn>}
+    </div>
+    {msg&&<div style={{marginTop:10,fontSize:13,color:msg.t==="ok"?C.grn:C.red}}>{msg.x}</div>}
+    <div style={{fontSize:11,color:C.txd,marginTop:8}}>A URL funciona como uma senha (quem a tiver consegue postar no canal): por isso ela fica guardada no banco e aparece aqui só pela metade.</div>
+  </Card>);
+}
+
 function Config({user}){
   return(
     <div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:20}}>
@@ -5435,6 +5463,7 @@ function Config({user}){
           ))}
         </div>
       </Card>
+      {can(user.role,"rh")&&<AvisosTeams user={user}/>}
       {can(user.role,"rh")&&<IntegracaoCurriculos user={user}/>}
       <Card><div style={{fontSize:14,fontWeight:700,marginBottom:10}}>Ambiente</div><div style={{fontSize:12,color:C.txm,display:"flex",flexDirection:"column",gap:6}}><span>🗄 {SB_URL}</span><span title="Transição para o login do Supabase: 'Supabase' é o login novo; 'antigo' é a reserva">🔐 Login: {window.__modoLogin==="supabase"?"Supabase (sessão segura)":"—"}</span><span>👤 {user.name} ({user.role})</span><span>📋 K.RH v2.0 — Kalenborn International</span></div></Card>
     </div>

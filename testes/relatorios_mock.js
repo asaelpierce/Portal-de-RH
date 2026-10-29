@@ -94,6 +94,10 @@
      const EQ={1:[2,3],3:[3]};if(!EQ[a.p_dados.solicitante_id])return er("Escolha o seu nome na lista de quem pode pedir. Se não estiver, fale com o RH.");
      if(a.p_dados.user_id&&!EQ[a.p_dados.solicitante_id].includes(a.p_dados.user_id))return er("Este colaborador não é da sua equipe. Fale com o RH.");
      return ok({ok:true,tipo:a.p_tipo,id:77,colaborador:(USERS.find(x=>x.id===a.p_dados.user_id)||{}).name||null});}
+   if(fn==="teams_config_status")return ok(window.__TEAMS?{configurado:true,mascarado:window.__TEAMS.slice(0,38)+"…"+window.__TEAMS.slice(-6),atualizado_por:"Ana RH",atualizado_em:new Date().toISOString()}:{configurado:false});
+   if(fn==="teams_config_salvar"){if(a.p_url&&!/logic\.azure\.com/.test(a.p_url))return er("Cole a URL do gatilho \"Quando uma solicitação HTTP é recebida\" do Power Automate (começa com https://).");window.__TEAMS=a.p_url||null;
+     return ok(window.__TEAMS?{configurado:true,mascarado:window.__TEAMS.slice(0,38)+"…"+window.__TEAMS.slice(-6),atualizado_por:"Ana RH",atualizado_em:new Date().toISOString()}:{configurado:false});}
+   if(fn==="teams_testar"){window.__TEAMS_TESTE=(window.__TEAMS_TESTE||0)+1;return ok({enviado:!!window.__TEAMS});}
    return ok(null);},
   functions:{invoke:async(nome,opt)=>{window.__INVOKES=(window.__INVOKES||[]).concat([{nome,body:opt&&opt.body}]);
     if(nome==="ferias-ciencia")return{data:{ok:true,link:location.origin+"/?ciencia="+"a1".repeat(18),enviado:!!(opt&&opt.body&&opt.body.enviar),para:"bi***@teste.local"},error:null};
