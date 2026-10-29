@@ -65,15 +65,19 @@ ok("R4b crédito/estorno aparece na conferência", r.conferencia.creditos.some((
 ok("R10 família não encontrada: aviso e lista para vincular", r2.conferencia.nao_encontrados_fam.some((x) => x.familia === F2) && r2.rateio[0].centros.some((c) => /SEM CENTRO DE CUSTO/.test(c.centro_custo)));
 
 const rel = { ...r, competencia: "2026-10" };
+const celulas = (arq) => JSON.parse(execSync(`python3 -c "
+import openpyxl,json; wb=openpyxl.load_workbook('${arq}'); print(json.dumps({'abas':wb.sheetnames,'txt':' | '.join(str(c.value) for ws in wb for r in ws.iter_rows() for c in r if c.value is not None)}))"`).toString());
 const arq = path.join(tmp, "u.xlsx"); fs.writeFileSync(arq, U.gerarPlanilhaUnimed(rel));
-const x = JSON.parse(execSync(`python3 -c "
-import openpyxl,json; wb=openpyxl.load_workbook('${arq}'); d=wb['Descontos em folha']; rs=wb['Rescisão']; cp=wb['Coparticipação']
-print(json.dumps({'abas':wb.sheetnames,'desc':[[c.value for c in row] for row in d.iter_rows(min_row=2)],'resc':[[c.value for c in row] for row in rs.iter_rows(min_row=2)],'paga':[r[7].value for r in cp.iter_rows(min_row=2)]}))"`).toString());
-ok("P1 abas: Rateio, Descontos em folha, Rescisão, Mensalidade, Coparticipação, Conferência", JSON.stringify(x.abas) === JSON.stringify(["Rateio", "Descontos em folha", "Rescisão", "Mensalidade", "Coparticipação", "Conferência"]));
-ok("P2 descontos em folha da Maria (60,50 + 8,60 = 69,10) e total", x.desc.some((l) => l[0] === "Maria Titular" && l[3] === 60.5 && l[4] === 8.6 && l[5] === 69.1) && x.desc[x.desc.length - 1][0] === "TOTAL");
-ok("P3 rescisão com o desligado", x.resc.length === 1 && x.resc[0][0] === "Pedro Saiu");
-ok("P4 coparticipação marca quem paga cada procedimento", x.paga.includes("Empresa") && x.paga.includes("50% colaborador"));
+const x = celulas(arq);
+ok("P1 rateio: só a aba Rateio e sem nomes", JSON.stringify(x.abas) === JSON.stringify(["Rateio"]) && !/Maria|MARIA|Pedro|PEDRO|Joao|JOAO|Diretor|FILHO/.test(x.txt));
+const arqD = path.join(tmp, "d.xlsx"); fs.writeFileSync(arqD, U.gerarDescontosUnimed(rel));
+const d = JSON.parse(execSync(`python3 -c "
+import openpyxl,json; wb=openpyxl.load_workbook('${arqD}'); d=wb['Descontos em folha']; rs=wb['Rescisão']
+print(json.dumps({'abas':wb.sheetnames,'desc':[[c.value for c in row] for row in d.iter_rows(min_row=3)],'resc':[[c.value for c in row] for row in rs.iter_rows(min_row=3)]}))"`).toString());
+ok("P2 descontos em folha (arquivo separado): Maria 60,50 + 8,60 = 69,10 e total", JSON.stringify(d.abas) === JSON.stringify(["Descontos em folha", "Rescisão"]) && d.desc.some((l) => l[0] === "Maria Titular" && l[3] === 60.5 && l[4] === 8.6 && l[5] === 69.1) && d.desc[d.desc.length - 1][0] === "TOTAL");
+ok("P3 rescisão com o desligado (arquivo separado)", d.resc.length === 1 && d.resc[0][0] === "Pedro Saiu");
+ok("R11 cada família guarda o colaborador (para a correção de centro de custo)", r.linhas.every((l) => "usuario_id" in l));
 const em = U.emailResumoUnimed(rel);
-ok("E1 e-mail com mês, descontos e conferência", /outubro\/2026/.test(em.assunto) && /Descontos em folha/.test(em.html) && /rescisão/.test(em.html));
+ok("E1 e-mail com mês e descontos, sem nomes", /outubro\/2026/.test(em.assunto) && /Descontos em folha/.test(em.html) && /ponto\(s\) para conferir/.test(em.html) && !/Pedro|Maria/.test(em.html));
 let falhas = 0; for (const [n, v] of Object.entries(res)) { console.log((v ? "OK  " : "FALHOU ") + n); if (!v) falhas++; }
 process.exit(falhas ? 1 : 0);

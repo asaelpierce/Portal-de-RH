@@ -30,8 +30,12 @@ with sync_playwright() as p:
     res["U7 refazer: família vinculada sai de 'sem centro de custo'"]="Vincular famílias" not in t and "VULCANIZACAO - MÃO DE OBRA" in t and "SEM CENTRO DE CUSTO" not in t
     with pg.expect_download() as d: un.get_by_role("button",name=re.compile("Baixar planilha")).click()
     arq=d.value; caminho="/tmp/unimed_baixado.xlsx"; arq.save_as(caminho); wb=openpyxl.load_workbook(caminho)
-    desc=[[c.value for c in r] for r in wb["Descontos em folha"].iter_rows(min_row=2)]
-    res["U8 planilha: abas e descontos (Maria 60,50 + 3,60)"]=arq.suggested_filename=="unimed_rateio_descontos_2026-10.xlsx" and wb.sheetnames==["Rateio","Descontos em folha","Rescisão","Mensalidade","Coparticipação","Conferência"] and any(r[0]=="Maria Titular" and r[3]==60.5 and r[4]==3.6 for r in desc)
+    tudo=" ".join(str(c.value) for ws in wb for r in ws.iter_rows() for c in r if c.value is not None)
+    res["U8 planilha do rateio: só Rateio e sem nomes"]=arq.suggested_filename=="unimed_rateio_descontos_2026-10.xlsx" and wb.sheetnames==["Rateio"] and "Maria" not in tudo and "Pedro" not in tudo
+    with pg.expect_download() as d2: un.get_by_role("button",name=re.compile("Descontos em folha \\(BRIT\\)")).click()
+    a2=d2.value; c2="/tmp/unimed_desc.xlsx"; a2.save_as(c2); wd=openpyxl.load_workbook(c2)
+    desc=[[c.value for c in r] for r in wd["Descontos em folha"].iter_rows(min_row=3)]
+    res["U8b descontos em folha em arquivo separado (Maria 60,50 + 3,60)"]=a2.suggested_filename=="unimed_descontos_folha_2026-10.xlsx" and wd.sheetnames==["Descontos em folha","Rescisão"] and any(r[0]=="Maria Titular" and r[3]==60.5 and r[4]==3.6 for r in desc)
     res["U9 histórico e os cinco cartões"]="outubro/2026" in un.inner_text().split("Histórico")[1].lower() and all(pg.locator(f"[data-relatorio={k}]").count()==1 for k in ("seguro","odonto","araujo","sesi","unimed"))
     res["sem exceções"]=not errs
     if errs: print(errs[:3])

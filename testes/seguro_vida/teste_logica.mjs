@@ -32,22 +32,16 @@ const rel = { competencia: "2026-10", total: 17.34, pessoas: 2,
   conferencia: { premio_padrao: 4.47, nao_encontrados: [], sem_centro_custo: [], desligados_cobrados: [{ nome: "PEDRO DESLIGADO", desligamento: "2026-10-15" }],
     exclusoes: ["ANA EXCLUÍDA TESTE"], inclusoes: [], premio_diferente: [{ nome: "JOSÉ CONCEIÇÃO FICTÍCIO", premio: 12.87, capital: 119876 }],
     ativos_fora_do_seguro: [{ nome: "Aprendiz Teste", cargo: "Aprendiz", admissao: "2025-10-06", aprendiz: true }, { nome: "Novo Teste", cargo: "Auxiliar", admissao: "2026-10-01", aprendiz: false }], achados_pelo_nome: [] } };
+const celulas = (arq) => JSON.parse(execSync(`python3 -c "
+import openpyxl,json; wb=openpyxl.load_workbook('${arq}'); print(json.dumps({'abas':wb.sheetnames,'txt':' | '.join(str(c.value) for ws in wb for r in ws.iter_rows() for c in r if c.value is not None)}))"`).toString());
 const arq = path.join(tmp, "rateio.xlsx"); fs.writeFileSync(arq, sv.gerarPlanilhaVG(rel));
-const py = execSync(`python3 -c "
-import openpyxl,json; wb=openpyxl.load_workbook('${arq}'); r=wb['Rateio']; l=wb['Lista']; c=wb['Conferência']
-print(json.dumps({'abas':wb.sheetnames,'titulo':r['A1'].value,'cc1':[r['A4'].value,r['B4'].value,r['C4'].value],'total':[r['A6'].value,r['B6'].value,r['C6'].value],
-'lista_cab':[x.value for x in l[1]],'lista_l3':[x.value for x in l[4]],'conf':[[x.value for x in row] for row in c.iter_rows(min_row=2)]}))"`).toString();
-const x = JSON.parse(py);
-ok("P1 abas Rateio, Lista e Conferência", JSON.stringify(x.abas) === JSON.stringify(["Rateio", "Lista", "Conferência"]));
-ok("P2 título com o mês por extenso", /outubro\/2026/.test(x.titulo));
-ok("P3 rateio: centro de custo, pessoas e valor numérico", x.cc1[0] === "VULCANIZACAO - MÃO DE OBRA" && x.cc1[1] === 1 && x.cc1[2] === 4.47);
-ok("P4 linha de total soma pessoas e valor", x.total[0] === "TOTAL" && x.total[1] === 2 && Math.abs(x.total[2] - 17.34) < 0.001);
-ok("P5 lista: CPF formatado e sem centro de custo sinalizado", x.lista_l3[4] === "333.222.111-00" && /SEM CENTRO DE CUSTO/.test(x.lista_l3[1]) && x.lista_cab[0] === "Nome");
-ok("P6 conferência: desligado cobrado e aprendiz como 'verificar'", x.conf.some((c) => /Desligados ainda cobrados/.test(c[0]) && /PEDRO DESLIGADO \(desligado em 15\/10\/2026\)/.test(c[1]))
-   && x.conf.some((c) => /Aprendizes fora do seguro \(verificar/.test(c[0])) && x.conf.some((c) => /Ativos na folha que não estão no seguro/.test(c[0]) && /Novo Teste/.test(c[1])));
+const x = celulas(arq);
+ok("P1 planilha só com a aba Rateio", JSON.stringify(x.abas) === JSON.stringify(["Rateio"]));
+ok("P2 totais por centro de custo e TOTAL", /VULCANIZACAO - MÃO DE OBRA \| 1 \| 4\.47/.test(x.txt) && /TOTAL/.test(x.txt));
+ok("P3 sem nomes nem CPF no arquivo", !/MARIA|JOSÉ|ANA EXCL|PEDRO|111\.444|02233344405/.test(x.txt));
 const em = sv.emailResumoVG(rel);
 ok("E1 e-mail: assunto com o mês e total em reais", /outubro\/2026/.test(em.assunto) && /R\$\s?17,34/.test(em.html));
-ok("E2 e-mail: tabela por centro de custo e conferência", /ADMINISTRATIVE BOARD/.test(em.html) && /Desligados ainda cobrados/.test(em.html));
+ok("E2 e-mail: tabela por centro de custo, quantos pontos conferir e sem nomes", /ADMINISTRATIVE BOARD/.test(em.html) && /ponto\(s\) para conferir/.test(em.html) && !/PEDRO|Aprendiz Teste|MARIA/.test(em.html));
 ok("E3 e-mail escapa HTML", !/<script>/.test(sv.emailResumoVG({ ...rel, rateio: [{ centro_custo: "<script>x</script>", pessoas: 1, valor: 1 }] }).html));
 let falhas = 0; for (const [n, v] of Object.entries(res)) { console.log((v ? "OK  " : "FALHOU ") + n); if (!v) falhas++; }
 process.exit(falhas ? 1 : 0);

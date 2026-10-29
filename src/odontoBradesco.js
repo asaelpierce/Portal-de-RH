@@ -66,10 +66,7 @@ export function itensConferenciaOdonto(conf) {
 const SEM_CC = "SEM CENTRO DE CUSTO (verificar)";
 export function gerarPlanilhaOdonto(rel) {
   const rateio = rel.rateio || [];
-  const soma = (k) => rateio.reduce((a, r) => a + Number(r[k] || 0), 0);
-  const lanc = (b) => (b.lancamentos || []).map((l) => `${TIPO_LANC[l.tipo] || l.tipo} ${l.mes}: ${brl(l.valor)}`).join(" | ");
-  const conf = itensConferenciaOdonto(rel.conferencia).map((i) => [i.titulo, i.texto]);
-  return gerarXlsx([
+  const soma = (k) => rateio.reduce((a, r) => a + Number(r[k] || 0), 0);  return gerarXlsx([
     { nome: "Rateio", larguras: [48, 10, 14, 14], cabecalho: 2, linhas: [
       [{ v: `Plano odontológico (Bradesco) — rateio por centro de custo — fatura ${nomeCompetencia(rel.competencia)}`, estilo: "titulo" }],
       [`Vigência ${rel.vigencia || "—"} · total ${brl(rel.total)} · ${rel.titulares} titulares e ${rel.beneficiarios} beneficiários · centro de custo da folha da BRIT (dependentes seguem o titular)`],
@@ -77,12 +74,6 @@ export function gerarPlanilhaOdonto(rel) {
       ...rateio.map((r) => [r.centro_custo, r.titulares, r.beneficiarios, Number(r.valor)]),
       [{ v: "TOTAL", estilo: "negrito" }, { v: soma("titulares"), estilo: "negrito" }, { v: soma("beneficiarios"), estilo: "negrito" },
        { v: Math.round(soma("valor") * 100) / 100, estilo: "negrito" }]] },
-    { nome: "Relação", larguras: [44, 40, 40, 12, 12, 30, 70, 12], cabecalho: 0, linhas: [
-      ["Centro de custo", "Beneficiário", "Titular", "Parentesco", "Certificado", "Colaborador responsável", "Lançamentos", "Valor (R$)"].map((v) => ({ v, estilo: "cabecalho" })),
-      ...(rel.linhas || []).map((b) => [b.centro_custo || SEM_CC, b.nome, b.titular, b.parentesco, `${b.certificado}/${b.seq}`, b.responsavel || "", lanc(b), Number(b.valor)])] },
-    { nome: "Conferência", larguras: [56, 110], cabecalho: 0, linhas: [
-      [{ v: "Ponto", estilo: "cabecalho" }, { v: "Pessoas", estilo: "cabecalho" }],
-      ...(conf.length ? conf : [["Nada a conferir", "Todos os titulares vinculados, com centro de custo."]])] },
   ]);
 }
 
@@ -90,13 +81,13 @@ export function emailResumoOdonto(rel) {
   const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const td = "padding:4px 10px;border-bottom:1px solid #ddd";
   const linhas = (rel.rateio || []).map((r) => `<tr><td style="${td}">${esc(r.centro_custo)}</td><td style="${td};text-align:right">${r.beneficiarios}</td><td style="${td};text-align:right">${esc(brl(r.valor))}</td></tr>`).join("");
-  const conf = itensConferenciaOdonto(rel.conferencia).map((i) => `<li><b>${esc(i.titulo)}:</b> ${esc(i.texto)}</li>`).join("");
+  const nConf = itensConferenciaOdonto(rel.conferencia).length;  // e-mail sem nomes: só quantos pontos há para conferir
   return {
     assunto: `Plano odontológico — rateio por centro de custo — fatura ${nomeCompetencia(rel.competencia)}`,
     html: `<p>Rateio do plano odontológico (Bradesco Dental), fatura de <b>${esc(nomeCompetencia(rel.competencia))}</b> (vigência ${esc(rel.vigencia || "—")}): <b>${esc(brl(rel.total))}</b>, ${rel.titulares} titulares e ${rel.beneficiarios} beneficiários. Centro de custo conforme a folha da BRIT; dependentes seguem o titular.</p>
 <table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px"><tr><th style="${td};text-align:left">Centro de custo</th><th style="${td}">Beneficiários</th><th style="${td}">Valor</th></tr>${linhas}
 <tr><td style="${td}"><b>TOTAL</b></td><td style="${td};text-align:right"><b>${rel.beneficiarios}</b></td><td style="${td};text-align:right"><b>${esc(brl(rel.total))}</b></td></tr></table>
-${conf ? `<p><b>Conferência</b></p><ul>${conf}</ul>` : "<p>Conferência: nada a apontar.</p>"}
-<p style="color:#666;font-size:12px">A planilha completa (rateio, relação por beneficiário e conferência) está no Portal de RH › Relatórios.</p>`,
+${nConf ? `<p>Conferência: ${nConf} ponto(s) para conferir no Portal de RH (os nomes ficam só no portal).</p>` : "<p>Conferência: nada a apontar.</p>"}
+<p style="color:#666;font-size:12px">O detalhe por pessoa fica só no Portal de RH › Relatórios.</p>`,
   };
 }

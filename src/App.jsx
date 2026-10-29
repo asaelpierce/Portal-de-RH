@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useId } from "react";
+import { useState, useEffect, useRef, useCallback, useId, Fragment } from "react";
 // Portal: janelas e avisos são desenhados direto no <body>, fora das telas (ver Modal).
 import { createPortal } from "react-dom";
 import { gerarXlsx } from "./planilhaXlsx.js";
@@ -7,7 +7,7 @@ import { lerFaturaOdonto, gerarPlanilhaOdonto, emailResumoOdonto, itensConferenc
 import { lerRelatorioAraujo, gerarPlanilhaAraujo, emailResumoAraujo, itensConferenciaAraujo } from "./araujo.js";
 import { lerRelacaoSesi, gerarPlanilhaSesi, emailResumoSesi, itensConferenciaSesi } from "./sesi.js";
 import { lerAtivosBrit, gerarPlanilhaMovPrudential } from "./seguroMovimentacao.js";
-import { lerVariosUnimed, familiasParaVincular, calcularUnimed, competenciaRelatorio, gerarPlanilhaUnimed, emailResumoUnimed, itensConferenciaUnimed, CONTRATOS as CONTRATOS_UNIMED } from "./unimed.js";
+import { lerVariosUnimed, familiasParaVincular, calcularUnimed, competenciaRelatorio, gerarDescontosUnimed, gerarPlanilhaUnimed, emailResumoUnimed, itensConferenciaUnimed, CONTRATOS as CONTRATOS_UNIMED } from "./unimed.js";
 import { gerarFichaBrit, dadosKitDaAdmissao } from "./fichaBrit.js";
 import { DOCUMENTOS_ADMISSAO, preencherDocx, faltandoPara, TIPOS_AVISO, TIPOS_RESCISAO, SUGESTAO_RESCISAO, DESCONTOS_MARCAR, MODELO_RESCISAO, trocasRescisao } from "./documentosAdmissao.js";
 // Leitura do relatório de saldos da folha BRIT e geração do formulário Word de férias (ver o arquivo para o porquê).
@@ -4918,6 +4918,7 @@ function CienciaFeriasPublica({token}){
 // ── RELATÓRIOS (RH) ── Relatórios mensais automatizados (21/10/2026). Cada relatório é uma configuração do mesmo
 // cartão (RelatorioMensal): ler o PDF → conferir no banco → rateio, conferência, planilha, e-mail e histórico.
 // Seguro de vida (Prudential): src/seguroVida.js. Plano odontológico (Bradesco Dental): src/odontoBradesco.js.
+const SEM_CC="SEM CENTRO DE CUSTO (verificar)";
 const RELATORIOS_MENSAIS=[
   {chave:"seguro",icone:"🛡",titulo:"Seguro de vida — rateio por centro de custo",
    descricao:<>Anexe o <b>Relatório de Movimentação</b> (PDF) que a Prudential envia todo mês. O portal lê os segurados, aplica o <b>centro de custo da folha da BRIT</b>, soma por centro de custo e aponta o que precisa de atenção.</>,
@@ -4930,7 +4931,10 @@ const RELATORIOS_MENSAIS=[
    titRateio:r=>`Rateio de ${nomeCompetencia(r.competencia)}`,
    resumo:r=>`${r.pessoas} segurados · ${(r.rateio||[]).length} centros de custo`,qtd:["Pessoas",x=>x.pessoas],qtdTotal:r=>r.pessoas,
    resumoHist:h=>`${h.pessoas} segurados`,
-   extra:(p)=><MovPrudential {...p}/>},
+   extra:(p)=><MovPrudential {...p}/>,
+   pessoas:r=>(r.linhas||[]).filter(l=>Number(l.premio)>0).map(l=>({cc:l.centro_custo||SEM_CC,uid:l.usuario_id,nome:l.nome,info:brl(l.premio)})),
+   refazer:(user,r)=>getSB().rpc("seguro_vida_conferir",{p_pedido_por:user.id,p_competencia:r.competencia,p_arquivo:r.arquivo_nome||"",
+     p_linhas:(r.linhas||[]).map(l=>({nome:l.nome,cpf:l.cpf,movimentacao:l.movimentacao,premio:l.premio,capital:l.capital,nascimento:l.nascimento,inicio:l.inicio}))})},
   {chave:"odonto",icone:"🦷",titulo:"Plano odontológico (Bradesco) — rateio por centro de custo",
    descricao:<>Anexe a <b>Fatura Técnica</b> (PDF) da Bradesco Dental. O portal soma os lançamentos de cada beneficiário (mensalidade, inclusões e devoluções), lança os <b>dependentes no titular</b> e usa o <b>centro de custo da folha da BRIT</b> do colaborador responsável.</>,
    arraste:"Arraste o PDF da Bradesco Dental ou clique para escolher",sub:"Fatura Técnica com o boleto",
@@ -4945,7 +4949,9 @@ const RELATORIOS_MENSAIS=[
    // Refazer com os mesmos beneficiários (depois de vincular titulares), sem anexar o PDF de novo.
    refazer:(user,r)=>getSB().rpc("odonto_conferir",{p_pedido_por:user.id,p_competencia:r.competencia,p_vigencia:r.vigencia||"",p_arquivo:r.arquivo_nome||"",
      p_beneficiarios:(r.linhas||[]).map(b=>({certificado:b.certificado,seq:b.seq,nome:b.nome,nascimento:b.nascimento,parentesco:b.parentesco,lancamentos:b.lancamentos,valor:b.valor}))}),
-   vinculos:true},
+   vinculos:true,
+   pessoas:r=>Object.values((r.linhas||[]).reduce((g,l)=>{const k=l.certificado;g[k]=g[k]||{cc:l.centro_custo||SEM_CC,uid:l.responsavel_id,nome:l.responsavel||l.titular,n:0,v:0};g[k].n++;g[k].v+=Number(l.valor);return g;},{}))
+     .map(x=>({...x,info:`${x.n} beneficiário${x.n>1?"s":""} · ${brl(x.v)}`}))},
   {chave:"araujo",icone:"💊",titulo:"Convênio Drogaria Araujo — rateio por centro de custo",
    descricao:<>Anexe o <b>Relatório Total Compras agrupado por Funcionário e Período</b> (PDF) da Araujo. O portal rateia o <b>Total Convênio</b> de cada funcionário pelo <b>centro de custo da folha da BRIT</b>, achando cada um pela matrícula (ou pelo nome, se a matrícula da Araujo estiver diferente).</>,
    arraste:"Arraste o PDF da Araujo ou clique para escolher",sub:"Relatório RCONV-06 — compras por funcionário e período",
@@ -4956,7 +4962,10 @@ const RELATORIOS_MENSAIS=[
    itens:r=>itensConferenciaAraujo(r.conferencia),planilha:gerarPlanilhaAraujo,email:emailResumoAraujo,arquivo:c=>`araujo_rateio_${c}.xlsx`,
    titRateio:r=>`Rateio de ${nomeCompetencia(r.competencia)}`,
    resumo:r=>`${r.pessoas} funcionários${r.periodo?` · período ${r.periodo}`:""}`,qtd:["Pessoas",x=>x.pessoas],qtdTotal:r=>r.pessoas,
-   resumoHist:h=>`${h.pessoas} funcionários${h.periodo?` · ${h.periodo}`:""}`},
+   resumoHist:h=>`${h.pessoas} funcionários${h.periodo?` · ${h.periodo}`:""}`,
+   pessoas:r=>(r.linhas||[]).filter(l=>Number(l.convenio)>0).map(l=>({cc:l.centro_custo||SEM_CC,uid:l.usuario_id,nome:l.colaborador||l.nome,info:brl(l.convenio)})),
+   refazer:(user,r)=>getSB().rpc("araujo_conferir",{p_pedido_por:user.id,p_competencia:r.competencia,p_periodo:r.periodo||"",p_arquivo:r.arquivo_nome||"",
+     p_linhas:(r.linhas||[]).map(l=>({matricula:l.matricula,nome:l.nome,compras:l.compras,convenio:l.convenio,subsidio:l.subsidio,sem_subsidio:l.sem_subsidio}))})},
   {chave:"sesi",icone:"🏊",titulo:"Clube SESI Vespasiano — rateio por centro de custo",
    descricao:<>Anexe a <b>Relação de Conveniados</b> (PDF) do SESI. O valor de cada titular é o <b>valor integral</b>; o portal acha cada um pelo <b>CPF</b> e rateia pelo <b>centro de custo da folha da BRIT</b>.</>,
    arraste:"Arraste o PDF do SESI ou clique para escolher",sub:"Relação de Conveniados — Clube SESI Vespasiano",
@@ -4968,7 +4977,10 @@ const RELATORIOS_MENSAIS=[
    itens:r=>itensConferenciaSesi(r.conferencia),planilha:gerarPlanilhaSesi,email:emailResumoSesi,arquivo:c=>`sesi_rateio_${c}.xlsx`,
    titRateio:r=>`Rateio de ${nomeCompetencia(r.competencia)}`,
    resumo:r=>`${r.pessoas} titulares${r.data_corte?` · data de corte ${String(r.data_corte).slice(0,10).split("-").reverse().join("/")}`:""}`,
-   qtd:["Titulares",x=>x.pessoas],qtdTotal:r=>r.pessoas,resumoHist:h=>`${h.pessoas} titulares`},
+   qtd:["Titulares",x=>x.pessoas],qtdTotal:r=>r.pessoas,resumoHist:h=>`${h.pessoas} titulares`,
+   pessoas:r=>(r.linhas||[]).map(l=>({cc:l.centro_custo||SEM_CC,uid:l.usuario_id,nome:l.colaborador||l.nome,info:brl(l.valor)})),
+   refazer:(user,r)=>getSB().rpc("sesi_conferir",{p_pedido_por:user.id,p_competencia:r.competencia,p_cabecalho:{data_corte:r.data_corte||"",contrato:r.contrato||"",vigencia:r.vigencia||""},
+     p_arquivo:r.arquivo_nome||"",p_linhas:(r.linhas||[]).map(l=>({cpf:l.cpf,nome:l.nome,categoria:l.categoria,valor:l.valor}))})},
   {chave:"unimed",icone:"🏥",titulo:"Unimed — rateio por centro de custo e descontos em folha",multiplos:true,
    descricao:<>Anexe <b>de uma vez</b> os PDFs do mês da Unimed: <b>Dados da Fatura</b> (mensalidade) e <b>Utilização por Família</b> (coparticipação) dos contratos 0309917, 0309918 e 0372477. O portal faz o rateio por contrato e centro de custo da folha e calcula os <b>descontos em folha</b>: 11% da mensalidade (diretoria R$ 1,00) e, na coparticipação, 2 consultas/exames por família no mês pela empresa e 50% do restante. Desligados vão para a lista da <b>rescisão</b>.</>,
    arraste:"Arraste os PDFs da Unimed (pode ser vários) ou clique para escolher",sub:"Rel1 Dados da Fatura e Rel7 Utilização por Família",
@@ -4981,7 +4993,9 @@ const RELATORIOS_MENSAIS=[
    titRateio:r=>`Unimed de ${nomeCompetencia(r.competencia)}`,
    resumo:r=>`${(r.arquivos||[]).length} PDFs · descontos em folha ${brl((r.descontos||[]).reduce((a,d)=>a+d.total,0))} (${(r.descontos||[]).length} colaboradores)`,
    resumoHist:h=>`${h.colaboradores} colaboradores com desconto`,
-   tabela:r=><TabelaUnimed rel={r}/>,vinculosUnimed:true},
+   tabela:(r,ctx)=><TabelaUnimed rel={r} ctx={ctx}/>,vinculosUnimed:true,
+   pessoasContrato:(r,c)=>(r.linhas||[]).filter(l=>l.contrato===c&&!l.desligado).map(l=>({cc:l.centro_custo||SEM_CC,uid:l.usuario_id,nome:l.colaborador||l.titular,info:`mensalidade ${brl(l.mensalidade)} · coparticipação ${brl(l.copart)}`})),
+   botaoExtra:{rotulo:"⬇ Descontos em folha (BRIT)",titulo:"Planilha com os descontos por colaborador e a lista da rescisão (tem nomes: para a folha)",gerar:gerarDescontosUnimed,arquivo:c=>`unimed_descontos_folha_${c}.xlsx`}},
 ];
 
 // Seguro de vida: movimentação para a Prudential (inclusões e exclusões) a partir da lista de ATIVOS da BRIT,
@@ -5029,18 +5043,37 @@ async function unimedProcessar(user,arquivos,arq,competencia){
   return sb.rpc("unimed_salvar",{p_pedido_por:user.id,p_competencia:competencia||competenciaRelatorio(arquivos),p_arquivo:arq,p_relatorio:{...rel,lidos:arquivos}});
 }
 
-function TabelaUnimed({rel}){
+function TabelaUnimed({rel,ctx}){
   const td={padding:"5px 8px",borderBottom:"1px solid "+C.bdr},th={...td,color:C.txd,fontWeight:600};
   const totDesc=(rel.descontos||[]).reduce((a,d)=>a+d.total,0);
   return(<div style={{display:"flex",flexDirection:"column",gap:14}}>
     {(rel.rateio||[]).map(r=>(<div key={r.contrato} style={{overflowX:"auto"}}>
       <div style={{fontSize:13,fontWeight:700,marginBottom:4}}>Contrato {r.contrato} — {r.nome}</div>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr><th style={{...th,textAlign:"left"}}>Centro de custo</th><th style={{...th,textAlign:"right"}}>Mensalidade</th><th style={{...th,textAlign:"right"}}>Coparticipação</th><th style={{...th,textAlign:"right"}}>Total</th></tr></thead>
-        <tbody>{r.centros.map(c=><tr key={c.centro_custo}><td style={td}>{c.centro_custo}</td><td style={{...td,textAlign:"right"}}>{brl(c.mensalidade)}</td><td style={{...td,textAlign:"right"}}>{brl(c.copart)}</td><td style={{...td,textAlign:"right"}}>{brl(c.total)}</td></tr>)}
+        <tbody>{r.centros.map(c=>{const k=r.contrato+"|"+c.centro_custo;return<Fragment key={c.centro_custo}>
+          <tr><td style={td}>{ctx&&<button aria-expanded={!!ctx.aberto[k]} aria-label={"Ver pessoas de "+c.centro_custo} onClick={()=>ctx.setAberto(a=>({...a,[k]:!a[k]}))} style={{background:"none",border:"none",cursor:"pointer",color:C.txm,padding:"0 6px 0 0"}}>{ctx.aberto[k]?"▾":"▸"}</button>}{c.centro_custo}</td><td style={{...td,textAlign:"right"}}>{brl(c.mensalidade)}</td><td style={{...td,textAlign:"right"}}>{brl(c.copart)}</td><td style={{...td,textAlign:"right"}}>{brl(c.total)}</td></tr>
+          {ctx&&ctx.aberto[k]&&<tr><td colSpan={4} style={{padding:"4px 8px 10px 26px",borderBottom:"1px solid "+C.bdr}}><PessoasDoCentro pessoas={RELATORIOS_MENSAIS.find(x=>x.chave==="unimed").pessoasContrato(rel,r.contrato).filter(p=>p.cc===c.centro_custo)} ccs={ctx.ccs} corrigir={ctx.corrigir}/></td></tr>}
+        </Fragment>;})}
           <tr><td style={{padding:"6px 8px",fontWeight:800}}>Subtotal</td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:800}}>{brl(r.mensalidade)}</td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:800}}>{brl(r.copart)}</td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:800}}>{brl(r.mensalidade+r.copart)}</td></tr></tbody></table></div>))}
     <div style={{fontSize:13,border:"1px solid "+C.bdr,borderRadius:8,padding:"8px 12px"}}><b>Descontos em folha:</b> {brl(totDesc)} em {(rel.descontos||[]).length} colaboradores (detalhe na planilha, aba “Descontos em folha”).
       {(rel.rescisao||[]).length>0&&<> <b style={{color:C.red}}>Rescisão:</b> {(rel.rescisao||[]).map(x=>`${x.colaborador} ${brl(x.total)}`).join(", ")}.</>}</div>
   </div>);
+}
+
+// Conferência do rateio: quem está no centro de custo (só na tela) e correção manual (grava no cadastro, com registro).
+function PessoasDoCentro({pessoas,ccs,corrigir}){
+  const[esc,setEsc]=useState({});const[salvando,setSalvando]=useState(null);
+  if(!pessoas.length)return<div style={{fontSize:12,color:C.txd}}>Ninguém neste centro de custo.</div>;
+  const sel={background:C.s1,border:"1px solid "+C.bdr,borderRadius:7,padding:"3px 6px",color:C.txt,fontSize:12,maxWidth:260};
+  return(<div style={{display:"flex",flexDirection:"column",gap:4}}>{pessoas.sort((a,b)=>String(a.nome).localeCompare(String(b.nome))).map((p,i)=>(
+    <div key={(p.uid||"x")+"-"+i} style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",fontSize:12}}>
+      <span style={{minWidth:200,flex:"1 1 200px"}}>{p.nome} <span style={{color:C.txd}}>· {p.info}</span></span>
+      {p.uid?<><select aria-label={"Centro de custo de "+p.nome} style={sel} value={esc[i]??""} onChange={e=>setEsc(x=>({...x,[i]:e.target.value}))}>
+          <option value="">Mudar para…</option>{ccs.filter(c=>c!==p.cc).map(c=><option key={c} value={c}>{c}</option>)}</select>
+        <button disabled={!esc[i]||salvando===i} onClick={async()=>{setSalvando(i);const ok=await corrigir(p.uid,esc[i],p.nome);setSalvando(null);if(ok)setEsc(x=>({...x,[i]:""}));}}
+          style={{background:esc[i]?C.acc:C.s2,color:esc[i]?"#fff":C.txd,border:"none",borderRadius:7,padding:"3px 10px",fontSize:11,fontWeight:700,cursor:esc[i]?"pointer":"default"}}>{salvando===i?"…":"Corrigir"}</button></>
+      :<span style={{color:C.txd,fontSize:11}}>(não vinculado ao cadastro — vincule primeiro)</span>}
+    </div>))}</div>);
 }
 
 // Unimed: famílias que o portal não ligou a um colaborador — o RH escolhe o titular (vale para os próximos meses).
@@ -5074,6 +5107,17 @@ function Relatorios({user,users=[],showToast}){
 function RelatorioMensal({cfg,user,users,showToast}){
   const[hist,setHist]=useState(null);const[rel,setRel]=useState(null);const[proc,setProc]=useState("");const[erro,setErro]=useState("");
   const[enviando,setEnviando]=useState(false);const[arrastando,setArrastando]=useState(false);const fileRef=useRef(null);
+  const[aberto,setAberto]=useState({});  // centros de custo abertos na conferência (só na tela)
+  const ccs=[...new Set(users.map(u=>u.centroCusto).filter(Boolean))].sort();
+  // Correção manual de centro de custo pela conferência: grava no cadastro (com registro) e refaz o rateio.
+  const corrigir=async(uid,cc,nome)=>{
+    const{data,error}=await getSB().rpc("centro_custo_ajustar",{p_pedido_por:user.id,p_usuario_id:uid,p_centro_custo:cc,p_origem:"conferência "+cfg.chave});
+    if(error){showToast?.(error.message,"error");return false;}
+    if(!data?.mudou){showToast?.("Esse já é o centro de custo dele.","warn");return false;}
+    if(cfg.refazer){const r=await cfg.refazer(user,rel);if(r.error){showToast?.(r.error.message,"error");return false;}setRel(r.data);carregarHist();}
+    showToast?.(`${nome}: centro de custo corrigido para ${cc}. Rateio refeito.`,"success");return true;
+  };
+  const ctx={aberto,setAberto,ccs,corrigir};
   const carregarHist=async()=>{const{data,error}=await cfg.historico(user);if(error){setErro(error.message);setHist([]);return;}setHist(data||[]);};
   useEffect(()=>{carregarHist();},[]);
   const processar=async(lista)=>{
@@ -5132,7 +5176,9 @@ function RelatorioMensal({cfg,user,users,showToast}){
           <div><div style={{fontSize:15,fontWeight:800}}>{cfg.titRateio(rel)}</div>
             <div style={{fontSize:13,color:C.txm}}><b>{brl(rel.total)}</b> · {cfg.resumo(rel)}{rel.arquivo_nome?` · ${rel.arquivo_nome}`:""}</div></div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            <Btn onClick={baixar}>⬇ Baixar planilha</Btn>
+            <Btn onClick={baixar} title="Só os totais por centro de custo — sem nomes">⬇ Baixar planilha</Btn>
+            {cfg.botaoExtra&&<Btn v="outline" title={cfg.botaoExtra.titulo} onClick={()=>{const url=URL.createObjectURL(new Blob([cfg.botaoExtra.gerar(rel)],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})),a=document.createElement("a");
+              a.href=url;a.download=cfg.botaoExtra.arquivo(rel.competencia);document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);}}>{cfg.botaoExtra.rotulo}</Btn>}
             <Btn v="outline" onClick={enviar} disabled={enviando}>{enviando?<Spin size={12}/>:"✉"} Enviar resumo para meu e-mail</Btn>
           </div>
         </div>
@@ -5142,9 +5188,13 @@ function RelatorioMensal({cfg,user,users,showToast}){
         </div>
         {cfg.vinculos&&<VinculosOdonto rel={rel} users={users} user={user} showToast={showToast} onRefazer={refazer}/>}
         {cfg.vinculosUnimed&&<VinculosUnimed rel={rel} users={users} user={user} showToast={showToast} onRefazer={refazer}/>}
-        {cfg.tabela?cfg.tabela(rel):<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+        {cfg.pessoas&&<div style={{fontSize:12,color:C.txd,marginBottom:6}}>Clique em ▸ para ver quem está em cada centro de custo e corrigir se precisar (os nomes aparecem só aqui; a planilha e o e-mail saem sem nomes).</div>}
+        {cfg.tabela?cfg.tabela(rel,ctx):<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr>{["Centro de custo",cfg.qtd[0],"Valor"].map((h,i)=><th key={h} style={{textAlign:i?"right":"left",padding:"6px 8px",borderBottom:"1px solid "+C.bdr,color:C.txd,fontWeight:600}}>{h}</th>)}</tr></thead>
-          <tbody>{(rel.rateio||[]).map(r=><tr key={r.centro_custo}><td style={td}>{r.centro_custo}</td><td style={{...td,textAlign:"right"}}>{cfg.qtd[1](r)}</td><td style={{...td,textAlign:"right"}}>{brl(r.valor)}</td></tr>)}
+          <tbody>{(rel.rateio||[]).map(r=><Fragment key={r.centro_custo}>
+            <tr><td style={td}>{cfg.pessoas?<button aria-expanded={!!aberto[r.centro_custo]} aria-label={"Ver pessoas de "+r.centro_custo} onClick={()=>setAberto(a=>({...a,[r.centro_custo]:!a[r.centro_custo]}))} style={{background:"none",border:"none",cursor:"pointer",color:C.txm,padding:"0 6px 0 0"}}>{aberto[r.centro_custo]?"▾":"▸"}</button>:null}{r.centro_custo}</td><td style={{...td,textAlign:"right"}}>{cfg.qtd[1](r)}</td><td style={{...td,textAlign:"right"}}>{brl(r.valor)}</td></tr>
+            {cfg.pessoas&&aberto[r.centro_custo]&&<tr><td colSpan={3} style={{padding:"4px 8px 10px 26px",borderBottom:"1px solid "+C.bdr}}><PessoasDoCentro pessoas={cfg.pessoas(rel).filter(p=>p.cc===r.centro_custo)} ccs={ccs} corrigir={corrigir}/></td></tr>}
+          </Fragment>)}
             <tr><td style={{padding:"6px 8px",fontWeight:800}}>TOTAL</td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:800}}>{cfg.qtdTotal(rel)}</td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:800}}>{brl(rel.total)}</td></tr></tbody>
         </table></div>}
       </Card>}
@@ -5890,7 +5940,9 @@ export default function App(){
   const[movs,setMovs]=useState([]);
   const[benCatalogo,setBenCatalogo]=useState([]);const[benUsuarios,setBenUsuarios]=useState([]);const[benSolicits,setBenSolicits]=useState([]);
   
-  const showToast=(msg,type="success")=>{setToast({msg,type});setTimeout(()=>setToast(null),4000);};
+  // Cada aviso novo cancela o temporizador do anterior (senão o sumiço agendado do aviso antigo apagava o novo antes da hora).
+  const toastTimer=useRef(null);
+  const showToast=(msg,type="success")=>{setToast({msg,type});clearTimeout(toastTimer.current);toastTimer.current=setTimeout(()=>setToast(null),4000);};
   useEffect(()=>{initSB().then(sb=>{if(sb)setSbReady(true);else setSbReady(false);});},[]);
   
   // u: quem acabou de entrar (no login o estado "user" ainda não foi atualizado quando isto roda).

@@ -23,15 +23,14 @@ const rel = { competencia: "2026-10", periodo: "20/09/2026 a 19/10/2026", total:
   linhas: r.linhas.map((l, i) => ({ ...l, colaborador: ["Maria Teste da Silva", "Joao Nome Curto Completo"][i], centro_custo: ["VULCANIZACAO - MÃO DE OBRA", "FINANCEIRO"][i] })),
   conferencia: { nao_encontrados: [{ matricula: "999", nome: "PESSOA DE FORA" }], matricula_diferente: [{ nome: "Joao Nome Curto Completo", araujo: "00007", folha: "70" }],
     sem_centro_custo: [], desligados_com_compra: [{ nome: "Ex Funcionario", desligamento: "2026-10-01", convenio: 10 }], compras_acima_do_convenio: [{ nome: "Joao", compras: 300, convenio: 250 }] } };
+const celulas = (arq) => JSON.parse(execSync(`python3 -c "
+import openpyxl,json; wb=openpyxl.load_workbook('${arq}'); print(json.dumps({'abas':wb.sheetnames,'txt':' | '.join(str(c.value) for ws in wb for r in ws.iter_rows() for c in r if c.value is not None)}))"`).toString());
 const arq = path.join(tmp, "a.xlsx"); fs.writeFileSync(arq, ar.gerarPlanilhaAraujo(rel));
-const x = JSON.parse(execSync(`python3 -c "
-import openpyxl,json; wb=openpyxl.load_workbook('${arq}'); r=wb['Rateio']; l=wb['Lista']; c=wb['Conferência']
-print(json.dumps({'abas':wb.sheetnames,'total':[r.cell(r.max_row,i).value for i in range(1,4)],'l2':[x.value for x in l[3]],'conf':[[x.value for x in row] for row in c.iter_rows(min_row=2)]}))"`).toString());
-ok("P1 abas Rateio, Lista e Conferência; total", JSON.stringify(x.abas) === JSON.stringify(["Rateio", "Lista", "Conferência"]) && x.total[0] === "TOTAL" && Math.abs(x.total[2] - 370.5) < 0.001);
-ok("P2 lista: matrícula da Araujo, colaborador e convênio", x.l2[0] === "00007" && x.l2[2] === "Joao Nome Curto Completo" && x.l2[5] === 250);
-ok("P3 conferência: não encontrado, desligado com compra e matrícula diferente", x.conf.some((c) => /Não encontrados/.test(c[0]) && /999/.test(c[1]))
-  && x.conf.some((c) => /Desligados com compra/.test(c[0])) && x.conf.some((c) => /Matrícula na Araujo diferente/.test(c[0]) && /Araujo 00007 × folha 70/.test(c[1])));
+const x = celulas(arq);
+ok("P1 planilha só com a aba Rateio e TOTAL", JSON.stringify(x.abas) === JSON.stringify(["Rateio"]) && /TOTAL \| 2 \| 370\.5/.test(x.txt));
+ok("P2 sem nomes nem matrícula no arquivo", !/MARIA|JOAO|Joao|PESSOA DE FORA|Ex Funcionario|00007/.test(x.txt));
 const em = ar.emailResumoAraujo(rel);
+ok("E2 e-mail sem nomes", !/PESSOA DE FORA|Ex Funcionario|Joao Nome/.test(em.html));
 ok("E1 e-mail com mês, período e total", /outubro\/2026/.test(em.assunto) && /20\/09\/2026 a 19\/10\/2026/.test(em.html) && /R\$\s?370,50/.test(em.html));
 let falhas = 0; for (const [n, v] of Object.entries(res)) { console.log((v ? "OK  " : "FALHOU ") + n); if (!v) falhas++; }
 process.exit(falhas ? 1 : 0);

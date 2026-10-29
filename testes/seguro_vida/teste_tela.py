@@ -28,13 +28,23 @@ with sync_playwright() as p:
     with pg.expect_download() as d: pg.get_by_role("button",name=re.compile("Baixar planilha")).click()
     arq=d.value; caminho="/tmp/rateio_baixado.xlsx"; arq.save_as(caminho); wb=openpyxl.load_workbook(caminho)
     r=wb["Rateio"]; vals=[[c.value for c in row] for row in r.iter_rows(min_row=4,max_row=r.max_row)]
-    res["T5 planilha baixada: nome, abas e total"]=arq.suggested_filename=="seguro_vida_rateio_2026-10.xlsx" and wb.sheetnames==["Rateio","Lista","Conferência"] and vals[-1][0]=="TOTAL" and abs(vals[-1][2]-21.81)<0.001
+    tudo=" ".join(str(c.value) for ws in wb for r in ws.iter_rows() for c in r if c.value is not None)
+    res["T5 planilha baixada: só Rateio, TOTAL e sem nomes"]=arq.suggested_filename=="seguro_vida_rateio_2026-10.xlsx" and wb.sheetnames==["Rateio"] and vals[-1][0]=="TOTAL" and abs(vals[-1][2]-21.81)<0.001 and "MARIA" not in tudo and "PEDRO" not in tudo
     pg.get_by_role("button",name=re.compile("Enviar resumo")).click()
     try: pg.get_by_text(re.compile("Resumo enviado")).first.wait_for(timeout=5000)
     except Exception: pass
     em=pg.evaluate("window.__EMAILS")
     res["T6 e-mail do resumo vai para o próprio RH"]=len(em)==1 and em[0]["to"]=="ana@teste.local" and "outubro/2026" in em[0]["subject"] and "Resumo enviado" in pg.locator("body").inner_text()
     res["T7 mês aparece no histórico"]="Outubro/2026" in pg.locator("main").inner_text() or "outubro/2026" in pg.locator("[data-relatorio=seguro]").inner_text().split("Histórico")[1]
+    # Conferência: abrir o centro de custo, ver as pessoas e corrigir
+    seg=pg.locator("[data-relatorio=seguro]")
+    seg.get_by_role("button",name="Ver pessoas de VULCANIZACAO - MÃO DE OBRA").click(); pg.wait_for_timeout(300)
+    res["T10 ▸ mostra quem está no centro de custo (só na tela)"]="MARIA DA SILVA TESTE" in seg.inner_text()
+    seg.get_by_label("Centro de custo de MARIA DA SILVA TESTE").select_option("RECURSOS HUMANOS")
+    seg.get_by_role("button",name="Corrigir").first.click(); pg.wait_for_timeout(1200)
+    aj=pg.evaluate("window.__AJUSTES||[]")
+    t=seg.inner_text()
+    res["T11 'Corrigir' grava no cadastro e refaz o rateio"]=len(aj)==1 and aj[0]["p_usuario_id"]==101 and aj[0]["p_centro_custo"]=="RECURSOS HUMANOS" and "RECURSOS HUMANOS" in t and "centro de custo corrigido para RECURSOS HUMANOS" in pg.locator("body").inner_text()
     # PDF com total que não confere → recusa sem gravar
     import shutil, subprocess
     ruim=os.path.join("/tmp","demonstrativo_total_errado.pdf")

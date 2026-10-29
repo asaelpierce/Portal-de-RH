@@ -23,7 +23,7 @@ with sync_playwright() as p:
     res["A4 conferência: matrícula diferente, compras acima e não encontrado"]="Matrícula na Araujo diferente" in t and "Araujo 00007 × folha 70" in t and "Compras acima do valor do convênio" in t and "PESSOA DE FORA" in t
     with pg.expect_download() as d: ar.get_by_role("button",name=re.compile("Baixar planilha")).click()
     arq=d.value; caminho="/tmp/araujo_baixado.xlsx"; arq.save_as(caminho); wb=openpyxl.load_workbook(caminho)
-    res["A5 planilha: nome do arquivo e abas"]=arq.suggested_filename=="araujo_rateio_2026-10.xlsx" and wb.sheetnames==["Rateio","Lista","Conferência"]
+    res["A5 planilha: só Rateio"]=arq.suggested_filename=="araujo_rateio_2026-10.xlsx" and wb.sheetnames==["Rateio"]
     res["A6 histórico"]="outubro/2026" in ar.inner_text().split("Histórico")[1].lower()
     res["A7 os outros cartões continuam na tela"]=pg.locator("[data-relatorio=seguro]").count()==1 and pg.locator("[data-relatorio=odonto]").count()==1
     res["sem exceções"]=not errs

@@ -51,10 +51,7 @@ export function itensConferenciaSesi(conf) {
 
 const brData = (iso) => (iso ? String(iso).slice(0, 10).split("-").reverse().join("/") : "—");
 export function gerarPlanilhaSesi(rel) {
-  const rateio = rel.rateio || [];
-  const cpfF = (c) => { const d = String(c || "").replace(/\D/g, ""); return d.length === 11 ? `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}` : c || ""; };
-  const conf = itensConferenciaSesi(rel.conferencia).map((i) => [i.titulo, i.texto]);
-  return gerarXlsx([
+  const rateio = rel.rateio || [];  return gerarXlsx([
     { nome: "Rateio", larguras: [48, 10, 14], cabecalho: 2, linhas: [
       [{ v: `Clube SESI Vespasiano — rateio por centro de custo — ${nomeCompetencia(rel.competencia)}`, estilo: "titulo" }],
       [`Data de corte ${brData(rel.data_corte)} · contrato ${rel.contrato || "—"} · vigência ${rel.vigencia || "—"} · total ${brl(rel.total)} · centro de custo da folha da BRIT`],
@@ -62,12 +59,6 @@ export function gerarPlanilhaSesi(rel) {
       ...rateio.map((r) => [r.centro_custo, r.pessoas, Number(r.valor)]),
       [{ v: "TOTAL", estilo: "negrito" }, { v: rateio.reduce((a, r) => a + Number(r.pessoas), 0), estilo: "negrito" },
        { v: Math.round(rateio.reduce((a, r) => a + Number(r.valor), 0) * 100) / 100, estilo: "negrito" }]] },
-    { nome: "Lista", larguras: [16, 36, 36, 44, 46, 12], cabecalho: 0, linhas: [
-      ["CPF", "Nome no SESI", "Colaborador (cadastro)", "Centro de custo", "Categoria", "Valor (R$)"].map((v) => ({ v, estilo: "cabecalho" })),
-      ...(rel.linhas || []).map((l) => [cpfF(l.cpf), l.nome, l.colaborador || "", l.centro_custo || "SEM CENTRO DE CUSTO (verificar)", l.categoria || "", Number(l.valor)])] },
-    { nome: "Conferência", larguras: [56, 110], cabecalho: 0, linhas: [
-      [{ v: "Ponto", estilo: "cabecalho" }, { v: "Pessoas", estilo: "cabecalho" }],
-      ...(conf.length ? conf : [["Nada a conferir", "Todos encontrados no cadastro pelo CPF, com centro de custo."]])] },
   ]);
 }
 
@@ -75,13 +66,13 @@ export function emailResumoSesi(rel) {
   const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const td = "padding:4px 10px;border-bottom:1px solid #ddd";
   const linhas = (rel.rateio || []).map((r) => `<tr><td style="${td}">${esc(r.centro_custo)}</td><td style="${td};text-align:right">${r.pessoas}</td><td style="${td};text-align:right">${esc(brl(r.valor))}</td></tr>`).join("");
-  const conf = itensConferenciaSesi(rel.conferencia).map((i) => `<li><b>${esc(i.titulo)}:</b> ${esc(i.texto)}</li>`).join("");
+  const nConf = itensConferenciaSesi(rel.conferencia).length;  // e-mail sem nomes: só quantos pontos há para conferir
   return {
     assunto: `Clube SESI — rateio por centro de custo — ${nomeCompetencia(rel.competencia)}`,
     html: `<p>Rateio do Clube SESI Vespasiano de <b>${esc(nomeCompetencia(rel.competencia))}</b> (data de corte ${esc(brData(rel.data_corte))}): <b>${esc(brl(rel.total))}</b>, ${rel.pessoas} titulares (valor integral). Centro de custo conforme a folha da BRIT.</p>
 <table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px"><tr><th style="${td};text-align:left">Centro de custo</th><th style="${td}">Titulares</th><th style="${td}">Valor</th></tr>${linhas}
 <tr><td style="${td}"><b>TOTAL</b></td><td style="${td};text-align:right"><b>${rel.pessoas}</b></td><td style="${td};text-align:right"><b>${esc(brl(rel.total))}</b></td></tr></table>
-${conf ? `<p><b>Conferência</b></p><ul>${conf}</ul>` : "<p>Conferência: nada a apontar.</p>"}
-<p style="color:#666;font-size:12px">A planilha completa (rateio, lista e conferência) está no Portal de RH › Relatórios.</p>`,
+${nConf ? `<p>Conferência: ${nConf} ponto(s) para conferir no Portal de RH (os nomes ficam só no portal).</p>` : "<p>Conferência: nada a apontar.</p>"}
+<p style="color:#666;font-size:12px">O detalhe por pessoa fica só no Portal de RH › Relatórios.</p>`,
   };
 }

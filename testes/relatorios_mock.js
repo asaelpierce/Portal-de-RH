@@ -17,7 +17,8 @@
    if(fn.startsWith("seguro_vida_")&&(!u||u.role!=="rh"))return er("Só o RH acessa os relatórios do seguro de vida.");
    if(fn==="seguro_vida_historico")return ok(Object.values(window.__REL).map(r=>({competencia:r.competencia,total:r.total,pessoas:r.pessoas,gerado_por:"Ana RH",gerado_em:new Date().toISOString()})));
    if(fn==="seguro_vida_obter")return ok(window.__REL[a.p_competencia]);
-   if(fn==="seguro_vida_conferir"){const linhas=a.p_linhas.map(l=>({...l,centro_custo:CC[l.cpf]||null,usuario_id:CC[l.cpf]||l.cpf==="44455566677"?9:null,status:l.cpf==="44455566677"?"desligado":"ativo"}));
+   if(fn==="seguro_vida_conferir"){const UID={"11144477735":101,"02233344405":102,"44455566677":103};window.__CCU=window.__CCU||{};
+     const linhas=a.p_linhas.map(l=>({...l,centro_custo:window.__CCU[UID[l.cpf]]||CC[l.cpf]||null,usuario_id:CC[l.cpf]||l.cpf==="44455566677"?UID[l.cpf]:null,status:l.cpf==="44455566677"?"desligado":"ativo"}));
      const cob=linhas.filter(l=>l.premio>0),g={};cob.forEach(l=>{const k=l.centro_custo||"SEM CENTRO DE CUSTO (verificar)";g[k]=g[k]||{centro_custo:k,pessoas:0,valor:0};g[k].pessoas++;g[k].valor=Math.round((g[k].valor+l.premio)*100)/100;});
      const r={competencia:a.p_competencia,arquivo_nome:a.p_arquivo,total:Math.round(cob.reduce((s,l)=>s+l.premio,0)*100)/100,pessoas:cob.length,linhas,rateio:Object.values(g).sort((x,y)=>x.centro_custo.localeCompare(y.centro_custo)),
        conferencia:{premio_padrao:4.47,nao_encontrados:[],sem_centro_custo:["PEDRO DESLIGADO TESTE"],desligados_cobrados:[{nome:"PEDRO DESLIGADO TESTE",desligamento:"2026-10-15"}],exclusoes:["ANA EXCLUÍDA TESTE"],inclusoes:[],
@@ -85,6 +86,7 @@
      return ok({base_competencia:"2026-09",segurados_base:79,ativos:a.p_ativos.length,inclusoes:a.p_ativos.filter(x=>!/aprendiz/i.test(x.cargo)).map(x=>({...x,nascimento:null})),
        aprendizes:ap,sem_nascimento:a.p_ativos.filter(x=>!/aprendiz/i.test(x.cargo)).map(x=>x.nome),
        exclusoes:[{nome:"PEDRO SAIU",cpf:"33322211100",nascimento:"1995-05-05",centro_custo:"CORTE",status_portal:"desligado",desligamento:"2026-10-15"}]});}
+   if(fn==="centro_custo_ajustar"){window.__CCU=window.__CCU||{};window.__AJUSTES=(window.__AJUSTES||[]).concat([a]);window.__CCU[a.p_usuario_id]=a.p_centro_custo;return ok({mudou:true,para:a.p_centro_custo});}
    return ok(null);},
   functions:{invoke:async(nome,opt)=>{window.__INVOKES=(window.__INVOKES||[]).concat([{nome,body:opt&&opt.body}]);
     if(nome==="ferias-ciencia")return{data:{ok:true,link:location.origin+"/?ciencia="+"a1".repeat(18),enviado:!!(opt&&opt.body&&opt.body.enviar),para:"bi***@teste.local"},error:null};

@@ -29,14 +29,14 @@ const rel = { competencia: "2026-10", data_corte: "2026-10-16", contrato: "37432
   rateio: [{ centro_custo: "RECURSOS HUMANOS", pessoas: 1, valor: 1055 }, { centro_custo: "VULCANIZACAO - MÃO DE OBRA", pessoas: 1, valor: 45 }],
   linhas: r.linhas.map((l, i) => ({ ...l, colaborador: ["Maria Teste", "Jose Teste de Tal"][i], centro_custo: ["VULCANIZACAO - MÃO DE OBRA", "RECURSOS HUMANOS"][i] })),
   conferencia: { nao_encontrados: [], sem_centro_custo: [], achados_pelo_nome: [], desligados_conveniados: [{ nome: "Ex Funcionario", desligamento: "2026-10-01", valor: 45 }] } };
+const celulas = (arq) => JSON.parse(execSync(`python3 -c "
+import openpyxl,json; wb=openpyxl.load_workbook('${arq}'); print(json.dumps({'abas':wb.sheetnames,'txt':' | '.join(str(c.value) for ws in wb for r in ws.iter_rows() for c in r if c.value is not None)}))"`).toString());
 const arq = path.join(tmp, "s.xlsx"); fs.writeFileSync(arq, se.gerarPlanilhaSesi(rel));
-const x = JSON.parse(execSync(`python3 -c "
-import openpyxl,json; wb=openpyxl.load_workbook('${arq}'); r=wb['Rateio']; l=wb['Lista']; c=wb['Conferência']
-print(json.dumps({'abas':wb.sheetnames,'total':[r.cell(r.max_row,i).value for i in range(1,4)],'l1':[x.value for x in l[2]],'conf':[[x.value for x in row] for row in c.iter_rows(min_row=2)]}))"`).toString());
-ok("P1 abas e total", JSON.stringify(x.abas) === JSON.stringify(["Rateio", "Lista", "Conferência"]) && x.total[0] === "TOTAL" && x.total[2] === 1100);
-ok("P2 lista com CPF formatado, categoria e valor", x.l1[0] === "111.444.777-35" && x.l1[4] === "INDÚSTRIA CONTRIBUINTE - FAMILIAR" && x.l1[5] === 45);
-ok("P3 conferência: desligado conveniado", x.conf.some((c) => /Desligados ainda conveniados/.test(c[0]) && /Ex Funcionario/.test(c[1])));
+const x = celulas(arq);
+ok("P1 planilha só com a aba Rateio e TOTAL", JSON.stringify(x.abas) === JSON.stringify(["Rateio"]) && /TOTAL \| 2 \| 1100/.test(x.txt));
+ok("P2 sem nomes nem CPF no arquivo", !/MARIA|JOSE|Maria Teste|Ex Funcionario|111\.444|11144477735/.test(x.txt));
 const em = se.emailResumoSesi(rel);
+ok("E2 e-mail sem nomes", !/Ex Funcionario|Maria Teste/.test(em.html));
 ok("E1 e-mail com mês, data de corte e total", /outubro\/2026/.test(em.assunto) && /16\/10\/2026/.test(em.html) && /R\$\s?1\.100,00/.test(em.html));
 let falhas = 0; for (const [n, v] of Object.entries(res)) { console.log((v ? "OK  " : "FALHOU ") + n); if (!v) falhas++; }
 process.exit(falhas ? 1 : 0);

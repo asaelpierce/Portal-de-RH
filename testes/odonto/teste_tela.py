@@ -33,8 +33,10 @@ with sync_playwright() as p:
     res["O6 refazer: titular sai de 'sem centro de custo' e vai para o CC do colaborador"]="SEM CENTRO DE CUSTO" not in t and "VULCANIZACAO - MÃO DE OBRA" in t and "Vincular titulares" not in t
     with pg.expect_download() as d: od.get_by_role("button",name=re.compile("Baixar planilha")).click()
     arq=d.value; caminho="/tmp/odonto_baixado.xlsx"; arq.save_as(caminho); wb=openpyxl.load_workbook(caminho)
-    rel=[[c.value for c in r] for r in wb["Relação"].iter_rows(min_row=2)]
-    res["O8 planilha: nome do arquivo, abas e relação por beneficiário"]=arq.suggested_filename=="odonto_rateio_2026-10.xlsx" and wb.sheetnames==["Rateio","Relação","Conferência"] and len(rel)==4 and any(r[1]=="PEDRO SAIU TESTE" and r[7]==-39.15 for r in rel)
+    tudo=" ".join(str(c.value) for ws in wb for r in ws.iter_rows() for c in r if c.value is not None)
+    res["O8 planilha: só Rateio, sem nomes"]=arq.suggested_filename=="odonto_rateio_2026-10.xlsx" and wb.sheetnames==["Rateio"] and "PEDRO" not in tudo and "MARIA" not in tudo
+    od.get_by_role("button",name="Ver pessoas de CORTE CERAMICA MAO DE OBRA").click(); pg.wait_for_timeout(300)
+    res["O10 ▸ mostra o titular e os beneficiários do centro de custo"]="Pedro Saiu" in od.inner_text() and "1 beneficiário" in od.inner_text()
     res["O9 histórico do odonto"]="outubro/2026" in od.inner_text().split("Histórico")[1].lower()
     res["sem exceções"]=not errs
     if errs: print(errs[:3])

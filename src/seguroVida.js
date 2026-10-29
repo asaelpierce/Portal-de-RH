@@ -103,21 +103,12 @@ export function gerarPlanilhaVG(rel) {
   const linhasRateio = rateio.map((r) => [r.centro_custo, r.pessoas, Number(r.valor)]);
   const tot = [{ v: "TOTAL", estilo: "negrito" }, { v: rateio.reduce((a, r) => a + Number(r.pessoas), 0), estilo: "negrito" },
                { v: Math.round(rateio.reduce((a, r) => a + Number(r.valor), 0) * 100) / 100, estilo: "negrito" }];
-  const pessoas = (rel.linhas || []).map((l) => [l.nome, l.centro_custo || "SEM CENTRO DE CUSTO (verificar)", br(l.admissao), l.cargo || "",
-    cpfF(l.cpf), br(l.nascimento), l.movimentacao || "", Number(l.capital || 0), Number(l.premio || 0)]);
-  const conf = itensConferencia(rel.conferencia).map((i) => [i.titulo, i.texto]);
   return gerarXlsx([
     { nome: "Rateio", larguras: [48, 10, 14], cabecalho: 2, linhas: [
       [{ v: `Seguro de vida (Prudential) — rateio por centro de custo — ${nomeCompetencia(rel.competencia)}`, estilo: "titulo" }],
       [`Total do demonstrativo: ${brl(rel.total)} · ${rel.pessoas} segurados · centro de custo da folha da BRIT`],
       [{ v: "Centro de custo", estilo: "cabecalho" }, { v: "Pessoas", estilo: "cabecalho" }, { v: "Valor (R$)", estilo: "cabecalho" }],
       ...linhasRateio, tot] },
-    { nome: "Lista", larguras: [40, 44, 12, 30, 16, 12, 13, 14, 11], cabecalho: 0, linhas: [
-      ["Nome", "Centro de custo", "Admissão", "Função", "CPF", "Nascimento", "Movimentação", "Capital (R$)", "Prêmio (R$)"].map((v) => ({ v, estilo: "cabecalho" })),
-      ...pessoas] },
-    { nome: "Conferência", larguras: [52, 110], cabecalho: 0, linhas: [
-      [{ v: "Ponto", estilo: "cabecalho" }, { v: "Pessoas", estilo: "cabecalho" }],
-      ...(conf.length ? conf : [["Nada a conferir", "Todos encontrados no cadastro, com centro de custo."]])] },
   ]);
 }
 
@@ -126,13 +117,13 @@ export function emailResumoVG(rel) {
   const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const td = "padding:4px 10px;border-bottom:1px solid #ddd";
   const linhas = (rel.rateio || []).map((r) => `<tr><td style="${td}">${esc(r.centro_custo)}</td><td style="${td};text-align:right">${r.pessoas}</td><td style="${td};text-align:right">${esc(brl(r.valor))}</td></tr>`).join("");
-  const conf = itensConferencia(rel.conferencia).map((i) => `<li><b>${esc(i.titulo)}:</b> ${esc(i.texto)}</li>`).join("");
+  const nConf = itensConferencia(rel.conferencia).length;  // e-mail sem nomes: só quantos pontos há para conferir
   return {
     assunto: `Seguro de vida — rateio por centro de custo — ${nomeCompetencia(rel.competencia)}`,
     html: `<p>Rateio do seguro de vida (Prudential) de <b>${esc(nomeCompetencia(rel.competencia))}</b>: <b>${esc(brl(rel.total))}</b>, ${rel.pessoas} segurados. Centro de custo conforme a folha da BRIT.</p>
 <table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px"><tr><th style="${td};text-align:left">Centro de custo</th><th style="${td}">Pessoas</th><th style="${td}">Valor</th></tr>${linhas}
 <tr><td style="${td}"><b>TOTAL</b></td><td style="${td};text-align:right"><b>${rel.pessoas}</b></td><td style="${td};text-align:right"><b>${esc(brl(rel.total))}</b></td></tr></table>
-${conf ? `<p><b>Conferência</b></p><ul>${conf}</ul>` : "<p>Conferência: nada a apontar.</p>"}
-<p style="color:#666;font-size:12px">A planilha completa (rateio, lista e conferência) está no Portal de RH › Relatórios.</p>`,
+${nConf ? `<p>Conferência: ${nConf} ponto(s) para conferir no Portal de RH (os nomes ficam só no portal).</p>` : "<p>Conferência: nada a apontar.</p>"}
+<p style="color:#666;font-size:12px">O detalhe por pessoa fica só no Portal de RH › Relatórios.</p>`,
   };
 }

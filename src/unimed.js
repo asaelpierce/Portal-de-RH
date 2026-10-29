@@ -128,7 +128,7 @@ export function calcularUnimed(arquivos, vinculos) {
     const cobertos = ordenados.slice(0, COBERTOS_POR_MES), resto = ordenados.slice(COBERTOS_POR_MES);
     const empresaCopart = r2(cobertos.reduce((a, i) => a + i.valor, 0));
     const descCopart = diretoria ? 0 : r2(resto.reduce((a, i) => a + i.valor, 0) * DESCONTO_COPART);
-    return { contrato: f.contrato, familia: f.familia, titular, colaborador: v.colaborador || null, cadastro: v.cadastro || null,
+    return { contrato: f.contrato, familia: f.familia, titular, usuario_id: v.usuario_id || null, colaborador: v.colaborador || null, cadastro: v.cadastro || null,
       centro_custo: v.centro_custo || null, status: v.status || null, data_desligamento: v.data_desligamento || null,
       desligado: v.status === "desligado", diretoria, beneficiarios: f.beneficiarios, itens: ordenados.map((i, k) => ({ ...i, coberto: k < COBERTOS_POR_MES })),
       mensalidade: f.mensalidade, copart: f.copart, empresa_copart: diretoria ? f.copart : empresaCopart,
@@ -191,28 +191,32 @@ export function itensConferenciaUnimed(rel) {
   return out;
 }
 
+// Planilha do RATEIO (vai para o financeiro): só totais por contrato e centro de custo — sem nomes.
 export function gerarPlanilhaUnimed(rel) {
   const H = (a) => a.map((v) => ({ v, estilo: "cabecalho" })), N = (v) => ({ v, estilo: "negrito" });
   const rat = []; (rel.rateio || []).forEach((r) => {
     rat.push([N(`Contrato ${r.contrato} — ${r.nome}`)]); rat.push(H(["Centro de custo", "Famílias", "Mensalidade (R$)", "Coparticipação (R$)", "Total (R$)"]));
     r.centros.forEach((c) => rat.push([c.centro_custo, c.familias, c.mensalidade, c.copart, c.total]));
     rat.push([N("Subtotal"), "", N(r.mensalidade), N(r.copart), N(r2(r.mensalidade + r.copart))]); rat.push([]); });
-  const pessoa = (l) => l.colaborador || l.titular;
-  const men = [], cop = [];
-  (rel.linhas || []).forEach((l) => {
-    l.beneficiarios.forEach((b) => men.push([l.contrato, l.centro_custo || "—", pessoa(l), b.nome, b.faixa, b.valor, !l.diretoria ? r2(cobradoPositivo(b) * DESCONTO_MENSALIDADE) : 0]));
-    l.itens.forEach((i) => cop.push([l.contrato, l.centro_custo || "—", pessoa(l), i.nome, i.data ? i.data.split("-").reverse().join("/") : "", i.descricao, i.valor, i.coberto || l.diretoria ? "Empresa" : "50% colaborador"])); });
-  const desc = (lista) => lista.map((d) => [d.colaborador, d.cadastro || "", d.centro_custo || "", d.mensalidade, d.copart, d.total]);
-  const conf = itensConferenciaUnimed(rel).map((i) => [i.titulo, i.texto]);
   return gerarXlsx([
     { nome: "Rateio", larguras: [48, 10, 18, 20, 14], linhas: [[{ v: `Unimed — rateio por centro de custo — ${nomeCompetencia(rel.competencia)}`, estilo: "titulo" }],
       ["Centro de custo da folha da BRIT; dependentes no titular; desligados fora do rateio (lançados na rescisão)."], [], ...rat] },
-    { nome: "Descontos em folha", larguras: [40, 12, 40, 16, 18, 14], cabecalho: 0, linhas: [H(["Colaborador", "Matrícula", "Centro de custo", "Mensalidade (R$)", "Coparticipação (R$)", "Total (R$)"]), ...desc(rel.descontos || []),
-      [N("TOTAL"), "", "", N(r2((rel.descontos || []).reduce((a, d) => a + d.mensalidade, 0))), N(r2((rel.descontos || []).reduce((a, d) => a + d.copart, 0))), N(r2((rel.descontos || []).reduce((a, d) => a + d.total, 0)))]] },
-    { nome: "Rescisão", larguras: [40, 12, 40, 16, 18, 14], cabecalho: 0, linhas: [H(["Desligado", "Matrícula", "Centro de custo", "Mensalidade (R$)", "Coparticipação (R$)", "Total (R$)"]), ...desc(rel.rescisao || [])] },
-    { nome: "Mensalidade", larguras: [10, 40, 36, 40, 10, 14, 14], cabecalho: 0, linhas: [H(["Contrato", "Centro de custo", "Colaborador", "Beneficiário", "Faixa", "Valor (R$)", "Desconto 11% (R$)"]), ...men] },
-    { nome: "Coparticipação", larguras: [10, 40, 36, 24, 12, 26, 12, 18], cabecalho: 0, linhas: [H(["Contrato", "Centro de custo", "Colaborador", "Usuário", "Data", "Procedimento", "Valor (R$)", "Paga"]), ...cop] },
-    { nome: "Conferência", larguras: [60, 110], cabecalho: 0, linhas: [H(["Ponto", "Detalhe"]), ...(conf.length ? conf : [["Nada a conferir", "Todos os PDFs anexados e todas as famílias encontradas."]])] },
+  ]);
+}
+
+// Planilha dos DESCONTOS EM FOLHA (vai para a BRIT lançar no contracheque): por colaborador — precisa dos nomes.
+export function gerarDescontosUnimed(rel) {
+  const H = (a) => a.map((v) => ({ v, estilo: "cabecalho" })), N = (v) => ({ v, estilo: "negrito" });
+  const desc = (lista) => lista.map((d) => [d.colaborador, d.cadastro || "", d.centro_custo || "", d.mensalidade, d.copart, d.total]);
+  const soma = (k) => r2((rel.descontos || []).reduce((a, d) => a + d[k], 0));
+  return gerarXlsx([
+    { nome: "Descontos em folha", larguras: [40, 12, 40, 16, 18, 14], cabecalho: 1, linhas: [
+      [{ v: `Unimed — descontos em folha — ${nomeCompetencia(rel.competencia)} (mensalidade 11% / diretoria R$ 1,00; coparticipação 50% após 2 procedimentos por família)`, estilo: "titulo" }],
+      H(["Colaborador", "Matrícula", "Centro de custo", "Mensalidade (R$)", "Coparticipação (R$)", "Total (R$)"]), ...desc(rel.descontos || []),
+      [N("TOTAL"), "", "", N(soma("mensalidade")), N(soma("copart")), N(soma("total"))]] },
+    { nome: "Rescisão", larguras: [40, 12, 40, 16, 18, 14], cabecalho: 1, linhas: [
+      [{ v: "Desligados — lançar na rescisão (fora do rateio)", estilo: "titulo" }],
+      H(["Desligado", "Matrícula", "Centro de custo", "Mensalidade (R$)", "Coparticipação (R$)", "Total (R$)"]), ...desc(rel.rescisao || [])] },
   ]);
 }
 
@@ -221,9 +225,9 @@ export function emailResumoUnimed(rel) {
   const td = "padding:4px 10px;border-bottom:1px solid #ddd";
   const blocos = (rel.rateio || []).map((r) => `<p><b>Contrato ${esc(r.contrato)} — ${esc(r.nome)}</b></p><table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px"><tr><th style="${td};text-align:left">Centro de custo</th><th style="${td}">Mensalidade</th><th style="${td}">Coparticipação</th></tr>${
     r.centros.map((c) => `<tr><td style="${td}">${esc(c.centro_custo)}</td><td style="${td};text-align:right">${esc(brl(c.mensalidade))}</td><td style="${td};text-align:right">${esc(brl(c.copart))}</td></tr>`).join("")}</table>`).join("");
-  const conf = itensConferenciaUnimed(rel).map((i) => `<li><b>${esc(i.titulo)}:</b> ${esc(i.texto)}</li>`).join("");
+  const nConf = itensConferenciaUnimed(rel).length;  // e-mail sem nomes: só quantos pontos há para conferir
   const td2 = (rel.descontos || []).reduce((a, d) => a + d.total, 0);
   return { assunto: `Unimed — rateio por centro de custo e descontos — ${nomeCompetencia(rel.competencia)}`,
     html: `<p>Unimed de <b>${esc(nomeCompetencia(rel.competencia))}</b>: total ${esc(brl(rel.total))}. Descontos em folha: <b>${esc(brl(td2))}</b> (${(rel.descontos || []).length} colaboradores).</p>${blocos}
-${conf ? `<p><b>Conferência</b></p><ul>${conf}</ul>` : ""}<p style="color:#666;font-size:12px">A planilha completa (rateio, descontos em folha, rescisão, mensalidade e coparticipação) está no Portal de RH › Relatórios.</p>` };
+${nConf ? `<p>Conferência: ${nConf} ponto(s) para conferir no Portal de RH (os nomes ficam só no portal).</p>` : ""}<p style="color:#666;font-size:12px">O detalhe por pessoa e os descontos em folha ficam no Portal de RH › Relatórios.</p>` };
 }

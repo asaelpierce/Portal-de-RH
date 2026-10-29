@@ -23,7 +23,7 @@ with sync_playwright() as p:
     res["S4 conferência: desligado ainda conveniado"]="Desligados ainda conveniados" in t and "Jose Teste de Tal" in t
     with pg.expect_download() as d: se.get_by_role("button",name=re.compile("Baixar planilha")).click()
     arq=d.value; caminho="/tmp/sesi_baixado.xlsx"; arq.save_as(caminho); wb=openpyxl.load_workbook(caminho)
-    res["S5 planilha: nome do arquivo e abas"]=arq.suggested_filename=="sesi_rateio_2026-10.xlsx" and wb.sheetnames==["Rateio","Lista","Conferência"]
+    res["S5 planilha: só Rateio"]=arq.suggested_filename=="sesi_rateio_2026-10.xlsx" and wb.sheetnames==["Rateio"]
     res["S6 histórico"]="outubro/2026" in se.inner_text().split("Histórico")[1].lower()
     res["S7 quatro cartões na tela"]=all(pg.locator(f"[data-relatorio={k}]").count()==1 for k in ("seguro","odonto","araujo","sesi"))
     res["sem exceções"]=not errs
