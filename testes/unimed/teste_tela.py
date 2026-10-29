@@ -36,7 +36,7 @@ with sync_playwright() as p:
     with pg.expect_download() as d2: un.get_by_role("button",name=re.compile("Descontos em folha \\(BRIT\\)")).click()
     a2=d2.value; c2="/tmp/unimed_desc.xlsx"; a2.save_as(c2); wd=openpyxl.load_workbook(c2)
     desc=[[c.value for c in r] for r in wd["Descontos em folha"].iter_rows(min_row=3)]
-    res["U8b descontos em folha: titular e DEPENDENTE em linhas próprias + subtotal (28,31; copart 3,60)"]=a2.suggested_filename=="unimed_descontos_folha_2026-10.xlsx" and wd.sheetnames==["Descontos em folha","Rescisão","Resumo por colaborador"] and any(r[3]=="FILHO DA MARIA" and r[4]=="Dependente" and r[7]==9.33 for r in desc) and any(r[0]=="Subtotal — Maria Titular" and r[7]==28.31 and r[8]==3.6 for r in desc)
+    res["U8b descontos em folha: titular e dependente separados, ligados pelo titular, sem subtotal"]=a2.suggested_filename=="unimed_descontos_folha_2026-10.xlsx" and wd.sheetnames==["Descontos em folha","Rescisão"] and any(r[0]=="FILHO DA MARIA" and r[1]=="Dependente" and r[2]=="Maria Titular" and r[7]==9.33 and r[8]==3.6 for r in desc) and any(r[0]=="MARIA TITULAR" and r[1]=="Titular" and r[7]==18.98 for r in desc) and not any("Subtotal" in str(r[0]) for r in desc)
     un.locator("tr",has=pg.get_by_role("button",name="Ver pessoas de REVESTIMENTO - MÃO DE OBRA")).locator("td").first.click(position={"x":120,"y":8}); pg.wait_for_timeout(300)
     un.get_by_role("button",name=re.compile("Maria Titular")).click(); pg.wait_for_timeout(300)
     t=un.inner_text()

@@ -255,30 +255,21 @@ export function gerarPlanilhaUnimed(rel) {
 }
 
 // Planilha dos DESCONTOS EM FOLHA (vai para a BRIT lançar no contracheque): por colaborador — precisa dos nomes.
+// Planilha dos DESCONTOS EM FOLHA (vai para a BRIT): cada beneficiário em linha PRÓPRIA — titular e dependentes
+// separados, sem somar um com o outro (pedido do RH: o lançamento é por beneficiário). O dependente fica ligado ao
+// titular pelas colunas "Titular (colaborador)" e "Matrícula". Só o TOTAL geral no fim, para conferência.
 export function gerarDescontosUnimed(rel) {
   const H = (a) => a.map((v) => ({ v, estilo: "cabecalho" })), N = (v) => ({ v, estilo: "negrito" });
-  const linhas = (lista) => {
-    const out = [];
-    lista.forEach((d) => {
-      (d.beneficiarios || []).forEach((b) => out.push([d.colaborador, d.cadastro || "", d.centro_custo || "", b.nome, b.papel, b.faixa || "", CONTRATOS[b.contrato] || b.contrato, b.mensalidade, b.copart, b.total]));
-      out.push([N(`Subtotal — ${d.colaborador}`), "", "", "", "", "", "", N(d.mensalidade), N(d.copart), N(d.total)]);
-    });
-    return out;
-  };
-  const soma = (k) => r2((rel.descontos || []).reduce((a, d) => a + d[k], 0));
-  const cab = H(["Colaborador", "Matrícula", "Centro de custo", "Beneficiário", "Titular/Dependente", "Faixa", "Contrato", "Mensalidade (R$)", "Coparticipação (R$)", "Total (R$)"]);
-  const larg = [36, 11, 36, 38, 16, 11, 22, 15, 17, 12];
+  const linhas = (lista) => lista.flatMap((d) => (d.beneficiarios || []).map((b) =>
+    [b.nome, b.papel, d.colaborador, d.cadastro || "", d.centro_custo || "", b.faixa || "", CONTRATOS[b.contrato] || b.contrato, b.mensalidade, b.copart]));
+  const total = (lista, k) => r2(lista.reduce((a, d) => a + (d.beneficiarios || []).reduce((x, b) => x + b[k], 0), 0));
+  const cab = H(["Beneficiário", "Titular/Dependente", "Titular (colaborador)", "Matrícula", "Centro de custo", "Faixa", "Contrato", "Desconto mensalidade (R$)", "Desconto coparticipação (R$)"]);
+  const larg = [38, 17, 36, 11, 36, 11, 22, 22, 24];
+  const aba = (nome, titulo, lista) => ({ nome, larguras: larg, cabecalho: 1, linhas: [[{ v: titulo, estilo: "titulo" }], cab, ...linhas(lista),
+    [N("TOTAL GERAL"), "", "", "", "", "", "", N(total(lista, "mensalidade")), N(total(lista, "copart"))]] });
   return gerarXlsx([
-    { nome: "Descontos em folha", larguras: larg, cabecalho: 1, linhas: [
-      [{ v: `Unimed — descontos em folha — ${nomeCompetencia(rel.competencia)} (mensalidade pela tabela de desconto ${TABELA_DESCONTO_VIGENCIA}, por faixa etária, com teto aos 59+ / diretoria R$ 1,00; coparticipação 50% após 2 procedimentos por família) — titular e dependentes, com subtotal por colaborador (valor a lançar na folha)`, estilo: "titulo" }],
-      cab, ...linhas(rel.descontos || []),
-      [N("TOTAL"), "", "", "", "", "", "", N(soma("mensalidade")), N(soma("copart")), N(soma("total"))]] },
-    { nome: "Rescisão", larguras: larg, cabecalho: 1, linhas: [
-      [{ v: "Desligados — lançar na rescisão (titular e dependentes)", estilo: "titulo" }], cab, ...linhas(rel.rescisao || [])] },
-    { nome: "Resumo por colaborador", larguras: [40, 12, 40, 16, 18, 14], cabecalho: 0, linhas: [
-      H(["Colaborador", "Matrícula", "Centro de custo", "Mensalidade (R$)", "Coparticipação (R$)", "Total (R$)"]),
-      ...(rel.descontos || []).map((d) => [d.colaborador, d.cadastro || "", d.centro_custo || "", d.mensalidade, d.copart, d.total]),
-      [N("TOTAL"), "", "", N(soma("mensalidade")), N(soma("copart")), N(soma("total"))]] },
+    aba("Descontos em folha", `Unimed — descontos em folha — ${nomeCompetencia(rel.competencia)} — cada beneficiário em linha própria (mensalidade pela tabela de desconto ${TABELA_DESCONTO_VIGENCIA}, por faixa etária, com teto aos 59+ / diretoria R$ 1,00 no titular; coparticipação 50% após 2 procedimentos por família)`, rel.descontos || []),
+    aba("Rescisão", "Desligados — lançar na rescisão (cada beneficiário em linha própria)", rel.rescisao || []),
   ]);
 }
 
