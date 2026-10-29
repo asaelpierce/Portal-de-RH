@@ -49,11 +49,11 @@ with sync_playwright() as p:
     pg.get_by_label("Cargo *").fill("Auxiliar de Produção"); pg.get_by_label("Horário de trabalho *").fill("7h às 17h"); pg.get_by_label("Salário *").fill("R$ 1.900,00")
     pg.get_by_label("Idade e sexo preferenciais").fill("indiferente"); pg.get_by_label("Prazo de contratação").fill("2026-11-30")
     pg.get_by_role("radio",name="Temporário").check(); pg.get_by_role("radio",name=re.compile("^Sigilosa")).check()
-    pg.get_by_role("radio",name="Demissão").check(); pg.wait_for_timeout(200)
+    pg.get_by_role("radio",name="Reposição").check(); pg.wait_for_timeout(200)
     enviar=pg.get_by_role("button",name=re.compile("Enviar ao RH"))
     pg.get_by_label("Quais os requisitos técnicos? *").fill("Ensino médio"); pg.get_by_label("Quais os requisitos comportamentais?").fill("Proatividade")
     pg.get_by_label("Observações adicionais").fill("Urgente"); pg.get_by_role("radio",name="Sim").check()
-    res["P7 demissão pede 'quem saiu' (sem isso não envia)"]=pg.get_by_label("Quem saiu? *").count()==1 and enviar.is_disabled()
+    res["P7 reposição pede 'quem saiu' (sem isso não envia)"]=pg.get_by_label("Quem saiu? *").count()==1 and enviar.is_disabled()
     pg.get_by_label("Quem saiu? *").select_option("3")
     enviar.click(); pg.wait_for_timeout(600)
     d=pg.evaluate("window.__FORM_ENVIADO")["p_dados"]

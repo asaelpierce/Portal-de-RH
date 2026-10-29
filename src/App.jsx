@@ -139,7 +139,7 @@ const mmv=m=>({id:m.id,tipo:m.tipo,status:m.status,solicitanteId:m.solicitante_i
   motivoRequisicao:m.motivo_requisicao,substituidoId:m.substituido_id,quantidade:m.quantidade||1,tipoContratacao:m.tipo_contratacao,turno:m.turno,centroCusto:m.centro_custo,
   motivoRequisicaoOutro:m.motivo_requisicao_outro,tipoContratacaoOutro:m.tipo_contratacao_outro,tipoVaga:m.tipo_vaga,tipoVagaOutro:m.tipo_vaga_outro,superiorId:m.superior_id,
   perfilIdadeSexo:m.perfil_idade_sexo,requisitosComportamentais:m.requisitos_comportamentais,observacoes:m.observacoes,diretoriaCiente:m.diretoria_ciente,origem:m.origem});
-const MOTIVO_REQ={aumento_quadro:"Aumento do quadro",substituicao:"Substituição",demissao:"Demissão",promocao:"Promoção",outro:"Outra"};
+const MOTIVO_REQ={aumento_quadro:"Aumento do quadro",substituicao:"Substituição",demissao:"Reposição",promocao:"Promoção",outro:"Outra"};
 // Requisição de pessoal (substitui o Forms KdB 181)
 const TIPO_CONTRATACAO={clt:"Efetivo (CLT)",temporario:"Temporário",aprendiz:"Aprendiz",estagio:"Estágio"};
 const TIPO_CONTRATACAO_FORM={clt:"Efetivo",temporario:"Temporário",outro:"Outra"};
@@ -5202,7 +5202,7 @@ function FormularioPublico({tipo}){
           {f.tipo_contratacao==="outro"&&<div style={{marginTop:6}}><Inp label="Qual? *" value={f.tipo_contratacao_outro||""} onChange={e=>set("tipo_contratacao_outro",e.target.value)}/></div>}</div>
         <div>{rot("Tipo de vaga *")}{radios("tv",f.tipo_vaga,[["sigilosa","Sigilosa (o nome da empresa não é divulgado)"],["aberta","Aberta (será divulgado o nome da empresa)"],["outra","Outra"]],v=>set("tipo_vaga",v))}
           {f.tipo_vaga==="outra"&&<div style={{marginTop:6}}><Inp label="Qual? *" value={f.tipo_vaga_outro||""} onChange={e=>set("tipo_vaga_outro",e.target.value)}/></div>}</div>
-        <div>{rot("Motivo da requisição *")}{radios("mr",f.motivo_requisicao,[["aumento_quadro","Aumento do quadro"],["demissao","Demissão"],["promocao","Promoção"],["outro","Outra"]],v=>setF(x=>({...x,motivo_requisicao:v,substituido_id:""})))}
+        <div>{rot("Motivo da requisição *")}{radios("mr",f.motivo_requisicao,[["aumento_quadro","Aumento do quadro"],["demissao","Reposição"],["promocao","Promoção"],["outro","Outra"]],v=>setF(x=>({...x,motivo_requisicao:v,substituido_id:""})))}
           {["demissao","promocao"].includes(f.motivo_requisicao)&&<div style={{marginTop:6}}><Sel label={f.motivo_requisicao==="demissao"?"Quem saiu? *":"Quem foi promovido? *"} value={f.substituido_id||""} onChange={e=>set("substituido_id",e.target.value)} options={opts(pessoas(daEquipe),f.solicitante_id?"Selecione...":"Escolha primeiro o seu nome")}/></div>}
           {f.motivo_requisicao==="outro"&&<div style={{marginTop:6}}><Inp label="Qual? *" value={f.motivo_requisicao_outro||""} onChange={e=>set("motivo_requisicao_outro",e.target.value)}/></div>}</div>
         <Tex label="Quais os requisitos técnicos? *" value={f.requisitos||""} onChange={e=>set("requisitos",e.target.value)} rows={2} placeholder="Ex.: escolaridade, tempo de experiência, experiência específica, informática"/>
