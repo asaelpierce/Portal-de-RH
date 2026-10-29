@@ -87,11 +87,12 @@
        aprendizes:ap,sem_nascimento:a.p_ativos.filter(x=>!/aprendiz/i.test(x.cargo)).map(x=>x.nome),
        exclusoes:[{nome:"PEDRO SAIU",cpf:"33322211100",nascimento:"1995-05-05",centro_custo:"CORTE",status_portal:"desligado",desligamento:"2026-10-15"}]});}
    if(fn==="centro_custo_ajustar"){window.__CCU=window.__CCU||{};window.__AJUSTES=(window.__AJUSTES||[]).concat([a]);window.__CCU[a.p_usuario_id]=a.p_centro_custo;return ok({mudou:true,para:a.p_centro_custo});}
-   if(fn==="form_publico_contexto")return ok({colaboradores:USERS.filter(x=>x.status==="ativo").map(x=>({id:x.id,nome:x.name,cargo:"",setor:x.setor})),
+   if(fn==="form_publico_contexto")return ok({solicitantes:[{id:1,nome:"Ana RH",equipe:[2,3]},{id:3,nome:"Maria Titular",equipe:[3]}],colaboradores:USERS.filter(x=>x.status==="ativo").map(x=>({id:x.id,nome:x.name,cargo:"",setor:x.setor})),
      lideres:USERS.filter(x=>x.role!=="colaborador").map(x=>({id:x.id,nome:x.name})),gestores:USERS.filter(x=>x.role==="rh").map(x=>({id:x.id,nome:x.name})),
      centros_custo:["RECURSOS HUMANOS","VULCANIZACAO - MÃO DE OBRA"],areas:["vulcanizacao"]});
    if(fn==="form_publico_enviar"){const MAT={1:"100",2:"200",3:"300"};window.__FORM_ENVIADO=a;
-     if(MAT[a.p_dados.solicitante_id]!==String(a.p_dados.solicitante_matricula).replace(/^0+/,""))return er("Nome e matrícula não conferem. Use a sua matrícula da folha (está no contracheque) ou fale com o RH.");
+     const EQ={1:[2,3],3:[3]};if(!EQ[a.p_dados.solicitante_id])return er("Escolha o seu nome na lista de quem pode pedir. Se não estiver, fale com o RH.");
+     if(a.p_dados.user_id&&!EQ[a.p_dados.solicitante_id].includes(a.p_dados.user_id))return er("Este colaborador não é da sua equipe. Fale com o RH.");
      return ok({ok:true,tipo:a.p_tipo,id:77,colaborador:(USERS.find(x=>x.id===a.p_dados.user_id)||{}).name||null});}
    return ok(null);},
   functions:{invoke:async(nome,opt)=>{window.__INVOKES=(window.__INVOKES||[]).concat([{nome,body:opt&&opt.body}]);

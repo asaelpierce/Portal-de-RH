@@ -5111,10 +5111,13 @@ function FormularioPublico({tipo}){
   const camposMov=[...new Set((f.tipos||[]).flatMap(t=>MOV_CAMPOS_POR_TIPO[t]||[]))];
   const opts=(lista,vazio="Selecione...")=>[{value:"",label:vazio},...lista];
   const pessoas=l=>l.map(u=>({value:u.id,label:u.nome+(u.cargo?" — "+u.cargo:"")}));
-  const solicitantes=tipo==="ferias"?ctx.colaboradores:ctx.lideres;
+  // Quem pode pedir e a equipe de cada um (form_escopos, por centro de custo da folha)
+  const solicitantes=ctx.solicitantes||[];
+  const equipe=new Set((solicitantes.find(x=>String(x.id)===String(f.solicitante_id))||{}).equipe||[]);
+  const daEquipe=ctx.colaboradores.filter(u=>equipe.has(u.id));
   const enviar=async()=>{
     setErro("");setEnviando(true);
-    const d={solicitante_id:parseInt(f.solicitante_id),solicitante_matricula:f.matricula||""};
+    const d={solicitante_id:parseInt(f.solicitante_id)};
     if(tipo==="ferias")Object.assign(d,{user_id:parseInt(f.user_id),inicio:f.inicio,descanso:op?.descanso,abono:op?.abono||0,opcao:op?.id,periodo_aquisitivo:f.periodo||"",adiantamento_13:f.adiantamento_13,ciente:!!f.ciente,obs:f.obs||""});
     if(tipo==="admissao")Object.assign(d,{gestor_id:parseInt(f.gestor_id),setor:f.setor||"",cargo:f.cargo||"",salario:f.salario||"",requisitos:f.requisitos||"",motivo:f.motivo||"",
       motivo_requisicao:f.motivo_requisicao||"",substituido_id:f.motivo_requisicao==="substituicao"?parseInt(f.substituido_id):null,quantidade:parseInt(f.quantidade)||1,tipo_contratacao:f.tipo_contratacao,turno:f.turno||"",centro_custo:f.centro_custo||""});
@@ -5128,10 +5131,10 @@ function FormularioPublico({tipo}){
     <div style={{fontSize:30}}>✅</div><div style={{fontSize:18,fontWeight:800,margin:"6px 0"}}>Pedido enviado ao RH</div>
     <div style={{fontSize:14,color:C.txm}}>{TIT[tipo]}{ok.colaborador?` · ${ok.colaborador}`:""} · nº {ok.id}</div>
     <div style={{fontSize:13,color:C.txd,margin:"10px 0 16px"}}>O RH vai analisar e dar retorno.</div>
-    <Btn v="outline" onClick={()=>{setOk(null);setF({tipos:[],proposta:{},quantidade:"1",tipo_contratacao:"clt",adiantamento_13:"",opcao:"",solicitante_id:f.solicitante_id,matricula:f.matricula});}}>Fazer outro pedido</Btn>
+    <Btn v="outline" onClick={()=>{setOk(null);setF({tipos:[],proposta:{},quantidade:"1",tipo_contratacao:"clt",adiantamento_13:"",opcao:"",solicitante_id:f.solicitante_id});}}>Fazer outro pedido</Btn>
   </Card></div>);
   const grid={display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12};
-  const pronto=f.solicitante_id&&f.matricula&&(
+  const pronto=f.solicitante_id&&(
     tipo==="ferias"?f.user_id&&f.inicio&&op:
     tipo==="admissao"?f.gestor_id&&f.cargo&&f.salario&&f.motivo&&f.requisitos&&f.motivo_requisicao&&(f.motivo_requisicao!=="substituicao"||f.substituido_id):
     tipo==="movimentacao"?f.user_id&&f.gestor_id&&f.tipos.length&&f.vigencia&&f.motivo&&camposMov.some(k=>String(f.proposta[k]??"").trim()):
@@ -5139,14 +5142,11 @@ function FormularioPublico({tipo}){
   return(<div style={caixa}><div style={{width:"100%",maxWidth:720,display:"flex",flexDirection:"column",gap:14}}>
     <div><div style={{fontSize:13,color:C.txd}}>Kalenborn · RH</div><div style={{fontSize:22,fontWeight:800}}>{TIT[tipo]}</div></div>
     <Card><div style={{fontSize:14,fontWeight:700,marginBottom:10}}>Quem está pedindo</div>
-      <div style={grid}>
-        <Sel label="Seu nome *" value={f.solicitante_id||""} onChange={e=>set("solicitante_id",e.target.value)} options={opts(solicitantes.map(u=>({value:u.id,label:u.nome})))}/>
-        <Inp label="Sua matrícula da folha *" value={f.matricula||""} onChange={e=>set("matricula",e.target.value)} placeholder="Está no seu contracheque"/>
-      </div>
-      <div style={{fontSize:12,color:C.txd,marginTop:6}}>A matrícula confirma que é você. {tipo!=="ferias"?"Este pedido é feito por líderes e gestores.":"Líderes e gestores pedem as férias da equipe; o colaborador pode pedir as próprias."}</div>
+      <Sel label="Seu nome *" value={f.solicitante_id||""} onChange={e=>setF(x=>({...x,solicitante_id:e.target.value,user_id:"",substituido_id:""}))} options={opts(solicitantes.map(u=>({value:u.id,label:u.nome})))}/>
+      <div style={{fontSize:12,color:C.txd,marginTop:6}}>Depois de escolher o seu nome, aparecem só as pessoas da sua equipe. Se o seu nome não estiver na lista, fale com o RH.</div>
     </Card>
     <Card><div style={{display:"flex",flexDirection:"column",gap:12}}>
-      {(tipo==="ferias"||tipo==="movimentacao"||tipo==="demissao")&&<Sel label="Colaborador *" value={f.user_id||""} onChange={e=>set("user_id",e.target.value)} options={opts(pessoas(ctx.colaboradores))}/>}
+      {(tipo==="ferias"||tipo==="movimentacao"||tipo==="demissao")&&<Sel label="Colaborador *" value={f.user_id||""} onChange={e=>set("user_id",e.target.value)} options={opts(pessoas(daEquipe),f.solicitante_id?"Selecione...":"Escolha primeiro o seu nome")}/>}
       {tipo!=="ferias"&&<Sel label="Gestor responsável *" value={f.gestor_id||""} onChange={e=>set("gestor_id",e.target.value)} options={opts(ctx.gestores.map(u=>({value:u.id,label:u.nome})))}/>}
       {tipo==="ferias"&&<>
         <div style={grid}><Inp label="Data de início *" type="date" value={f.inicio||""} onChange={e=>set("inicio",e.target.value)}/>
@@ -5166,7 +5166,7 @@ function FormularioPublico({tipo}){
           <Inp label="Cargo *" value={f.cargo||""} onChange={e=>set("cargo",e.target.value)}/>
           <Inp label="Salário *" value={f.salario||""} onChange={e=>set("salario",e.target.value)} placeholder="Ex.: R$ 1.900,00"/>
           <Sel label="Motivo da requisição *" value={f.motivo_requisicao||""} onChange={e=>set("motivo_requisicao",e.target.value)} options={opts([{value:"aumento_quadro",label:"Aumento de quadro"},{value:"substituicao",label:"Substituição"}])}/>
-          {f.motivo_requisicao==="substituicao"&&<Sel label="Quem será substituído? *" value={f.substituido_id||""} onChange={e=>set("substituido_id",e.target.value)} options={opts(pessoas(ctx.colaboradores))}/>}
+          {f.motivo_requisicao==="substituicao"&&<Sel label="Quem será substituído? *" value={f.substituido_id||""} onChange={e=>set("substituido_id",e.target.value)} options={opts(pessoas(daEquipe),f.solicitante_id?"Selecione...":"Escolha primeiro o seu nome")}/>}
           <Inp label="Quantidade de vagas *" type="number" value={f.quantidade} onChange={e=>set("quantidade",e.target.value)}/>
           <Sel label="Tipo de contratação *" value={f.tipo_contratacao} onChange={e=>set("tipo_contratacao",e.target.value)} options={Object.entries(TIPO_CONTRATACAO).map(([k,v])=>({value:k,label:v}))}/>
           <Inp label="Turno / horário" value={f.turno||""} onChange={e=>set("turno",e.target.value)}/>
