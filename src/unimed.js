@@ -5,8 +5,10 @@
 // diretoria) e 0372477 (Unipart). Família = 14 primeiros dígitos do código Unimed (titular + dependentes).
 // Regras (planilha "Novo Rateio Unimed" + respostas do RH em 21/10/2026):
 //  • Rateio: mensalidade e coparticipação de cada família no centro de custo da folha (BRIT) do titular, por contrato.
-//  • Desconto mensalidade: 11% de cada valor positivo (créditos/estornos negativos não descontam);
-//    diretoria (0309918): R$ 1,00 por titular.
+//  • Desconto mensalidade (confirmado pelo Asael em 29/10/2026): valor da TABELA DE DESCONTO pela faixa etária de cada
+//    beneficiário (11% do preço da faixa), com TETO a partir dos 59 anos (= valor da faixa 54 a 58), nos dois contratos;
+//    só para quem teve cobrança no mês (crédito/estorno não desconta). Faixa não reconhecida → 11% do cobrado, com aviso.
+//    Diretoria (0309918): R$ 1,00 por titular.
 //  • Desconto coparticipação: por família e por mês, a empresa cobre 2 consultas/exames (os 2 mais caros, como a
 //    planilha) e o colaborador desconta 50% do restante; diretoria: sem desconto.
 //  • Desligados: o valor da Unimed fica NO RATEIO (a empresa paga a fatura inteira — corrigido em 29/10/2026: antes saía
@@ -19,6 +21,35 @@ import { brl, nomeCompetencia } from "./seguroVida.js";
 export const CONTRATOS = { "0309917": "Enfermaria", "0309918": "Apartamento (diretoria)", "0372477": "Unipart" };
 export const CONTRATOS_DIRETORIA = ["0309918"];
 export const DESCONTO_MENSALIDADE = 0.11, DESCONTO_DIRETORIA = 1, COBERTOS_POR_MES = 2, DESCONTO_COPART = 0.5;
+// Tabela de desconto 2025/2026 (planilha "Novo Rateio Unimed", aba "Tabela de desconto"), por limite inferior da faixa.
+// preco = valor do plano na faixa (para detectar reajuste); desconto = 11% do preço, arredondado, com teto aos 59+.
+// Decisão do RH (29/10/2026): manter esta tabela até o RH aprovar o reajuste do desconto (a fatura 10/2026 do Unifácil já
+// veio ~11% maior). O portal avisa quando a fatura não bate com estes preços.
+export const TABELA_DESCONTO_VIGENCIA = "2025/2026";
+export const TABELA_DESCONTO = {
+  "0309917": { // Unifácil Enfermaria (preço já com o aeromédico de R$ 2,55)
+    0: { preco: 84.83, desconto: 9.33 }, 19: { preco: 101.29, desconto: 11.14 }, 24: { preco: 124.97, desconto: 13.75 },
+    29: { preco: 154.35, desconto: 16.98 }, 34: { preco: 172.57, desconto: 18.98 }, 39: { preco: 179.38, desconto: 19.73 },
+    44: { preco: 225.35, desconto: 24.79 }, 49: { preco: 256.55, desconto: 28.22 }, 54: { preco: 304.80, desconto: 33.53 },
+    59: { preco: 495.22, desconto: 33.53 } },   // teto
+  "0372477": { // Unipart Enfermaria (preço do módulo básico; a fatura soma o aeromédico de R$ 2,55)
+    0: { preco: 134.56, desconto: 14.80 }, 19: { preco: 161.47, desconto: 17.76 }, 24: { preco: 200.22, desconto: 22.02 },
+    29: { preco: 248.27, desconto: 27.31 }, 34: { preco: 278.07, desconto: 30.59 }, 39: { preco: 289.19, desconto: 31.81 },
+    44: { preco: 364.38, desconto: 40.08 }, 49: { preco: 415.39, desconto: 45.69 }, 54: { preco: 494.32, desconto: 54.38 },
+    59: { preco: 805.73, desconto: 54.38 } },   // teto (mesmo padrão do Unifácil)
+};
+const AEROMEDICO = { "0372477": 2.55 };
+// "49 a 53" → 49; "59 ou mais" / "59 a 99" / "acima de 59" → 59
+export const faixaBase = (faixa) => { const m = /(\d+)/.exec(String(faixa || "")); if (!m) return null; const n = Number(m[1]);
+  const bases = [0, 19, 24, 29, 34, 39, 44, 49, 54, 59]; return n >= 59 ? 59 : bases.includes(n) ? n : null; };
+// Desconto de um beneficiário no mês: tabela pela faixa (se teve cobrança); senão 11% do cobrado (faixa desconhecida).
+export function descontoBeneficiario(contrato, b) {
+  const cobrado = cobradoPositivo(b);
+  if (cobrado <= 0) return { valor: 0, origem: "sem cobrança" };
+  const t = TABELA_DESCONTO[contrato]?.[faixaBase(b.faixa)];
+  if (t) return { valor: t.desconto, origem: "tabela", base: faixaBase(b.faixa) };
+  return { valor: r2(cobrado * DESCONTO_MENSALIDADE), origem: "11% do cobrado" };
+}
 const r2 = (v) => Math.round((v + Number.EPSILON) * 100) / 100;
 const num = (s) => { const t = String(s).trim(); const neg = t.startsWith("-") || t.endsWith("-"); return (neg ? -1 : 1) * Number(t.replace(/-/g, "").replace(/\./g, "").replace(",", ".")); };
 const dataISO = (s) => { const m = /(\d\d)\/(\d\d)\/(\d{4})/.exec(s || ""); return m ? `${m[3]}-${m[2]}-${m[1]}` : null; };
@@ -124,7 +155,7 @@ export function calcularUnimed(arquivos, vinculos) {
     const diretoria = CONTRATOS_DIRETORIA.includes(f.contrato);
     const titular = f.titular || [...f.beneficiarios].sort((x, y) => x.codigo.localeCompare(y.codigo))[0]?.nome || "";
     const descMens = diretoria ? (f.beneficiarios.length ? DESCONTO_DIRETORIA : 0)
-      : r2(f.beneficiarios.reduce((a, b) => a + r2(cobradoPositivo(b) * DESCONTO_MENSALIDADE), 0));
+      : r2(f.beneficiarios.reduce((a, b) => a + descontoBeneficiario(f.contrato, b).valor, 0));
     const ordenados = [...f.itens].sort((x, y) => y.valor - x.valor);
     const cobertos = ordenados.slice(0, COBERTOS_POR_MES), resto = ordenados.slice(COBERTOS_POR_MES);
     const empresaCopart = r2(cobertos.reduce((a, i) => a + i.valor, 0));
@@ -162,6 +193,12 @@ export function calcularUnimed(arquivos, vinculos) {
     rescisao: rescisao.map((r) => `${r.colaborador}: ${brl(r.total)}`),
     contratos_desconhecidos: contratos.filter((c) => !CONTRATOS[c]),
     creditos: linhas.flatMap((l) => l.beneficiarios.filter(temCredito).map((b) => `${b.nome} (${l.colaborador || l.titular})`)),
+    faixa_desconhecida: linhas.filter((l) => !l.diretoria).flatMap((l) => l.beneficiarios.filter((b) => cobradoPositivo(b) > 0 && TABELA_DESCONTO[l.contrato] && !TABELA_DESCONTO[l.contrato][faixaBase(b.faixa)]).map((b) => `${b.nome} (faixa "${b.faixa || "—"}")`)),
+    reajuste: Object.keys(TABELA_DESCONTO).filter((c) => { const bs = linhas.filter((l) => l.contrato === c).flatMap((l) => l.beneficiarios)
+      .filter((b) => cobradoPositivo(b) > 0 && TABELA_DESCONTO[c][faixaBase(b.faixa)] && !(b.modulos || []).some((m) => m.valor < 0));
+      if (bs.length < 3) return false;
+      const batem = bs.filter((b) => Math.abs(cobradoPositivo(b) - TABELA_DESCONTO[c][faixaBase(b.faixa)].preco - (AEROMEDICO[c] || 0)) < 0.02).length;
+      return batem / bs.length < 0.5; }),
   };
   const total = r2(rateio.reduce((a, r) => a + r.mensalidade + r.copart, 0));  // = soma dos PDFs (o rateio cobre a fatura inteira)
   return { linhas, rateio, descontos, rescisao, conferencia, total: r2(total),
@@ -187,7 +224,9 @@ export function itensConferenciaUnimed(rel) {
   if (c.nao_encontrados?.length) out.push({ tipo: "erro", titulo: "Famílias não encontradas no cadastro (ficam sem centro de custo)", texto: lista(c.nao_encontrados) });
   if (c.rescisao?.length) out.push({ tipo: "erro", titulo: "Desligados ainda no plano — pedir exclusão à Unimed; o desconto deles vai na rescisão (o valor da Unimed fica no rateio)", texto: lista(c.rescisao) });
   if (c.sem_centro_custo?.length) out.push({ tipo: "erro", titulo: "Sem centro de custo no cadastro", texto: lista(c.sem_centro_custo) });
-  if (c.creditos?.length) out.push({ tipo: "info", titulo: "Beneficiários com crédito/estorno no mês (o desconto de 11% considera só o que foi cobrado — conferir)", texto: lista(c.creditos) });
+  if (c.reajuste?.length) out.push({ tipo: "alerta", titulo: `Preços da fatura diferentes da tabela de desconto ${TABELA_DESCONTO_VIGENCIA} (reajuste da Unimed). Os descontos seguem a tabela ${TABELA_DESCONTO_VIGENCIA}, por decisão do RH, até o reajuste do desconto ser aprovado`, texto: "contrato(s) " + lista(c.reajuste) });
+  if (c.faixa_desconhecida?.length) out.push({ tipo: "alerta", titulo: "Faixa etária não reconhecida (desconto calculado como 11% do cobrado — conferir)", texto: lista(c.faixa_desconhecida) });
+  if (c.creditos?.length) out.push({ tipo: "info", titulo: "Beneficiários com crédito/estorno no mês (conferir o desconto)", texto: lista(c.creditos) });
   if (c.contratos_desconhecidos?.length) out.push({ tipo: "alerta", titulo: "Contrato desconhecido (regra de desconto padrão aplicada)", texto: lista(c.contratos_desconhecidos) });
   return out;
 }
@@ -212,7 +251,7 @@ export function gerarDescontosUnimed(rel) {
   const soma = (k) => r2((rel.descontos || []).reduce((a, d) => a + d[k], 0));
   return gerarXlsx([
     { nome: "Descontos em folha", larguras: [40, 12, 40, 16, 18, 14], cabecalho: 1, linhas: [
-      [{ v: `Unimed — descontos em folha — ${nomeCompetencia(rel.competencia)} (mensalidade 11% / diretoria R$ 1,00; coparticipação 50% após 2 procedimentos por família)`, estilo: "titulo" }],
+      [{ v: `Unimed — descontos em folha — ${nomeCompetencia(rel.competencia)} (mensalidade pela tabela de desconto ${TABELA_DESCONTO_VIGENCIA}, por faixa etária, com teto aos 59+ / diretoria R$ 1,00; coparticipação 50% após 2 procedimentos por família)`, estilo: "titulo" }],
       H(["Colaborador", "Matrícula", "Centro de custo", "Mensalidade (R$)", "Coparticipação (R$)", "Total (R$)"]), ...desc(rel.descontos || []),
       [N("TOTAL"), "", "", N(soma("mensalidade")), N(soma("copart")), N(soma("total"))]] },
     { nome: "Rescisão", larguras: [40, 12, 40, 16, 18, 14], cabecalho: 1, linhas: [
