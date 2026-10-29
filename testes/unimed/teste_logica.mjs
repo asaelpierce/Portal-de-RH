@@ -50,18 +50,20 @@ const L = (f, c) => r.linhas.find((l) => l.familia === f && l.contrato === c);
 const maria = L(F1, "0309917");
 ok("R1 coparticipação: 2 mais caros pela empresa (36,62 + 31,63)", maria.empresa_copart === 68.25 && maria.itens.filter((i) => i.coberto).map((i) => i.valor).join() === "36.62,31.63");
 ok("R2 coparticipação: 50% do restante (7,20 + 10,00) = 8,60", maria.desconto_copart === 8.6);
-ok("R3 mensalidade pela tabela: 34 a 38 (18,98) + 0 a 18 (9,33) = 28,31", maria.desconto_mensalidade === 28.31);
-ok("R4 com cobrança e crédito no mês: desconta pela tabela (44 a 48 = 24,79)", L(F2, "0309917").desconto_mensalidade === 24.79);
+ok("R3 mensalidade pela tabela (preços atuais): 34 a 38 (21,07) + 0 a 18 (10,35) = 31,42", maria.desconto_mensalidade === 31.42);
+ok("R4 com cobrança e crédito no mês: desconta pela tabela (44 a 48 = 27,51)", L(F2, "0309917").desconto_mensalidade === 27.51);
 const dir = r.linhas.filter((l) => l.familia === F3);
 ok("R5 diretoria: R$ 1,00 na mensalidade e nada na coparticipação", dir.find((l) => l.contrato === "0309918" && l.beneficiarios.length).desconto_mensalidade === 1 && dir.every((l) => l.desconto_copart === 0));
 const pedro = r.rescisao.find((x) => x.colaborador === "Pedro Saiu");
-ok("R6 desligado: mesmo cálculo, vai para a rescisão (tabela 29 a 33 = 16,98 + 50% de 9,47)", pedro && pedro.mensalidade === 16.98 && pedro.copart === 4.74 && !r.descontos.some((d) => d.colaborador === "Pedro Saiu"));
+ok("R6 desligado: mesmo cálculo, vai para a rescisão (tabela 29 a 33 = 18,84 + 50% de 9,47)", pedro && pedro.mensalidade === 18.84 && pedro.copart === 4.74 && !r.descontos.some((d) => d.colaborador === "Pedro Saiu"));
 // Tabela: teto aos 59+, Unipart, faixa desconhecida e sem cobrança
 const B = (faixa, valor) => ({ faixa, modulos: [{ valor, desconto: 0, credito: 0, debito: 0 }] });
 ok("T1 teto aos 59+ no Unifácil (\"59 a 999\" = 33,53, não 11%)", U.descontoBeneficiario("0309917", B("59 a 999", 549.65)).valor === 33.53);
-ok("T2 Unipart: faixa 49 a 53 = 45,69 e teto aos 59+ = 54,38", U.descontoBeneficiario("0372477", B("49 a 53", 417.94)).valor === 45.69 && U.descontoBeneficiario("0372477", B("59 ou mais", 808.28)).valor === 54.38);
-ok("T3 cobrança retroativa (vários meses) desconta só a tabela do mês", U.descontoBeneficiario("0309917", B("49 a 53", 764.73)).valor === 28.22);
+ok("T2 Unipart: teto de R$ 33,53 também (49 a 53 seria 45,69; 59+ seria 88,63); 39 a 43 = 31,81", U.descontoBeneficiario("0372477", B("49 a 53", 417.94)).valor === 33.53 && U.descontoBeneficiario("0372477", B("59 ou mais", 808.28)).valor === 33.53 && U.descontoBeneficiario("0372477", B("39 a 43", 291.74)).valor === 31.81);
+ok("T2b exemplo do Asael: 19 a 23 no Unifácil = 12,36", U.descontoBeneficiario("0309917", B("19 a 23", 112.39)).valor === 12.36);
+ok("T3 cobrança retroativa (vários meses) desconta só a tabela do mês", U.descontoBeneficiario("0309917", B("49 a 53", 764.73)).valor === 31.32);
 ok("T4 faixa desconhecida: 11% do cobrado", U.descontoBeneficiario("0309917", B("sem faixa", 100)).valor === 11 && U.descontoBeneficiario("0309917", B("sem faixa", 100)).origem === "11% do cobrado");
+ok("T4b faixa desconhecida também respeita o teto (11% de 1.000 → 33,53)", U.descontoBeneficiario("0309917", B("sem faixa", 1000)).valor === 33.53);
 ok("T5 só crédito no mês: não desconta", U.descontoBeneficiario("0309917", B("34 a 38", -172.57)).valor === 0);
 const rat17 = r.rateio.find((x) => x.contrato === "0309917");
 ok("R7 rateio INCLUI o desligado (a empresa paga a fatura inteira); dependente no titular", rat17.centros.find((c) => c.centro_custo === "CORTE").mensalidade === 285 && rat17.centros.find((c) => c.centro_custo === "VULCANIZACAO").mensalidade === 550);
@@ -84,15 +86,15 @@ const d = JSON.parse(execSync(`python3 -c "
 import openpyxl,json; wb=openpyxl.load_workbook('${arqD}'); d=wb['Descontos em folha']; rs=wb['Rescisão']
 print(json.dumps({'abas':wb.sheetnames,'desc':[[c.value for c in row] for row in d.iter_rows(min_row=3)],'resc':[[c.value for c in row] for row in rs.iter_rows(min_row=3)]}))"`).toString());
 ok("P2 abas: descontos e rescisão (sem resumo somado)", JSON.stringify(d.abas) === JSON.stringify(["Descontos em folha", "Rescisão"]));
-ok("P2b titular em linha própria: MARIA TITULAR, 34 a 38, mensalidade 18,98, copart 5,00", d.desc.some((l) => l[0] === "MARIA TITULAR" && l[1] === "Titular" && l[2] === "Maria Titular" && l[5] === "34 a 38" && l[7] === 18.98 && l[8] === 5));
-ok("P2c dependente em linha própria, ligado ao titular: FILHO DA MARIA → Maria Titular, 9,33 + 3,60", d.desc.some((l) => l[0] === "FILHO DA MARIA" && l[1] === "Dependente" && l[2] === "Maria Titular" && l[5] === "0 a 18" && l[7] === 9.33 && l[8] === 3.6));
-ok("P2d sem subtotal juntando titular e dependentes; só o TOTAL GERAL", !d.desc.some((l) => /Subtotal/.test(String(l[0])) || l[7] === 28.31) && d.desc[d.desc.length - 1][0] === "TOTAL GERAL");
+ok("P2b titular em linha própria: MARIA TITULAR, 34 a 38, mensalidade 21,07, copart 5,00", d.desc.some((l) => l[0] === "MARIA TITULAR" && l[1] === "Titular" && l[2] === "Maria Titular" && l[5] === "34 a 38" && l[7] === 21.07 && l[8] === 5));
+ok("P2c dependente em linha própria, ligado ao titular: FILHO DA MARIA → Maria Titular, 10,35 + 3,60", d.desc.some((l) => l[0] === "FILHO DA MARIA" && l[1] === "Dependente" && l[2] === "Maria Titular" && l[5] === "0 a 18" && l[7] === 10.35 && l[8] === 3.6));
+ok("P2d sem subtotal juntando titular e dependentes; só o TOTAL GERAL", !d.desc.some((l) => /Subtotal/.test(String(l[0])) || l[7] === 31.42) && d.desc[d.desc.length - 1][0] === "TOTAL GERAL");
 ok("P3 rescisão com o desligado em linha própria", d.resc.some((l) => l[0] === "PEDRO SAIU" && l[2] === "Pedro Saiu") && !d.resc.some((l) => /Subtotal/.test(String(l[0]))));
 // Aviso de reajuste: fatura com preços ~11% maiores que a tabela → aviso; preços iguais à tabela → sem aviso
 const fam = (n, faixa, valor) => ({ codigo: String(n).padStart(14, "9") + "000", familia: String(n).padStart(14, "9"), nome: "B" + n, faixa, modulos: [{ valor, desconto: 0, credito: 0, debito: 0 }], valor });
-const arqRe = [{ tipo: "mensalidade", contrato: "0309917", competencia: "2026-10", soma: 0, beneficiarios: [fam(1, "0 a 18", 94.12), fam(2, "29 a 33", 171.29), fam(3, "54 a 58", 338.29)] }];
-const arqOk = [{ tipo: "mensalidade", contrato: "0309917", competencia: "2026-10", soma: 0, beneficiarios: [fam(1, "0 a 18", 84.83), fam(2, "29 a 33", 154.35), fam(3, "54 a 58", 304.80)] }];
-ok("T6 fatura reajustada: aviso (descontos seguem a tabela 2025/2026)", U.calcularUnimed(arqRe, {}).conferencia.reajuste.includes("0309917") && U.calcularUnimed(arqRe, {}).linhas[0].desconto_mensalidade === 9.33);
+const arqRe = [{ tipo: "mensalidade", contrato: "0309917", competencia: "2026-10", soma: 0, beneficiarios: [fam(1, "0 a 18", 104.43), fam(2, "29 a 33", 190.05), fam(3, "54 a 58", 375.34)] }];
+const arqOk = [{ tipo: "mensalidade", contrato: "0309917", competencia: "2026-10", soma: 0, beneficiarios: [fam(1, "0 a 18", 94.12), fam(2, "29 a 33", 171.29), fam(3, "54 a 58", 338.29)] }];
+ok("T6 fatura com novo reajuste: aviso (descontos seguem a tabela atual)", U.calcularUnimed(arqRe, {}).conferencia.reajuste.includes("0309917") && U.calcularUnimed(arqRe, {}).linhas[0].desconto_mensalidade === 10.35);
 ok("T7 fatura igual à tabela: sem aviso de reajuste", U.calcularUnimed(arqOk, {}).conferencia.reajuste.length === 0);
 ok("R11 cada família guarda o colaborador (para a correção de centro de custo)", r.linhas.every((l) => "usuario_id" in l));
 const em = U.emailResumoUnimed(rel);
