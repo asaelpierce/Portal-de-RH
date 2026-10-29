@@ -4983,7 +4983,7 @@ const RELATORIOS_MENSAIS=[
    refazer:(user,r)=>getSB().rpc("sesi_conferir",{p_pedido_por:user.id,p_competencia:r.competencia,p_cabecalho:{data_corte:r.data_corte||"",contrato:r.contrato||"",vigencia:r.vigencia||""},
      p_arquivo:r.arquivo_nome||"",p_linhas:(r.linhas||[]).map(l=>({cpf:l.cpf,nome:l.nome,categoria:l.categoria,valor:l.valor}))})},
   {chave:"unimed",icone:"🏥",titulo:"Unimed — rateio por centro de custo e descontos em folha",multiplos:true,
-   descricao:<>Anexe <b>de uma vez</b> os PDFs do mês da Unimed: <b>Dados da Fatura</b> (mensalidade) e <b>Utilização por Família</b> (coparticipação) dos contratos 0309917, 0309918 e 0372477. O portal faz o rateio por contrato e centro de custo da folha e calcula os <b>descontos em folha</b>: 11% da mensalidade (diretoria R$ 1,00) e, na coparticipação, 2 consultas/exames por família no mês pela empresa e 50% do restante. Desligados vão para a lista da <b>rescisão</b>.</>,
+   descricao:<>Anexe <b>de uma vez</b> os PDFs do mês da Unimed: <b>Dados da Fatura</b> (mensalidade) e <b>Utilização por Família</b> (coparticipação) dos contratos 0309917, 0309918 e 0372477. O portal faz o rateio por contrato e centro de custo da folha e calcula os <b>descontos em folha</b>: 11% da mensalidade (diretoria R$ 1,00) e, na coparticipação, 2 consultas/exames por família no mês pela empresa e 50% do restante. Desligados ficam no rateio (a empresa paga a fatura inteira) e o <b>desconto</b> deles vai para a lista da <b>rescisão</b>.</>,
    arraste:"Arraste os PDFs da Unimed (pode ser vários) ou clique para escolher",sub:"Rel1 Dados da Fatura e Rel7 Utilização por Família",
    lerVarios:lerVariosUnimed,
    conferir:async(user,lido,arq)=>unimedProcessar(user,lido.dados,arq),
@@ -4995,11 +4995,11 @@ const RELATORIOS_MENSAIS=[
    resumo:r=>`${(r.arquivos||[]).length} PDFs · descontos em folha ${brl((r.descontos||[]).reduce((a,d)=>a+d.total,0))} (${(r.descontos||[]).length} colaboradores)`,
    resumoHist:h=>`${h.colaboradores} colaboradores com desconto`,
    tabela:(r,ctx)=><TabelaUnimed rel={r} ctx={ctx}/>,vinculosUnimed:true,
-   pessoasContrato:(r,c)=>(r.linhas||[]).filter(l=>l.contrato===c&&!l.desligado).map(l=>{
+   pessoasContrato:(r,c)=>(r.linhas||[]).filter(l=>l.contrato===c).map(l=>{
      const uso={};(l.itens||[]).forEach(i=>{uso[i.nome]=(uso[i.nome]||0)+Number(i.valor);});
      const ben=[...(l.beneficiarios||[]).map(b=>({nome:b.nome,detalhe:b.faixa?"faixa "+b.faixa:"",info:"mensalidade "+brl(b.valor)})),
        ...Object.entries(uso).map(([n,v])=>({nome:n,detalhe:"usou a coparticipação",info:brl(v)}))];
-     return{cc:l.centro_custo||SEM_CC,uid:l.usuario_id,nome:l.colaborador||l.titular,info:`mensalidade ${brl(l.mensalidade)} · coparticipação ${brl(l.copart)}`,beneficiarios:ben};}),
+     return{cc:l.centro_custo||SEM_CC,uid:l.usuario_id,nome:(l.colaborador||l.titular)+(l.desligado?" (desligado)":""),info:`mensalidade ${brl(l.mensalidade)} · coparticipação ${brl(l.copart)}`,beneficiarios:ben};}),
    botaoExtra:{rotulo:"⬇ Descontos em folha (BRIT)",titulo:"Planilha com os descontos por colaborador e a lista da rescisão (tem nomes: para a folha)",gerar:gerarDescontosUnimed,arquivo:c=>`unimed_descontos_folha_${c}.xlsx`}},
 ];
 

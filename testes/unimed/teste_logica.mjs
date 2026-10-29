@@ -57,7 +57,9 @@ ok("R5 diretoria: R$ 1,00 na mensalidade e nada na coparticipação", dir.find((
 const pedro = r.rescisao.find((x) => x.colaborador === "Pedro Saiu");
 ok("R6 desligado: mesmo cálculo, vai para a rescisão (11% de 285 + 50% de 9,47)", pedro && pedro.mensalidade === 31.35 && pedro.copart === 4.74 && !r.descontos.some((d) => d.colaborador === "Pedro Saiu"));
 const rat17 = r.rateio.find((x) => x.contrato === "0309917");
-ok("R7 rateio sem o desligado; dependente no titular", !rat17.centros.some((c) => c.centro_custo === "CORTE") && rat17.centros.find((c) => c.centro_custo === "VULCANIZACAO").mensalidade === 550);
+ok("R7 rateio INCLUI o desligado (a empresa paga a fatura inteira); dependente no titular", rat17.centros.find((c) => c.centro_custo === "CORTE").mensalidade === 285 && rat17.centros.find((c) => c.centro_custo === "VULCANIZACAO").mensalidade === 550);
+const somaRateio = r.rateio.reduce((a, x) => a + x.mensalidade + x.copart, 0), somaPdfs = lido.dados.reduce((a, x) => a + x.soma, 0);
+ok("R7b soma do rateio = soma das faturas (fecha com a Unimed)", Math.abs(somaRateio - somaPdfs) < 0.005);
 ok("R8 total inclui tudo (rateio + rescisão) = soma dos PDFs", Math.abs(r.total - (1035 + 191.06 + 137.43 + 436.14)) < 0.005);
 ok("R9 conferência: faltam os PDFs do 0372477; desligado na rescisão", r.conferencia.arquivos_faltando.length === 2 && r.conferencia.arquivos_faltando.every((x) => /0372477/.test(x)) && r.conferencia.rescisao.length === 1);
 const r2 = U.calcularUnimed(lido.dados, { ...vinc, [F2]: undefined });

@@ -9,7 +9,8 @@
 //    diretoria (0309918): R$ 1,00 por titular.
 //  • Desconto coparticipação: por família e por mês, a empresa cobre 2 consultas/exames (os 2 mais caros, como a
 //    planilha) e o colaborador desconta 50% do restante; diretoria: sem desconto.
-//  • Desligados: mesmo cálculo, mas FORA do rateio — vão para a lista "lançar na rescisão".
+//  • Desligados: o valor da Unimed fica NO RATEIO (a empresa paga a fatura inteira — corrigido em 29/10/2026: antes saía
+//    do rateio e o rateio não fechava com a fatura); só o DESCONTO deles vai para a lista "lançar na rescisão".
 // Lógica pura (sem tela e sem rede): testada em testes/unimed.
 // ─────────────────────────────────────────────────────────────────────────────
 import { gerarXlsx } from "./planilhaXlsx.js";
@@ -135,10 +136,10 @@ export function calcularUnimed(arquivos, vinculos) {
       desconto_mensalidade: descMens, desconto_copart: descCopart, desconto_total: r2(descMens + descCopart) };
   }).sort((a, b) => a.contrato.localeCompare(b.contrato) || (a.colaborador || a.titular).localeCompare(b.colaborador || b.titular));
 
-  // Rateio por contrato e centro de custo (desligados ficam fora: vão para a rescisão)
+  // Rateio por contrato e centro de custo: a fatura inteira (inclusive desligados — o desconto deles vai na rescisão)
   const SEM = "SEM CENTRO DE CUSTO (verificar)";
   const rateio = contratos.map((c) => { const g = {};
-    linhas.filter((l) => l.contrato === c && !l.desligado).forEach((l) => { const k = l.centro_custo || SEM;
+    linhas.filter((l) => l.contrato === c).forEach((l) => { const k = l.centro_custo || SEM;
       g[k] = g[k] || { centro_custo: k, familias: 0, mensalidade: 0, copart: 0 }; g[k].familias++; g[k].mensalidade = r2(g[k].mensalidade + l.mensalidade); g[k].copart = r2(g[k].copart + l.copart); });
     const cc = Object.values(g).map((x) => ({ ...x, total: r2(x.mensalidade + x.copart) })).sort((x, y) => x.centro_custo.localeCompare(y.centro_custo));
     return { contrato: c, nome: CONTRATOS[c] || c, centros: cc, mensalidade: r2(cc.reduce((a, x) => a + x.mensalidade, 0)), copart: r2(cc.reduce((a, x) => a + x.copart, 0)) }; });
@@ -157,12 +158,12 @@ export function calcularUnimed(arquivos, vinculos) {
     arquivos_faltando: faltam,
     nao_encontrados: linhas.filter((l) => !l.colaborador).map((l) => `${l.titular} (família ${l.familia}, contrato ${l.contrato})`),
     nao_encontrados_fam: [...new Map(linhas.filter((l) => !l.colaborador).map((l) => [l.familia, { familia: l.familia, titular: l.titular }])).values()],
-    sem_centro_custo: linhas.filter((l) => l.colaborador && !l.centro_custo && !l.desligado).map((l) => l.colaborador),
+    sem_centro_custo: linhas.filter((l) => l.colaborador && !l.centro_custo).map((l) => l.colaborador + (l.desligado ? " (desligado)" : "")),
     rescisao: rescisao.map((r) => `${r.colaborador}: ${brl(r.total)}`),
     contratos_desconhecidos: contratos.filter((c) => !CONTRATOS[c]),
     creditos: linhas.flatMap((l) => l.beneficiarios.filter(temCredito).map((b) => `${b.nome} (${l.colaborador || l.titular})`)),
   };
-  const total = r2(rateio.reduce((a, r) => a + r.mensalidade + r.copart, 0)) + r2(linhas.filter((l) => l.desligado).reduce((a, l) => a + l.mensalidade + l.copart, 0));
+  const total = r2(rateio.reduce((a, r) => a + r.mensalidade + r.copart, 0));  // = soma dos PDFs (o rateio cobre a fatura inteira)
   return { linhas, rateio, descontos, rescisao, conferencia, total: r2(total),
     arquivos: arquivos.map((a) => ({ tipo: a.tipo, contrato: a.contrato, competencia: a.competencia, total: a.soma })) };
 }
@@ -184,7 +185,7 @@ export function itensConferenciaUnimed(rel) {
   const c = rel.conferencia || {}, out = [], lista = (a) => (a || []).join(", ");
   if (c.arquivos_faltando?.length) out.push({ tipo: "alerta", titulo: "PDFs que não foram anexados (o rateio sai sem eles)", texto: lista(c.arquivos_faltando) });
   if (c.nao_encontrados?.length) out.push({ tipo: "erro", titulo: "Famílias não encontradas no cadastro (ficam sem centro de custo)", texto: lista(c.nao_encontrados) });
-  if (c.rescisao?.length) out.push({ tipo: "erro", titulo: "Desligados: lançar na rescisão (fora do rateio) — e pedir exclusão à Unimed", texto: lista(c.rescisao) });
+  if (c.rescisao?.length) out.push({ tipo: "erro", titulo: "Desligados ainda no plano — pedir exclusão à Unimed; o desconto deles vai na rescisão (o valor da Unimed fica no rateio)", texto: lista(c.rescisao) });
   if (c.sem_centro_custo?.length) out.push({ tipo: "erro", titulo: "Sem centro de custo no cadastro", texto: lista(c.sem_centro_custo) });
   if (c.creditos?.length) out.push({ tipo: "info", titulo: "Beneficiários com crédito/estorno no mês (o desconto de 11% considera só o que foi cobrado — conferir)", texto: lista(c.creditos) });
   if (c.contratos_desconhecidos?.length) out.push({ tipo: "alerta", titulo: "Contrato desconhecido (regra de desconto padrão aplicada)", texto: lista(c.contratos_desconhecidos) });
@@ -200,7 +201,7 @@ export function gerarPlanilhaUnimed(rel) {
     rat.push([N("Subtotal"), "", N(r.mensalidade), N(r.copart), N(r2(r.mensalidade + r.copart))]); rat.push([]); });
   return gerarXlsx([
     { nome: "Rateio", larguras: [48, 10, 18, 20, 14], linhas: [[{ v: `Unimed — rateio por centro de custo — ${nomeCompetencia(rel.competencia)}`, estilo: "titulo" }],
-      ["Centro de custo da folha da BRIT; dependentes no titular; desligados fora do rateio (lançados na rescisão)."], [], ...rat] },
+      ["Centro de custo da folha da BRIT; dependentes no titular; inclui desligados ainda no plano (o desconto deles vai na rescisão)."], [], ...rat] },
   ]);
 }
 

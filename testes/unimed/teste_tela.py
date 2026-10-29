@@ -20,7 +20,8 @@ with sync_playwright() as p:
     t=un.inner_text().replace("\xa0"," ")
     res["U2 mês do relatório (outubro/2026) a partir dos dois PDFs"]="Unimed de outubro/2026" in t and "2 PDFs" in t
     res["U3 tabela por contrato com mensalidade e coparticipação"]="Contrato 0309917 — Enfermaria" in t and "REVESTIMENTO - MÃO DE OBRA" in t and "R$ 550,00" in t
-    res["U4 desligado fora do rateio e na rescisão"]="Rescisão:" in t and "Pedro Saiu" in t and "Desligados: lançar na rescisão" in t
+    res["U3b subtotal da enfermaria = fatura inteira (R$ 835,00 de mensalidade)"]="R$ 835,00" in t
+    res["U4 desligado: desconto na rescisão e valor no rateio"]="Rescisão:" in t and "Pedro Saiu" in t and "Desligados ainda no plano" in t and "CORTE CERAMICA MAO DE OBRA" in t
     res["U5 família desconhecida: aviso e vínculo"]="Vincular famílias" in t and "FULANO NAO CADASTRADO" in t
     res["U6 PDFs faltando na conferência"]="PDFs que não foram anexados" in t and "0372477" in t
     un.get_by_label("Titular da família de FULANO NAO CADASTRADO").select_option(label="Bia Colab")
