@@ -98,7 +98,11 @@
    if(fn==="teams_config_salvar"){if(a.p_url&&!/logic\.azure\.com/.test(a.p_url))return er("Cole a URL do gatilho \"Quando uma solicitação HTTP é recebida\" do Power Automate (começa com https://).");window.__TEAMS=a.p_url||null;
      return ok(window.__TEAMS?{configurado:true,mascarado:window.__TEAMS.slice(0,38)+"…"+window.__TEAMS.slice(-6),atualizado_por:"Ana RH",atualizado_em:new Date().toISOString()}:{configurado:false});}
    if(fn==="teams_testar"){window.__TEAMS_TESTE=(window.__TEAMS_TESTE||0)+1;return ok({enviado:!!window.__TEAMS});}
-   if(fn==="admissao_ficha")return ok([{nome:"Carlos Teste",email:"",telefone:"",cargo:"Auxiliar de Produção",status:"aguardando",token_expira_em:new Date(Date.now()+5*864e5).toISOString(),dados_candidato:{},documentos:window.__DOCS||[],prazo_documentos:"2026-11-10"}]);
+   if(fn==="admissao_ficha")return ok([{nome:"Carlos Teste",email:"",telefone:"",cargo:"Auxiliar de Produção",status:"aguardando",token_expira_em:new Date(Date.now()+5*864e5).toISOString(),dados_candidato:{},documentos:window.__DOCS||[],prazo_documentos:"2026-11-10",dados_banco:window.__BANCO||{},link_conta:"https://youtu.be/exemplo"}]);
+   if(fn==="admissao_listar")return ok(window.__ADMS||[]);
+   if(fn==="admissao_criar"){window.__ADM_CRIADA=a;const r={id:9,token:"x".repeat(48),token_expira_em:new Date(Date.now()+15*864e5).toISOString()};
+     window.__ADMS=[{id:9,nome:a.p_nome,cargo:a.p_cargo,status:"aguardando",token:r.token,token_expira_em:r.token_expira_em,criado_em:new Date().toISOString(),dados_candidato:{},dados_empresa:a.p_dados_empresa||{},documentos:[],dados_banco:{}}];return ok([r]);}
+   if(fn==="admissao_banco_salvar"){window.__BANCO=a.p_dados;return ok(a.p_dados);}
    if(fn==="admissao_documento_registrar"){window.__DOCS=(window.__DOCS||[]).concat([{tipo:a.p_tipo,caminho:a.p_caminho,nome:a.p_nome,tamanho:a.p_tamanho}]);return ok(window.__DOCS);}
    if(fn==="admissao_documento_remover"){window.__DOCS=(window.__DOCS||[]).filter(x=>x.caminho!==a.p_caminho);return ok(window.__DOCS);}
    if(fn==="admissao_enviar"){window.__FICHA=a.p_dados;return ok(new Date().toISOString());}

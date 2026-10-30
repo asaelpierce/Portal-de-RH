@@ -10,7 +10,7 @@ const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 const br = (iso) => (iso && /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso.split("-").reverse().join("/") : iso || "");
 const cpfF = (c) => { const d = String(c || "").replace(/\D/g, ""); return d.length === 11 ? `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}` : c || ""; };
 const cepF = (c) => { const d = String(c || "").replace(/\D/g, ""); return d.length === 8 ? `${d.slice(0, 5)}-${d.slice(5)}` : c || ""; };
-const sn = (v) => (v === true ? "SIM" : v === false ? "NÃO" : v || "");
+const sn = (v) => (v === true || v === "sim" ? "SIM" : v === false || v === "nao" ? "NÃO" : v || "");
 
 // Escreve cada valor na célula indicada, mantendo o estilo (s="…") da célula do modelo.
 // Célula vazia (<c r="B5" s="32"/>) ou com valor (<c …>…</c>) — as duas formas existem no modelo.

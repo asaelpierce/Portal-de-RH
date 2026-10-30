@@ -4734,12 +4734,11 @@ function Contratacao(props){
   const[tab,setTab]=useState("recrutamento");
   const[destaqueAdm,setDestaqueAdm]=useState(null);
   // Candidato aprovado → pré-admissão com link da ficha de registro (aba Admissões).
+  const[admInicial,setAdmInicial]=useState(null);
   const iniciarAdmissao=async c=>{
     const vaga=(props.vagasTodas||[]).find(v=>"#"+v.id===c.vaga);
-    const{data,error}=await getSB().rpc("admissao_criar",{p_pedido_por:props.user.id,p_candidato_id:c.id,p_nome:c.name,p_email:c.email||null,p_telefone:c.phone||null,p_cargo:vaga?.title||c.role||null});
-    if(error){props.showToast?.(error.message||"Não foi possível iniciar a admissão.","error");return;}
-    const r=Array.isArray(data)?data[0]:data;setDestaqueAdm(r?.id||null);setTab("admissoes");
-    props.showToast?.("Admissão iniciada. Copie ou envie o link da ficha ao candidato.","success");
+    // abre a "Nova admissão" já preenchida: o RH escolhe centro de custo e setor antes de gerar o link
+    setAdmInicial({candidato_id:c.id,nome:c.name||"",email:c.email||"",telefone:c.phone||"",cargo:vaga?.title||c.role||"",_k:Date.now()});setTab("admissoes");
   };
   const TABS=[
     {id:"vagas",l:"Vagas",count:props.vagas?.length},
@@ -4758,7 +4757,7 @@ function Contratacao(props){
       </div>
       {tab==="vagas"&&<GestaoVagas vagasTodas={props.vagasTodas} setVagas={props.setVagas} candidates={props.candidates} showToast={props.showToast}/>}
       {tab==="recrutamento"&&<Recrutamento {...props} onIniciarAdmissao={iniciarAdmissao}/>}
-      {tab==="admissoes"&&<GestaoAdmissoes user={props.user} showToast={props.showToast} destaque={destaqueAdm}/>}
+      {tab==="admissoes"&&<GestaoAdmissoes user={props.user} users={props.users||[]} showToast={props.showToast} destaque={destaqueAdm} inicial={admInicial} onCriada={id=>{setDestaqueAdm(id);setAdmInicial(null);}}/>}
       {tab==="talentos"&&<BancoTalentos {...props}/>}
       {tab==="upload_cvs"&&<UploadCVs user={props.user} vagas={props.vagas} setCandidates={props.setCandidates} setTalentos={props.setTalentos} criarTarefaAuto={props.criarTarefaAuto}/>}
     </div>
@@ -5452,6 +5451,21 @@ function AvisosTeams({user}){
   </Card>);
 }
 
+// Admissão: link (vídeo) para o candidato sem conta corrente abrir conta salário pela empresa — aparece na 2ª etapa.
+function LinkContaAdmissao({user}){
+  const[v,setV]=useState("");const[atual,setAtual]=useState(undefined);const[msg,setMsg]=useState(null);
+  useEffect(()=>{(async()=>{const{data}=await getSB().rpc("admissao_link_conta_ler",{p_pedido_por:user.id});setAtual(data||"");setV(data||"");})();},[]);
+  const salvar=async()=>{const{data,error}=await getSB().rpc("admissao_link_conta_salvar",{p_pedido_por:user.id,p_url:v});
+    if(error){setMsg({t:"erro",x:error.message});return;}setAtual(data||"");setMsg({t:"ok",x:data?"Link salvo: aparece na 2ª etapa da ficha para quem não tem conta corrente.":"Link removido."});};
+  return(<Card><div style={{fontSize:14,fontWeight:700,marginBottom:4}}>🏦 Admissão: link para abrir conta salário</div>
+    <div style={{fontSize:12,color:C.txm,marginBottom:10}}>Vídeo ou página com o passo a passo para abrir a conta salário pela empresa. Aparece na ficha de admissão para quem responder que <b>não tem conta corrente</b>.</div>
+    {atual===undefined?<Spin size={14}/>:<div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end"}}>
+      <div style={{flex:"1 1 320px"}}><Inp label="Link (YouTube ou outro)" value={v} onChange={e=>setV(e.target.value)} placeholder="https://youtu.be/…"/></div>
+      <Btn onClick={salvar} disabled={v===atual}>Salvar</Btn>{atual&&<a href={atual} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:C.acc}}>Abrir link atual</a>}</div>}
+    {msg&&<div style={{marginTop:8,fontSize:13,color:msg.t==="ok"?C.grn:C.red}}>{msg.x}</div>}
+  </Card>);
+}
+
 function Config({user}){
   return(
     <div className="fadeUp" style={{display:"flex",flexDirection:"column",gap:20}}>
@@ -5465,6 +5479,7 @@ function Config({user}){
         </div>
       </Card>
       {can(user.role,"rh")&&<AvisosTeams user={user}/>}
+      {can(user.role,"rh")&&<LinkContaAdmissao user={user}/>}
       {can(user.role,"rh")&&<IntegracaoCurriculos user={user}/>}
       <Card><div style={{fontSize:14,fontWeight:700,marginBottom:10}}>Ambiente</div><div style={{fontSize:12,color:C.txm,display:"flex",flexDirection:"column",gap:6}}><span>🗄 {SB_URL}</span><span title="Transição para o login do Supabase: 'Supabase' é o login novo; 'antigo' é a reserva">🔐 Login: {window.__modoLogin==="supabase"?"Supabase (sessão segura)":"—"}</span><span>👤 {user.name} ({user.role})</span><span>📋 K.RH v2.0 — Kalenborn International</span></div></Card>
     </div>
@@ -5819,6 +5834,12 @@ function FichaAdmissao({token}){
   const[info,setInfo]=useState(undefined);const[d,setD]=useState({dependentes:[]});const[ciente,setCiente]=useState(false);
   const[enviando,setEnviando]=useState(false);const[erro,setErro]=useState("");const[feito,setFeito]=useState(false);
   const[docs,setDocs]=useState([]);const[subindo,setSubindo]=useState("");const[erroDoc,setErroDoc]=useState("");
+  // 2 etapas: 1ª = dados cadastrais (vai ao RH sozinha); 2ª = conta bancária e documentos (salva à parte, quando der).
+  const[etapa,setEtapa]=useState(()=>new URLSearchParams(window.location.search).get("etapa")==="2"?2:1);
+  const[banco,setBanco]=useState({});const[salvandoBanco,setSalvandoBanco]=useState(false);const[msgBanco,setMsgBanco]=useState(null);
+  const salvarBanco=async()=>{setMsgBanco(null);setSalvandoBanco(true);
+    const{data,error}=await getSB().rpc("admissao_banco_salvar",{p_token:token,p_dados:banco});setSalvandoBanco(false);
+    if(error){setMsgBanco({t:"erro",x:error.message});return;}setBanco(data||banco);setMsgBanco({t:"ok",x:"Conta salva. Obrigado!"});};
   // Documento: sobe na hora para a pasta privada do link e fica registrado na ficha (o candidato não consegue baixar).
   const enviarDoc=async(tipo,file)=>{
     setErroDoc("");if(!file)return;
@@ -5837,7 +5858,7 @@ function FichaAdmissao({token}){
     const{data,error}=await sb.rpc("admissao_ficha",{p_token:token});
     const r=Array.isArray(data)?data[0]:data;
     if(error||!r){setInfo(null);return;}
-    setInfo(r);setDocs(r.documentos||[]);setD({nome:r.nome||"",email:r.email||"",telefone:r.telefone||"",dependentes:[],vt_trajetos:[],...(r.dados_candidato||{})});
+    setInfo(r);setDocs(r.documentos||[]);setBanco(r.dados_banco||{});if(r.status==="preenchida"&&!new URLSearchParams(window.location.search).get("etapa"))setEtapa(2);setD({nome:r.nome||"",email:r.email||"",telefone:r.telefone||"",dependentes:[],vt_trajetos:[],...(r.dados_candidato||{})});
   })();},[token]);
   const campo=(k,label,props={})=><Inp label={label} value={d[k]||""} onChange={e=>setD({...d,[k]:e.target.value})} {...props}/>;
   const sel=(k,label,options)=><Sel label={label} value={d[k]||""} onChange={e=>setD({...d,[k]:e.target.value})} options={options}/>;
@@ -5845,10 +5866,12 @@ function FichaAdmissao({token}){
   const grade={display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:10};
   const enviar=async()=>{
     setErro("");
-    const obrig={nome:"nome completo",sexo:"sexo",raca:"raça/cor",mae:"nome da mãe",nascimento:"data de nascimento",escolaridade:"escolaridade",estado_civil:"estado civil",naturalidade:"naturalidade",telefone:"telefone",logradouro:"endereço (rua)",numero:"número",bairro:"bairro",cep:"CEP",cidade:"cidade",rg:"RG",cpf:"CPF"};
+    const obrig={nome:"nome completo",sexo:"sexo",raca:"raça/cor",nascimento:"data de nascimento",escolaridade:"escolaridade",estado_civil:"estado civil",naturalidade:"naturalidade",telefone:"telefone",email:"e-mail",pis:"PIS",titulo:"título de eleitor",titulo_zona:"zona eleitoral",titulo_secao:"seção eleitoral",logradouro:"endereço (rua)",numero:"número",bairro:"bairro",cep:"CEP",cidade:"cidade",rg:"RG",cpf:"CPF"};
     const falta=Object.entries(obrig).filter(([k])=>!String(d[k]||"").trim()).map(([,l])=>l);
     if(falta.length){setErro("Preencha: "+falta.join(", ")+".");return;}
     if((d.dependentes||[]).some(x=>(x.nome||"").trim().length<3||!(x.vinculo||"").trim())){setErro("Informe nome e vínculo de cada dependente.");return;}
+    if((d.dependentes||[]).some(x=>!["sim","nao"].includes(x.irrf))){setErro("Dependentes: informe se cada um é dependente no Imposto de Renda (Sim ou Não).");return;}
+    if((d.dependentes||[]).some(x=>x.irrf==="sim"&&String(x.cpf||"").replace(/\D/g,"").length!==11)){setErro("Dependentes no Imposto de Renda: informe o CPF de cada um.");return;}
     if(d.vt==="sim"&&!(d.vt_trajetos||[]).some(t=>(t.linha||"").trim())){setErro("Vale-transporte: informe o trajeto (linha de ônibus de ida e de volta).");return;}
     if(!ciente){setErro("Marque a declaração no final da ficha.");return;}
     setEnviando(true);
@@ -5875,9 +5898,10 @@ function FichaAdmissao({token}){
   if(info.status==="conferida")return moldura(<div style={{color:C.txm}}>Sua ficha já foi conferida pelo RH. Se precisar alterar algo, fale com o RH.</div>);
   if(new Date(info.token_expira_em)<new Date())return moldura(<div style={{color:C.txm}}>Este link expirou. Peça um novo link ao RH.</div>);
   if(feito)return moldura(<div style={{textAlign:"center",padding:"10px 0"}}><div style={{fontSize:40}}>✅</div>
-    <div style={{fontSize:18,fontWeight:800,marginTop:6}}>Ficha enviada!</div>
+    <div style={{fontSize:18,fontWeight:800,marginTop:6}}>1ª etapa enviada!</div>
     <div style={{fontSize:14,color:C.txm,marginTop:8}}>Obrigado, {String(d.nome).split(" ")[0]}. O RH vai conferir seus dados e entrar em contato.</div>
-    <div style={{fontSize:13,color:C.txm,marginTop:10}}>Documentos enviados: <b>{docs.length}</b>. Faltou algum? Abra este mesmo link e envie na seção “Documentos”.</div>
+    <div style={{fontSize:13,color:C.txm,marginTop:10}}>Agora falta a <b>2ª etapa: conta bancária e documentos</b>. Pode fazer agora ou depois, pelo mesmo link.</div>
+    <div style={{marginTop:12}}><Btn onClick={()=>{setFeito(false);setEtapa(2);window.scrollTo(0,0);}}>Ir para a 2ª etapa</Btn></div>
     <div style={{fontSize:12,color:C.txd,marginTop:14}}>Se precisar corrigir algo, abra o link de novo até {new Date(info.token_expira_em).toLocaleDateString("pt-BR")} (enquanto o RH não conferir).</div></div>);
   return moldura(
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -5889,13 +5913,16 @@ function FichaAdmissao({token}){
         📎 <b>Documentos:</b> envie cada documento em <b>PDF</b> (o aplicativo <b>CamScanner</b> fotografa e já salva em PDF) ou em foto, na seção “Documentos” no fim desta ficha.
         {info.prazo_documentos?<> <b>Prazo para enviar toda a documentação: {new Date(info.prazo_documentos+"T12:00:00").toLocaleDateString("pt-BR")}.</b></>:null}
       </div>
+      <div role="tablist" style={{display:"flex",gap:6,flexWrap:"wrap"}}>{[[1,"1ª etapa · Dados cadastrais"],[2,"2ª etapa · Conta bancária e documentos"]].map(([n,l])=>
+        <button key={n} role="tab" aria-selected={etapa===n} onClick={()=>{setEtapa(n);setErro("");}} style={{flex:"1 1 220px",padding:"9px 12px",borderRadius:9,border:"1px solid "+(etapa===n?C.acc:C.bdr),background:etapa===n?C.accBg:C.s1,color:etapa===n?C.accLt:C.txm,fontWeight:700,fontSize:13,cursor:"pointer"}}>{l}</button>)}</div>
+      {etapa===1&&<>
       {secao("Dados pessoais")}
       <div style={grade}>
         {campo("nome","Nome completo *")}{sel("sexo","Sexo *",OP_SEXO)}{sel("raca","Raça/cor *",opts(OP_RACA))}
         {campo("nascimento","Data de nascimento *",{type:"date"})}{campo("naturalidade","Naturalidade (cidade/UF) *",{placeholder:"Ex.: Belo Horizonte/MG"})}
         {sel("estado_civil","Estado civil *",opts(OP_ECIVIL))}{sel("escolaridade","Escolaridade *",opts(OP_ESCOL))}
-        {campo("mae","Nome da mãe *")}{campo("pai","Nome do pai")}
-        {campo("telefone","Telefone *",{placeholder:"(31) 99999-0000"})}{campo("email","E-mail particular",{type:"email"})}
+        {campo("mae","Nome da mãe")}{campo("pai","Nome do pai")}
+        {campo("telefone","Telefone *",{placeholder:"(31) 99999-0000"})}{campo("email","E-mail particular *",{type:"email"})}
       </div>
       {secao("Endereço")}
       <div style={grade}>
@@ -5906,23 +5933,19 @@ function FichaAdmissao({token}){
       <div style={grade}>
         {campo("cpf","CPF *",{placeholder:"000.000.000-00"})}{campo("rg","RG (identidade) *")}{campo("rg_emissao","Emissão do RG",{type:"date"})}
         {campo("ctps","CTPS (número)")}{campo("ctps_serie_uf","CTPS série/UF")}{campo("ctps_emissao","Emissão da CTPS",{type:"date"})}
-        {campo("pis","PIS/PASEP/NIT")}{campo("pis_data","Data de cadastro do PIS",{type:"date"})}{campo("cnh","CNH (número e categoria)")}
-        {campo("titulo","Título de eleitor")}{campo("titulo_zona","Zona")}{campo("titulo_secao","Seção")}
+        {campo("pis","PIS/PASEP/NIT *")}{campo("pis_data","Data de cadastro do PIS",{type:"date"})}{campo("cnh","CNH (número e categoria)")}
+        {campo("titulo","Título de eleitor *")}{campo("titulo_zona","Zona *")}{campo("titulo_secao","Seção *")}
       </div>
-      {secao("Dependentes","Filhos, cônjuge ou outros dependentes (até 4). Marque IRRF se for dependente para o Imposto de Renda.")}
+      {secao("Dependentes","Filhos, cônjuge ou outros dependentes (até 4). Se for dependente no Imposto de Renda, o CPF é obrigatório.")}
       {(d.dependentes||[]).map((x,i)=>(
-        <div key={i} style={{display:"grid",gridTemplateColumns:"minmax(0,2fr) minmax(0,1fr) auto auto",gap:8,alignItems:"end"}}>
+        <div key={i} style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr)) auto",gap:8,alignItems:"end"}}>
           <Inp label={"Nome do dependente "+(i+1)} value={x.nome||""} onChange={e=>setD({...d,dependentes:d.dependentes.map((y,j)=>j===i?{...y,nome:e.target.value}:y)})}/>
           <Inp label="Vínculo" value={x.vinculo||""} placeholder="Filho(a), cônjuge..." onChange={e=>setD({...d,dependentes:d.dependentes.map((y,j)=>j===i?{...y,vinculo:e.target.value}:y)})}/>
-          <label style={{display:"flex",gap:6,alignItems:"center",fontSize:13,paddingBottom:10}}><input type="checkbox" checked={!!x.irrf} onChange={e=>setD({...d,dependentes:d.dependentes.map((y,j)=>j===i?{...y,irrf:e.target.checked}:y)})}/>IRRF</label>
+          <Sel label="Dependente no Imposto de Renda? *" value={x.irrf===true?"sim":x.irrf===false?"":x.irrf||""} onChange={e=>setD({...d,dependentes:d.dependentes.map((y,j)=>j===i?{...y,irrf:e.target.value}:y)})} options={[{value:"",label:"Selecione..."},{value:"sim",label:"Sim"},{value:"nao",label:"Não"}]}/>
+          {x.irrf==="sim"&&<Inp label="CPF do dependente *" value={x.cpf||""} onChange={e=>setD({...d,dependentes:d.dependentes.map((y,j)=>j===i?{...y,cpf:e.target.value}:y)})} placeholder="000.000.000-00"/>}
           <button onClick={()=>setD({...d,dependentes:d.dependentes.filter((_,j)=>j!==i)})} title="Remover dependente" aria-label="Remover dependente" style={{background:"none",border:"none",color:C.red,cursor:"pointer",paddingBottom:10}}>✕</button>
         </div>))}
-      {(d.dependentes||[]).length<4&&<Btn v="outline" sz="sm" onClick={()=>setD({...d,dependentes:[...(d.dependentes||[]),{nome:"",vinculo:"",irrf:false}]})}>+ Adicionar dependente</Btn>}
-      {secao("Dados bancários","O salário é pago em conta do Itaú.")}
-      {sel("tem_itau","Você tem conta no Itaú?",[{value:"",label:"Selecione..."},{value:"sim",label:"Sim"},{value:"nao",label:"Não"}])}
-      {d.tem_itau==="sim"&&<div style={grade}>{campo("agencia","Agência")}{campo("conta","Conta")}{sel("tipo_conta","Tipo de conta",opts(["Corrente","Poupança","Salário"]))}</div>}
-      {d.tem_itau==="nao"&&<div style={{fontSize:13,color:C.txm,background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"8px 12px"}}>Tudo bem: o RH vai abrir uma <b>conta salário</b> no Itaú para você.</div>}
-
+      {(d.dependentes||[]).length<4&&<Btn v="outline" sz="sm" onClick={()=>setD({...d,dependentes:[...(d.dependentes||[]),{nome:"",vinculo:"",irrf:"",cpf:""}]})}>+ Adicionar dependente</Btn>}
       {secao("Uniforme e calçado")}
       <div><div style={{fontSize:12,fontWeight:600,color:C.txm,marginBottom:6}}>Tamanho da camiseta</div>
         <div style={{display:"flex",flexWrap:"wrap",gap:"6px 16px"}}>{["P","M","G","GG","XGG","Outro"].map(t=><label key={t} style={{display:"flex",gap:6,alignItems:"center",fontSize:13,cursor:"pointer"}}>
@@ -5947,6 +5970,24 @@ function FichaAdmissao({token}){
         <div style={{maxWidth:280}}>{campo("vt_passagens_dia","Quantidade total de passagens por dia",{type:"number",placeholder:String((d.vt_trajetos||[]).length||"")})}</div>
       </div>}
 
+      <label style={{display:"flex",gap:10,alignItems:"flex-start",fontSize:13,color:C.txm,background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"10px 12px",marginTop:6,cursor:"pointer"}}>
+        <input type="checkbox" checked={ciente} onChange={e=>setCiente(e.target.checked)} style={{marginTop:3}}/>
+        <span>Declaro que as informações são verdadeiras e estou ciente de que a Kalenborn do Brasil usará estes dados, e os dos meus dependentes, para a minha admissão e para cumprir obrigações trabalhistas, previdenciárias e fiscais (LGPD, art. 7º, II e V). *</span>
+      </label>
+      {erro&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"9px 14px",color:C.red,fontSize:13}}>{erro}</div>}
+      <Btn onClick={enviar} disabled={enviando} full>{enviando?<Spin size={14} color="#fff"/>:null} {info.status==="preenchida"?"Reenviar 1ª etapa":"Enviar 1ª etapa"}</Btn>
+      </>}
+      {etapa===2&&<>
+      {secao("Conta bancária","Somente conta CORRENTE. Não aceitamos conta poupança nem conta salário de outra empresa.")}
+      <Sel label="Você tem conta corrente? *" value={banco.tem_corrente||""} onChange={e=>setBanco({...banco,tem_corrente:e.target.value})} options={[{value:"",label:"Selecione..."},{value:"sim",label:"Sim"},{value:"nao",label:"Não"}]}/>
+      {banco.tem_corrente==="sim"&&<div style={grade}>
+        <Inp label="Banco *" value={banco.banco||""} onChange={e=>setBanco({...banco,banco:e.target.value})} placeholder="Ex.: Itaú"/>
+        <Inp label="Agência *" value={banco.agencia||""} onChange={e=>setBanco({...banco,agencia:e.target.value})}/>
+        <Inp label="Conta corrente (com dígito) *" value={banco.conta||""} onChange={e=>setBanco({...banco,conta:e.target.value})}/></div>}
+      {banco.tem_corrente==="nao"&&<div style={{fontSize:13,color:C.txm,background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"10px 12px"}}>
+        Sem conta corrente, você pode abrir uma <b>conta salário pela empresa</b>. {info.link_conta?<a href={info.link_conta} target="_blank" rel="noopener noreferrer" style={{color:C.acc,fontWeight:700}}>Clique aqui e veja como abrir ▶</a>:"O RH vai te orientar."}</div>}
+      {banco.tem_corrente&&<div style={{display:"flex",gap:10,alignItems:"center"}}><Btn onClick={salvarBanco} disabled={salvandoBanco}>{salvandoBanco?<Spin size={14} color="#fff"/>:null} Salvar conta</Btn>
+        {msgBanco&&<span style={{fontSize:13,color:msgBanco.t==="ok"?C.grn:C.red}}>{msgBanco.x}</span>}</div>}
       {secao("Documentos","Em PDF (CamScanner) ou foto. Cada arquivo é enviado na hora; você pode completar depois, pelo mesmo link, até o prazo.")}
       <div style={{fontSize:12,color:C.txm}}>Enviados: <b>{DOCS_ADMISSAO.filter(([k,,p])=>p&&docs.some(x=>x.tipo===k)).length} de {DOCS_ADMISSAO.filter(x=>x[2]).length}</b> documentos principais.</div>
       <div style={{display:"flex",flexDirection:"column",gap:6}}>{DOCS_ADMISSAO.map(([k,rot])=>{const meus=docs.filter(x=>x.tipo===k);return(
@@ -5959,18 +6000,19 @@ function FichaAdmissao({token}){
             <button onClick={()=>removerDoc(x.caminho)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:12}}>remover</button></div>)}
         </div>);})}</div>
       {erroDoc&&<div style={{color:C.red,fontSize:13}}>{erroDoc}</div>}
-      <label style={{display:"flex",gap:10,alignItems:"flex-start",fontSize:13,color:C.txm,background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"10px 12px",marginTop:6,cursor:"pointer"}}>
-        <input type="checkbox" checked={ciente} onChange={e=>setCiente(e.target.checked)} style={{marginTop:3}}/>
-        <span>Declaro que as informações são verdadeiras e estou ciente de que a Kalenborn do Brasil usará estes dados, e os dos meus dependentes, para a minha admissão e para cumprir obrigações trabalhistas, previdenciárias e fiscais (LGPD, art. 7º, II e V). *</span>
-      </label>
-      {erro&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"9px 14px",color:C.red,fontSize:13}}>{erro}</div>}
-      <Btn onClick={enviar} disabled={enviando} full>{enviando?<Spin size={14} color="#fff"/>:null} {info.status==="preenchida"?"Reenviar ficha":"Enviar ficha"}</Btn>
+      </>}
     </div>);
 }
 
-function GestaoAdmissoes({user,showToast,destaque}){
+// Dados do candidato para conferência e ficha da BRIT: 1ª etapa + conta corrente da 2ª etapa.
+const candidatoAdm=a=>{const c={...(a?.dados_candidato||{})},b=a?.dados_banco||{};
+  if(b.tem_corrente==="sim")Object.assign(c,{banco:b.banco,agencia:b.agencia,conta:b.conta,tipo_conta:"Corrente"});else{delete c.banco;delete c.agencia;delete c.conta;delete c.tipo_conta;}
+  return c;};
+function GestaoAdmissoes({user,showToast,destaque,users=[],inicial,onCriada}){
   const[lista,setLista]=useState(null);const[aberta,setAberta]=useState(null);const[emp,setEmp]=useState({});
   const[msg,setMsg]=useState({erro:"",ok:""});const[ocupado,setOcupado]=useState("");const[nova,setNova]=useState(null);
+  const ccsAdm=[...new Set(users.map(u=>u.centroCusto).filter(Boolean))].sort();
+  useEffect(()=>{if(inicial)setNova({...inicial,cc:"",setor:""});},[inicial?._k]);
   const carregar=async()=>{
     const{data,error}=await getSB().rpc("admissao_listar",{p_pedido_por:user.id});
     if(error){showToast?.(error.message||"Não foi possível carregar as admissões.","error");setLista([]);return;}
@@ -5999,7 +6041,7 @@ function GestaoAdmissoes({user,showToast,destaque}){
   const baixarFicha=async a=>{
     setOcupado("ficha");setMsg({erro:"",ok:""});
     try{const r=await fetch("/modelos/ficha_registro_brit.xlsx");if(!r.ok)throw new Error("Modelo da ficha não encontrado no portal.");
-      baixar(await gerarFichaBrit(await r.arrayBuffer(),a.dados_candidato||{},{...(a.dados_empresa||{}),...emp}),`Ficha de registro - ${a.nome}.xlsx`);
+      baixar(await gerarFichaBrit(await r.arrayBuffer(),candidatoAdm(a),{...(a.dados_empresa||{}),...emp}),`Ficha de registro - ${a.nome}.xlsx`);
       setMsg({erro:"",ok:"Ficha da BRIT gerada."});}catch(e){setMsg({erro:e.message,ok:""});}
     setOcupado("");
   };
@@ -6022,12 +6064,12 @@ function GestaoAdmissoes({user,showToast,destaque}){
   const grade={display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10};
   const linhaDado=(l,v)=>v?<div style={{fontSize:13}}><span style={{color:C.txd}}>{l}: </span>{v}</div>:null;
   if(lista===null)return<div style={{display:"flex",gap:10,alignItems:"center",color:C.txm}}><Spin size={16}/> Carregando admissões…</div>;
-  const c=aberta?.dados_candidato||{};const kit=aberta?dadosKitDaAdmissao({...aberta,dados_empresa:{...(aberta.dados_empresa||{}),...emp}}):{};
+  const c=candidatoAdm(aberta);const kit=aberta?dadosKitDaAdmissao({...aberta,dados_candidato:c,dados_empresa:{...(aberta.dados_empresa||{}),...emp}}):{};
   return(
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
         <div style={{fontSize:13,color:C.txm}}>Inicie a admissão pelo candidato aprovado (aba Candidatos › "📋 Iniciar admissão") ou cadastre aqui.</div>
-        <Btn sz="sm" v="outline" onClick={()=>setNova({nome:"",email:"",telefone:"",cargo:""})}>+ Nova admissão</Btn>
+        <Btn sz="sm" v="outline" onClick={()=>setNova({nome:"",email:"",telefone:"",cargo:"",cc:"",setor:""})}>+ Nova admissão</Btn>
       </div>
       {lista.length===0&&<Card><div style={{color:C.txd,fontSize:13}}>Nenhuma admissão ainda.</div></Card>}
       {lista.map(a=>{const[st,cor]=ST_ADM[a.status]||[a.status,C.txd];const vencido=new Date(a.token_expira_em)<new Date()&&a.status==="aguardando";return(
@@ -6049,11 +6091,14 @@ function GestaoAdmissoes({user,showToast,destaque}){
         {nova&&<div style={{display:"flex",flexDirection:"column",gap:10}}>
           <Inp label="Nome do candidato *" value={nova.nome} onChange={e=>setNova({...nova,nome:e.target.value})}/>
           <Inp label="Cargo" value={nova.cargo} onChange={e=>setNova({...nova,cargo:e.target.value})}/>
-          <Inp label="E-mail (para enviar o link)" type="email" value={nova.email} onChange={e=>setNova({...nova,email:e.target.value})}/>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:10}}>
+            <Sel label="Centro de custo (resultado) *" value={nova.cc||""} onChange={e=>setNova({...nova,cc:e.target.value})} options={[{value:"",label:"Selecione..."},...ccsAdm.map(c=>({value:c,label:c}))]}/>
+            <Sel label="Setor / departamento *" value={nova.setor||""} onChange={e=>setNova({...nova,setor:e.target.value})} options={[{value:"",label:"Selecione..."},...Object.values(SL).map(l=>({value:l,label:l}))]}/></div>
+          <Inp label="E-mail (opcional — para enviar o link)" type="email" value={nova.email} onChange={e=>setNova({...nova,email:e.target.value})}/>
           <Inp label="Telefone" value={nova.telefone} onChange={e=>setNova({...nova,telefone:e.target.value})}/>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}><Btn v="outline" onClick={()=>setNova(null)}>Cancelar</Btn>
-            <Btn disabled={nova.nome.trim().length<3} onClick={async()=>{const{data,error}=await getSB().rpc("admissao_criar",{p_pedido_por:user.id,p_candidato_id:null,p_nome:nova.nome,p_email:nova.email,p_telefone:nova.telefone,p_cargo:nova.cargo});
-              if(error){showToast?.(error.message,"error");return;}setNova(null);await carregar();showToast?.("Admissão criada. Copie ou envie o link ao candidato.","success");}}>Criar e gerar link</Btn></div>
+            <Btn disabled={nova.nome.trim().length<3||!nova.cc||!nova.setor} title={!nova.cc||!nova.setor?"Escolha o centro de custo e o setor":""} onClick={async()=>{const{data,error}=await getSB().rpc("admissao_criar",{p_pedido_por:user.id,p_candidato_id:nova.candidato_id||null,p_nome:nova.nome,p_email:nova.email||null,p_telefone:nova.telefone||null,p_cargo:nova.cargo||null,p_dados_empresa:{centro_custo:nova.cc,departamento:nova.setor}});
+              if(error){showToast?.(error.message,"error");return;}const r=Array.isArray(data)?data[0]:data;setNova(null);await carregar();onCriada?.(r?.id||null);showToast?.("Admissão criada. Copie o link (ou envie por e-mail) ao candidato.","success");}}>Criar e gerar link</Btn></div>
         </div>}
       </Modal>
 
@@ -6069,9 +6114,9 @@ function GestaoAdmissoes({user,showToast,destaque}){
               {linhaDado("Endereço",kit.endereco)}{linhaDado("CPF",c.cpf)}{linhaDado("RG",c.rg)}{linhaDado("CTPS",kit.ctps)}{linhaDado("PIS",c.pis)}
               {linhaDado("Título",[c.titulo,c.titulo_zona&&"zona "+c.titulo_zona,c.titulo_secao&&"seção "+c.titulo_secao].filter(Boolean).join(" · "))}{linhaDado("CNH",c.cnh)}
               {linhaDado("Banco",[c.banco,c.agencia&&"ag. "+c.agencia,c.conta&&"conta "+c.conta,c.tipo_conta].filter(Boolean).join(" · "))}
-              {linhaDado("Dependentes",(c.dependentes||[]).map(x=>`${x.nome} (${x.vinculo}${x.irrf?", IRRF":""})`).join("; "))}
+              {linhaDado("Dependentes",(c.dependentes||[]).map(x=>`${x.nome} (${x.vinculo}${x.irrf===true||x.irrf==="sim"?", IRRF"+(x.cpf?" — CPF "+x.cpf:""):""})`).join("; "))}
               {linhaDado("Ciência LGPD",aberta.consentimento_em&&new Date(aberta.consentimento_em).toLocaleString("pt-BR"))}
-              {linhaDado("Conta Itaú",c.tem_itau==="sim"?"Sim":c.tem_itau==="nao"?"Não — abrir conta salário":"")}
+              {linhaDado("Conta",aberta.dados_banco?.tem_corrente==="nao"?"Sem conta corrente — abrir conta salário pela empresa":aberta.dados_banco?.tem_corrente==="sim"?"Conta corrente informada (2ª etapa)":"2ª etapa: conta ainda não informada")}
               {linhaDado("Uniforme",[c.camiseta&&"camiseta "+(c.camiseta==="Outro"?(c.camiseta_outro||"outro"):c.camiseta),c.calca&&"calça "+c.calca,c.calcado&&"calçado "+c.calcado].filter(Boolean).join(" · "))}
               {linhaDado("Vale-transporte",c.vt==="sim"?"Sim"+(c.vt_passagens_dia?` · ${c.vt_passagens_dia} passagem(ns) por dia`:""):c.vt==="nao"?"Não":"")}
             </div>
