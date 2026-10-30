@@ -38,14 +38,34 @@ export function celulasFicha(c = {}, e = {}) {
     B13: c.ctps, F13: c.ctps_serie_uf, H13: br(c.ctps_emissao),
     B14: c.rg, F14: br(c.rg_emissao), H14: cpfF(c.cpf),
     B15: c.pis, H15: br(c.pis_data), B16: c.titulo, F16: c.titulo_zona, I16: c.titulo_secao, B17: c.cnh,
-    B23: e.tipo_vinculo, B24: br(e.data_admissao), E24: e.funcao, I24: e.salario,
+    // ficha nova da BRIT (30/10/2026): "NOME COMPLETO:", item 18 dos documentos e tipo de vínculo padrão "EMPREGADO CLT"
+    A5: "NOME COMPLETO:", F49: "18 - ATESTADO DE BONS ANTECEDENTES",
+    B23: e.tipo_vinculo || "EMPREGADO CLT", B24: br(e.data_admissao), E24: e.funcao, I24: e.salario,
     B25: c.banco, D25: c.agencia, F25: c.conta, I25: c.tipo_conta,
     E26: sn(e.contribuicao_sindical), I26: e.sindicato,
     C27: e.experiencia_dias, G27: e.prorrogacao_dias,
+    J27: Number(e.experiencia_dias) > 0 && Number(e.prorrogacao_dias) >= 0 && e.prorrogacao_dias !== "" && e.prorrogacao_dias != null ? Number(e.experiencia_dias) + Number(e.prorrogacao_dias) : undefined,
     D35: e.dsr, H35: e.jornada_semanal, J35: e.jornada_mensal,
     B36: sn(e.adiantamento), D36: e.adiantamento_pct, F36: sn(e.vale_refeicao), H36: e.vr_valor, J36: e.vr_qtd,
     B37: sn(e.vale_transporte), D37: e.vt_tarifa, G37: e.vt_qtd, B38: sn(e.vale_transporte2), D38: e.vt2_tarifa, G38: e.vt2_qtd,
   };
+  // Vale-transporte: se o RH não preencheu, usa o trajeto informado pelo candidato (ficha de cadastro), agrupado por
+  // tarifa nas 2 linhas da ficha (VT 1 e VT 2): tarifa e quantidade de passagens por dia.
+  if (e.vale_transporte == null || e.vale_transporte === "") {
+    if (c.vt === "nao") v.B37 = "NÃO";
+    else if (c.vt === "sim") {
+      const grupos = new Map();
+      (c.vt_trajetos || []).filter((t) => String(t.linha || t.valor || "").trim()).forEach((t) => {
+        const tar = String(t.valor || "").replace(/[^\d,.]/g, "").replace(",", ".");
+        const k = tar ? Number(tar).toFixed(2).replace(".", ",") : "";
+        grupos.set(k, (grupos.get(k) || 0) + 1);
+      });
+      const g = [...grupos.entries()];
+      const total = Number(c.vt_passagens_dia) || g.reduce((a, [, n]) => a + n, 0);
+      v.B37 = "SIM"; v.D37 = g[0]?.[0] ? "R$ " + g[0][0] : ""; v.G37 = g.length > 1 ? g[0][1] : total || "";
+      if (g.length > 1) { v.B38 = "SIM"; v.D38 = g[1][0] ? "R$ " + g[1][0] : ""; v.G38 = g.slice(1).reduce((a, [, n]) => a + n, 0); }
+    }
+  }
   (c.dependentes || []).slice(0, 4).forEach((d, i) => { const l = 18 + i; v["B" + l] = d.nome; v["G" + l] = d.vinculo; v["J" + l] = sn(d.irrf); });
   DIAS.forEach((dia, i) => { const h = (e.horarios || {})[dia] || {}; const l = 29 + i; v["C" + l] = h.entrada; v["E" + l] = h.saida; v["G" + l] = h.intervalo_ini; v["I" + l] = h.intervalo_fim; });
   return v;
