@@ -98,10 +98,14 @@
    if(fn==="teams_config_salvar"){if(a.p_url&&!/logic\.azure\.com/.test(a.p_url))return er("Cole a URL do gatilho \"Quando uma solicitação HTTP é recebida\" do Power Automate (começa com https://).");window.__TEAMS=a.p_url||null;
      return ok(window.__TEAMS?{configurado:true,mascarado:window.__TEAMS.slice(0,38)+"…"+window.__TEAMS.slice(-6),atualizado_por:"Ana RH",atualizado_em:new Date().toISOString()}:{configurado:false});}
    if(fn==="teams_testar"){window.__TEAMS_TESTE=(window.__TEAMS_TESTE||0)+1;return ok({enviado:!!window.__TEAMS});}
+   if(fn==="admissao_ficha")return ok([{nome:"Carlos Teste",email:"",telefone:"",cargo:"Auxiliar de Produção",status:"aguardando",token_expira_em:new Date(Date.now()+5*864e5).toISOString(),dados_candidato:{},documentos:window.__DOCS||[],prazo_documentos:"2026-11-10"}]);
+   if(fn==="admissao_documento_registrar"){window.__DOCS=(window.__DOCS||[]).concat([{tipo:a.p_tipo,caminho:a.p_caminho,nome:a.p_nome,tamanho:a.p_tamanho}]);return ok(window.__DOCS);}
+   if(fn==="admissao_documento_remover"){window.__DOCS=(window.__DOCS||[]).filter(x=>x.caminho!==a.p_caminho);return ok(window.__DOCS);}
+   if(fn==="admissao_enviar"){window.__FICHA=a.p_dados;return ok(new Date().toISOString());}
    return ok(null);},
   functions:{invoke:async(nome,opt)=>{window.__INVOKES=(window.__INVOKES||[]).concat([{nome,body:opt&&opt.body}]);
     if(nome==="ferias-ciencia")return{data:{ok:true,link:location.origin+"/?ciencia="+"a1".repeat(18),enviado:!!(opt&&opt.body&&opt.body.enviar),para:"bi***@teste.local"},error:null};
-    return{data:null,error:null};}},storage:{from:()=>({upload:async()=>({data:{},error:null})})}};
+    return{data:null,error:null};}},storage:{from:()=>({upload:async(c,f)=>{window.__UPLOADS=(window.__UPLOADS||[]).concat([c]);return{data:{},error:null};},createSignedUrl:async()=>({data:{signedUrl:"about:blank"},error:null})})}};
  window.supabase={createClient:()=>client};
  const f=window.fetch;window.fetch=async(u,o)=>{if(String(u).includes("/functions/v1/secure-proxy")){const b=JSON.parse(o.body);if(b.action==="email"){window.__EMAILS.push(b);return new Response(JSON.stringify({ok:true}));}return new Response(JSON.stringify({ok:true,text:""}));}return f(u,o);};
 })();
