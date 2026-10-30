@@ -5886,7 +5886,7 @@ function FichaAdmissao({token}){
       <div style={{width:"100%",maxWidth:720}}>
         <div style={{textAlign:"center",marginBottom:18}}>
           <div style={{fontSize:12,letterSpacing:".08em",textTransform:"uppercase",color:C.txd}}>Kalenborn do Brasil · Recursos Humanos</div>
-          <div style={{fontSize:22,fontWeight:800,marginTop:4}}>Ficha de registro para admissão</div>
+          <div style={{fontSize:22,fontWeight:800,marginTop:4}}>Ficha de registro para cadastro</div>
           {info?.cargo&&<div style={{fontSize:13,color:C.txm,marginTop:4}}>{info.cargo}</div>}
         </div>
         <Card style={{padding:20}}>{conteudo}</Card>
@@ -6032,8 +6032,8 @@ function GestaoAdmissoes({user,showToast,destaque,users=[],inicial,onCriada}){
     if(!a.email){showToast?.("Este candidato não tem e-mail. Copie o link e envie por WhatsApp.","error");return;}
     setOcupado("email"+a.id);
     const ate=new Date(a.token_expira_em).toLocaleDateString("pt-BR");
-    const r=await sendPAEmail(a.email,"Kalenborn — ficha de registro para sua admissão",
-      `Olá, ${a.nome.split(" ")[0]}!\n\nParabéns! Para darmos andamento à sua admissão${a.cargo?" como "+a.cargo:""} na Kalenborn do Brasil, preencha sua ficha de registro neste link (válido até ${ate}):\n\n${linkAdmissao(a.token)}\n\nTenha em mãos: RG, CPF, CTPS, PIS, título de eleitor, comprovante de residência, dados bancários e documentos dos dependentes.\n\nQualquer dúvida, fale com o RH.\n\nRecursos Humanos — Kalenborn do Brasil`);
+    const r=await sendPAEmail(a.email,"Kalenborn — ficha de registro para cadastro",
+      `Olá, ${a.nome.split(" ")[0]}!\n\nParabéns! Para darmos andamento à sua admissão${a.cargo?" como "+a.cargo:""} na Kalenborn do Brasil, preencha sua ficha de registro para cadastro neste link (válido até ${ate}):\n\n${linkAdmissao(a.token)}\n\nSão 2 etapas:\n1ª — Dados cadastrais (tenha em mãos RG, CPF, PIS, título de eleitor com zona e seção, e o CPF dos dependentes do Imposto de Renda).\n2ª — Conta corrente e documentos em PDF (o aplicativo CamScanner ajuda). Pode ser feita depois, pelo mesmo link.\n\nQualquer dúvida, fale com o RH.\n\nRecursos Humanos — Kalenborn do Brasil`);
     setOcupado("");
     showToast?.(r?.ok?"E-mail enviado para "+a.email+".":"Não foi possível enviar o e-mail. Copie o link e envie por WhatsApp.",r?.ok?"success":"error");
   };
