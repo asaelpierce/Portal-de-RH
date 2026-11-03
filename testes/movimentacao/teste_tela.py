@@ -38,6 +38,16 @@ with sync_playwright() as p:
     res["M8 aprovado com vigência hoje: 'Cadastro atualizado'"]="Aprovado — cadastro atualizado." in pg.locator("body").inner_text()
     pg.get_by_role("button",name=re.compile("^Todas$")).click(); pg.wait_for_timeout(300)
     res["M9 chip no cartão"]="Cadastro atualizado em" in pg.locator("main").inner_text()
+    pg.get_by_role("button",name=re.compile("Alteração de cargo e salário")).first.click(); pg.wait_for_timeout(400)
+    dlg=pg.get_by_role("dialog")
+    res["M10 janela da alteração com data e novo salário"]="R$ 3.000,00" in dlg.inner_text()
+    dlg.get_by_label("Insalubridade").check(); dlg.get_by_label("Observações").fill("Teste de observação")
+    with pg.expect_download() as d: dlg.get_by_role("button",name=re.compile("Baixar formulário")).click()
+    arq=d.value; arq.save_as("/tmp/alt_teste.docx")
+    import zipfile,html as H
+    x=zipfile.ZipFile("/tmp/alt_teste.docx").read("word/document.xml").decode()
+    txt="".join(H.unescape(m) for m in re.findall(r"<w:t(?:\s[^>]*)?>([^<]*)</w:t>",x))
+    res["M11 Word preenchido: nome, salário, insalubridade X, observação"]=arq.suggested_filename.startswith("Alteração de cargo e salário - Bia Colab") and "Nome do colaborador: Bia Colab" in txt and "Valor do Novo Salário: R$ 3.000,00" in txt and "(  X  ) Insalubridade" in txt and "Observações: Teste de observação" in txt
     res["sem exceções"]=not errs
     if errs: print(errs[:3])
     b.close()

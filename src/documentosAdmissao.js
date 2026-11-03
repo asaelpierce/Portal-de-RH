@@ -144,3 +144,18 @@ export const trocasRescisao = (r) => {
     ...com("Outros : ", r.outrosDescontos, (v) => "Outros : " + v + " — "),
   ];
 };
+
+// ── Alteração de Cargo e Salário (formulário da BRIT, pedido do Asael 03/11/2026) ─────────────────────────────────
+// Modelo: public/modelos/alteracao_cargo_salario.docx (convertido do .doc original, aparência conferida).
+// m = { nome, data (ISO), salario, funcao, motivo, adicionais: ["Periculosidade","Insalubridade","Noturno"], obs }
+export const MODELO_ALTERACAO = "/modelos/alteracao_cargo_salario.docx";
+const CAIXA_ADICIONAL = { Periculosidade: "(     )  Periculosidade", Insalubridade: "(      ) Insalubridade", Noturno: "(     ) Noturno" };
+export const trocasAlteracao = (m) => [
+  { procura: "Nome do colaborador: ", novo: "Nome do colaborador: " + (m.nome || ""), rotulo: "nome do colaborador" },
+  { procura: "Data:", novo: "Data: " + (m.data ? dataBR(m.data) : ""), rotulo: "data" },
+  { procura: "Valor do Novo Salário: ", novo: "Valor do Novo Salário: " + (m.salario || "sem alteração"), rotulo: "novo salário" },
+  { procura: "Denominação da Nova Função: ", novo: "Denominação da Nova Função: " + (m.funcao || ""), rotulo: "nova função" },
+  { procura: "Motivo da alteração: ", novo: "Motivo da alteração: " + (m.motivo || ""), rotulo: "motivo" },
+  ...(m.adicionais || []).filter((a) => CAIXA_ADICIONAL[a]).map((a) => ({ procura: CAIXA_ADICIONAL[a], novo: CAIXA_ADICIONAL[a].replace(/\(\s+\)/, "(  X  )"), rotulo: "adicional " + a })),
+  ...(String(m.obs || "").trim() ? [{ procura: "Observações: " + "_".repeat(66), novo: "Observações: " + String(m.obs).trim(), rotulo: "observações" }] : []),
+];

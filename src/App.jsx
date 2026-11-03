@@ -9,7 +9,7 @@ import { lerRelacaoSesi, gerarPlanilhaSesi, emailResumoSesi, itensConferenciaSes
 import { lerAtivosBrit, gerarPlanilhaMovPrudential } from "./seguroMovimentacao.js";
 import { lerVariosUnimed, familiasParaVincular, calcularUnimed, competenciaRelatorio, gerarDescontosUnimed, gerarPlanilhaUnimed, emailResumoUnimed, itensConferenciaUnimed, CONTRATOS as CONTRATOS_UNIMED } from "./unimed.js";
 import { gerarFichaBrit, dadosKitDaAdmissao } from "./fichaBrit.js";
-import { DOCUMENTOS_ADMISSAO, preencherDocx, faltandoPara, TIPOS_AVISO, TIPOS_RESCISAO, SUGESTAO_RESCISAO, DESCONTOS_MARCAR, MODELO_RESCISAO, trocasRescisao } from "./documentosAdmissao.js";
+import { DOCUMENTOS_ADMISSAO, preencherDocx, faltandoPara, TIPOS_AVISO, TIPOS_RESCISAO, SUGESTAO_RESCISAO, DESCONTOS_MARCAR, MODELO_RESCISAO, trocasRescisao, MODELO_ALTERACAO, trocasAlteracao } from "./documentosAdmissao.js";
 // Leitura do relatório de saldos da folha BRIT e geração do formulário Word de férias (ver o arquivo para o porquê).
 import { lerRelatorioFerias, preencherFormularioFerias, OPCOES_FERIAS, opcaoFerias, tipoFerias, addDias, diasEntre, addAnos, br as dataBR, emailFeriasAprovadasHtml } from "./feriasFolha.js";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Legend, ReferenceLine } from "recharts";
@@ -3463,6 +3463,22 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
   const RESC_VAZIA={dataAviso:"",tipoAviso:"",tipoRescisao:"",horasExtras:"",premio:"",comissoes:"",adicionalNoturno:"",outrosProventos:"",descontos:[],faltas:"",dsr:"",atrasos:"",outrosDescontos:""};
   const[modalResc,setModalResc]=useState(null);const[resc,setResc]=useState(RESC_VAZIA);const[rescMsg,setRescMsg]=useState({erro:"",ok:"",gerando:false});
   const abrirRescisao=mov=>{setModalResc(mov);setResc({...RESC_VAZIA,dataAviso:hojeISO(),tipoRescisao:SUGESTAO_RESCISAO[mov.tipoDemissao]||""});setRescMsg({erro:"",ok:"",gerando:false});};
+  // Alteração de Cargo e Salário (formulário da BRIT) a partir da movimentação; adicionais e observações pelo RH.
+  const[modalAlt,setModalAlt]=useState(null);const[alt,setAlt]=useState({adicionais:[],obs:""});const[altMsg,setAltMsg]=useState(null);
+  const abrirAlteracao=mov=>{setModalAlt(mov);setAlt({adicionais:[],obs:mov.rhObs||""});setAltMsg(null);};
+  const gerarAlteracao=async()=>{
+    setAltMsg({gerando:true});
+    try{
+      const m=modalAlt,pr=m.proposta||{};
+      const motivo=[(m.movTipos||[]).map(t=>MOV_TIPOS[t]||t).join(", "),m.motivo].filter(Boolean).join(" — ");
+      const resp=await fetch(MODELO_ALTERACAO);if(!resp.ok)throw new Error("Modelo da alteração não encontrado no portal.");
+      const out=await preencherDocx(await resp.arrayBuffer(),trocasAlteracao({nome:m.nome||"",data:m.dataPrevista||"",salario:pr.salario||"",
+        funcao:pr.cargo||m.atual?.cargo||m.cargo||"",motivo,adicionais:alt.adicionais,obs:alt.obs}));
+      const url=URL.createObjectURL(out),a=document.createElement("a");
+      a.href=url;a.download=`Alteração de cargo e salário - ${m.nome||"colaborador"}.docx`.replace(/[\\/:*?"<>|]/g,"-");document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
+      setAltMsg({ok:"Formulário gerado."});
+    }catch(e){setAltMsg({erro:e.message||"Não foi possível gerar o formulário."});}
+  };
   const gerarRescisao=async()=>{
     setRescMsg({erro:"",ok:"",gerando:true});
     try{
@@ -3705,6 +3721,7 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
                     {acao&&<Btn sz="sm" onClick={()=>abrirModalDecisao(mov)}>
                       {mov.status==="pendente_gestor"?"Detalhar e enviar →":mov.status==="pendente_rh"?"Decidir →":"Avaliar →"}
                     </Btn>}
+                    {isRH&&mov.tipo==="movimentacao"&&mov.status!=="rejeitado"&&<Btn sz="sm" v="outline" title="Gerar o formulário de Alteração de Cargo e Salário da BRIT preenchido (Word)" onClick={()=>abrirAlteracao(mov)}>📄 Alteração de cargo e salário</Btn>}
                     {isRH&&mov.tipo==="demissao"&&mov.status!=="rejeitado"&&<Btn sz="sm" v="outline" title="Gerar o formulário de solicitação de rescisão da BRIT preenchido (Word)" onClick={()=>abrirRescisao(mov)}>📄 Solicitação de rescisão</Btn>}
                   </div>
                 </div>
@@ -3714,6 +3731,19 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
         })}
       </div>
 
+      <Modal open={!!modalAlt} onClose={()=>setModalAlt(null)} title={"Alteração de cargo e salário — "+(modalAlt?.nome||"")} width={520}>
+        {modalAlt&&<div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{fontSize:13,color:C.txm,background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"8px 12px"}}>
+            Data: <b>{modalAlt.dataPrevista?fd(modalAlt.dataPrevista):"—"}</b> · Novo salário: <b>{modalAlt.proposta?.salario||"sem alteração"}</b> · Nova função: <b>{modalAlt.proposta?.cargo||modalAlt.atual?.cargo||modalAlt.cargo||"—"}</b></div>
+          <div><div style={{fontSize:12,fontWeight:600,color:C.txm,marginBottom:6}}>Adicional</div>
+            <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>{["Periculosidade","Insalubridade","Noturno"].map(a=><label key={a} style={{display:"flex",gap:6,alignItems:"center",fontSize:13,cursor:"pointer"}}>
+              <input type="checkbox" checked={alt.adicionais.includes(a)} onChange={e=>setAlt(x=>({...x,adicionais:e.target.checked?[...x.adicionais,a]:x.adicionais.filter(y=>y!==a)}))}/>{a}</label>)}</div></div>
+          <Tex label="Observações" value={alt.obs} onChange={e=>setAlt({...alt,obs:e.target.value})} rows={2}/>
+          {altMsg?.erro&&<div style={{color:C.red,fontSize:13}}>{altMsg.erro}</div>}{altMsg?.ok&&<div style={{color:C.grn,fontSize:13}}>{altMsg.ok}</div>}
+          <div style={{display:"flex",justifyContent:"flex-end",gap:8}}><Btn v="outline" onClick={()=>setModalAlt(null)}>Fechar</Btn>
+            <Btn onClick={gerarAlteracao} disabled={altMsg?.gerando}>{altMsg?.gerando?<Spin size={14} color="#fff"/>:"📄"} Baixar formulário (Word)</Btn></div>
+        </div>}
+      </Modal>
       <Modal open={!!modalResc} onClose={()=>setModalResc(null)} title={"Solicitação de rescisão — "+(modalResc?.nome||"")} width={640}>
         {modalResc&&<div style={{display:"flex",flexDirection:"column",gap:12}}>
           <div style={{fontSize:13,color:C.txm,background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"8px 12px"}}>
