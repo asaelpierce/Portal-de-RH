@@ -3555,8 +3555,8 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
     // Nome, cargo e setor vêm do cadastro no banco (não do navegador).
     const{data,error}=await getSB().rpc("mov_abrir",{p_pedido_por:user.id,p_tipo:"demissao",p_dados:{
       user_id:parseInt(formDemLider.userId),gestor_id:parseInt(formDemLider.gestorId),motivo:formDemLider.motivo.trim()}});
-    if(error)erroMov(error,"Não foi possível abrir o pedido de demissão.");
-    if(data){showToast?.("Pedido de demissão enviado ao gestor.","success");setMovs(p=>[mmv(data),...p]);setModalNova(null);setFormDemLider({userId:"",gestorId:"",motivo:""});}
+    if(error)erroMov(error,"Não foi possível abrir a solicitação de rescisão.");
+    if(data){showToast?.("Solicitação de rescisão enviada ao gestor.","success");setMovs(p=>[mmv(data),...p]);setModalNova(null);setFormDemLider({userId:"",gestorId:"",motivo:""});}
     setSaving(false);
   };
 
@@ -3652,7 +3652,7 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
         <div style={{display:"flex",gap:8}}>
           {can(user.role,"lider")&&<Btn v="success" onClick={()=>{setFormAdmLider(f=>({...f,gestorId:can(user.role,"gestor")?String(user.id):f.gestorId}));setModalNova("admissao");}}>+ Pedir admissão</Btn>}
           {can(user.role,"lider")&&<Btn v="outline" onClick={()=>{setFormMov({...MOV_VAZIA,gestorId:can(user.role,"gestor")?String(user.id):"",vigencia:hojeISO()});setModalNova("movimentacao");}}>⇄ Pedir movimentação</Btn>}
-          {can(user.role,"lider")&&<Btn v="danger" onClick={()=>setModalNova("demissao")}>+ Pedir demissão</Btn>}
+          {can(user.role,"lider")&&<Btn v="danger" onClick={()=>setModalNova("demissao")}>+ Solicitação de rescisão</Btn>}
         </div>
       </div>
 
@@ -3849,7 +3849,7 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
       </Modal>
 
       {/* MODAL: Líder pede Demissão — só justificativa */}
-      <Modal open={modalNova==="demissao"} onClose={()=>setModalNova(null)} title="Pedir Demissão" width={480}>
+      <Modal open={modalNova==="demissao"} onClose={()=>setModalNova(null)} title="Solicitação de Rescisão" width={480}>
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           <div style={{background:C.redBg,borderRadius:9,padding:"10px 14px",fontSize:12,color:C.red}}>⚠ Você só precisa justificar o pedido. Tipo de desligamento e último dia serão definidos pelo gestor.</div>
           <Sel label="Colaborador *" value={formDemLider.userId} onChange={e=>setFormDemLider({...formDemLider,userId:e.target.value})} options={[{value:"",label:"Selecione..."},...users.filter(u=>u.status!=="desligado"&&u.liderId===user.id).map(u=>({value:u.id,label:u.name+" — "+u.cargo}))]}/>
@@ -3863,7 +3863,7 @@ function Movimentacoes({user,users,todosUsuarios=[],movs,setMovs,setUsers,vagas,
       </Modal>
 
       {/* MODAL: Decisão — varia por etapa (Gestor detalha / RH decide) */}
-      <Modal open={!!modalDecisao} onClose={()=>setModalDecisao(null)} title={(modalDecisao?.tipo==="admissao"?"Admissão":modalDecisao?.tipo==="movimentacao"?"Movimentação":"Demissão")+" — "+(modalDecisao?.tipo==="admissao"?(SL[modalDecisao?.setor]||""):(modalDecisao?.nome||""))} width={520}>
+      <Modal open={!!modalDecisao} onClose={()=>setModalDecisao(null)} title={(modalDecisao?.tipo==="admissao"?"Admissão":modalDecisao?.tipo==="movimentacao"?"Movimentação":"Solicitação de rescisão")+" — "+(modalDecisao?.tipo==="admissao"?(SL[modalDecisao?.setor]||""):(modalDecisao?.nome||""))} width={520}>
         {modalDecisao&&(()=>{
           const mov=modalDecisao;
           const ehGestor=mov.status==="pendente_gestor"&&(user.id===mov.gestorId||isRH);
@@ -5015,7 +5015,7 @@ const FORM_LINKS={
   ferias:{page:"ferias",rotulo:"Lançar férias (antigo Forms KdB 163)",min:"lider"},
   admissao:{page:"movimentacoes",rotulo:"Pedir admissão — Requisição de Pessoal (antigo Forms KdB 181)",min:"lider"},
   movimentacao:{page:"movimentacoes",rotulo:"Pedir movimentação de pessoal (antigo Forms KdB 133)",min:"lider"},
-  demissao:{page:"movimentacoes",rotulo:"Pedir demissão",min:"lider"},
+  demissao:{page:"movimentacoes",rotulo:"Solicitação de rescisão",min:"lider"},
 };
 const linkFormulario=chave=>`${window.location.origin}/?abrir=${chave}`;   // RH (com login)
 const linkPublico=chave=>`${window.location.origin}/?form=${chave}`;        // líderes, gestores e colaboradores (sem login)
@@ -5023,7 +5023,7 @@ async function copiarTexto(txt,showToast,msg){try{await navigator.clipboard.writ
 function BotoesLinks({chaves,showToast}){
   return(<div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}><span style={{fontSize:12,color:C.txd}}>🔗 Links para mandar (abrem sem login):</span>
     {chaves.map(k=><button key={k} title={linkPublico(k)} onClick={()=>copiarTexto(linkPublico(k),showToast,`Link copiado (sem login): ${FORM_LINKS[k].rotulo}. Cole no Teams ou no e-mail.`)}
-      style={{background:C.s1,border:"1px solid "+C.bdr,borderRadius:7,padding:"4px 10px",fontSize:11,color:C.txm,cursor:"pointer"}}>Copiar link · {k==="ferias"?"Férias":k==="admissao"?"Admissão":k==="movimentacao"?"Movimentação":"Demissão"}</button>)}</div>);
+      style={{background:C.s1,border:"1px solid "+C.bdr,borderRadius:7,padding:"4px 10px",fontSize:11,color:C.txm,cursor:"pointer"}}>Copiar link · {k==="ferias"?"Férias":k==="admissao"?"Admissão":k==="movimentacao"?"Movimentação":"Rescisão"}</button>)}</div>);
 }
 const RELATORIOS_MENSAIS=[
   {chave:"seguro",icone:"🛡",titulo:"Seguro de vida — rateio por centro de custo",
@@ -5178,7 +5178,7 @@ function FormularioPublico({tipo}){
   const[enviando,setEnviando]=useState(false);const[erro,setErro]=useState("");const[ok,setOk]=useState(null);
   useEffect(()=>{(async()=>{const sb=await initSB();if(!sb){setCtx(false);return;}const{data,error}=await sb.rpc("form_publico_contexto");setCtx(error?false:data);})();},[]);
   const set=(k,v)=>setF(x=>({...x,[k]:v}));const setP=(k,v)=>setF(x=>({...x,proposta:{...x.proposta,[k]:v}}));
-  const TIT={ferias:"✈ Programação de Férias",admissao:"📋 Requisição de Pessoal",movimentacao:"⇄ Movimentação de Pessoal",demissao:"➖ Pedido de Demissão"};
+  const TIT={ferias:"✈ Programação de Férias",admissao:"📋 Requisição de Pessoal",movimentacao:"⇄ Movimentação de Pessoal",demissao:"➖ Solicitação de Rescisão"};
   const caixa={minHeight:"100vh",display:"flex",justifyContent:"center",padding:"24px 14px",background:C.bg};
   if(ctx===null)return<div style={{...caixa,alignItems:"center"}}><Spin size={20}/></div>;
   if(ctx===false)return<div style={{...caixa,alignItems:"center"}}><Card style={{maxWidth:420}}>Não foi possível carregar o formulário. Tente de novo em instantes.</Card></div>;

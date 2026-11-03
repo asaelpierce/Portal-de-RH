@@ -67,7 +67,7 @@ with sync_playwright() as p:
     pg.get_by_label("Data desejada para o desligamento *").fill("2026-11-06")
     enviar.click(); pg.wait_for_timeout(600)
     d=pg.evaluate("window.__FORM_ENVIADO")["p_dados"]
-    res["P8 demissão: data desejada obrigatória e enviada"]=sem_data and d["ultimo_dia"]=="2026-11-06" and "Pedido enviado ao RH" in pg.locator("body").inner_text()
+    res["P8 solicitação de rescisão: título novo, data obrigatória e enviada"]="Solicitação de Rescisão" in pg.locator("body").inner_text() and sem_data and d["ultimo_dia"]=="2026-11-06" and "Pedido enviado ao RH" in pg.locator("body").inner_text()
     pg.context.close()
     # RH logado copia o link SEM login
     pg=abrir(BASE+"/")
