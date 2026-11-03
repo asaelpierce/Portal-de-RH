@@ -5612,7 +5612,13 @@ function FormularioEvento({slug}){
             {levaAc&&<div>
               <div style={{fontSize:15,fontWeight:700}}>Pessoas da sua família que irão participar</div>
               <div style={{fontSize:12,color:C.txd,margin:"2px 0 6px"}}>Nome completo, idade e parentesco de cada uma.</div>
-              <div style={{fontSize:12,color:C.txm,background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"7px 10px",marginBottom:10}}>Regra do evento: podem ir o <b>cônjuge/companheiro(a)</b>, os <b>filhos ou enteados</b>, o <b>pai ou a mãe</b> e um <b>irmão ou irmã</b> (maior de idade). Filhos e enteados <b>menores de 18 anos: todos</b>. Adulto: <b>no máximo 1</b> (o cônjuge, <b>ou</b> um filho maior, <b>ou</b> o pai ou a mãe, <b>ou</b> um irmão ou irmã).</div>
+              <div style={{fontSize:13,color:C.txt,background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"10px 12px",marginBottom:10,lineHeight:1.5}}>
+                {ev.prazo&&<div style={{fontWeight:800,marginBottom:4}}>Confirmação até {fd(ev.prazo)}!</div>}
+                <div style={{fontWeight:700,marginBottom:2}}>Regras para acompanhantes:</div>
+                <div>• <b>Filhos e enteados menores de 18 anos:</b> todos podem participar.</div>
+                <div>• <b>Adultos: apenas 1 por colaborador</b>, sendo cônjuge/companheiro(a), filho(a) maior de 18 anos, pai, mãe ou um irmão/irmã.</div>
+                <div style={{marginTop:6,color:C.txm}}><b>Importante:</b> só participarão as pessoas incluídas nesta lista de confirmação. Nomes não informados até o prazo não serão aceitos, sem exceções nem inclusões posteriores.</div>
+              </div>
               <div style={{display:"flex",flexDirection:"column",gap:10}}>{acs.map(linhaAc)}</div>
               {erroRegraMenor&&<div style={{background:C.redBg,border:"1px solid "+C.red+"25",borderRadius:8,padding:"8px 12px",color:C.red,fontSize:13,marginTop:10}}>{erroRegraMenor}</div>}
               {acs.length<15&&<Btn v="outline" sz="sm" onClick={()=>setAcs([...acs,{nome:"",idade:"",parentesco:""}])} style={{marginTop:10}}>+ Adicionar acompanhante</Btn>}
