@@ -5513,14 +5513,17 @@ function FormularioEvento({slug}){
     const{data:e}=await sb.from("eventos").select("*").eq("slug",slug).maybeSingle();setEv(e||null);
     // Só ativos com cadastro na folha (exclui contas técnicas). Só nome e admissão (para o tempo de empresa).
     const{data:u}=await sb.from("usuarios").select("id,name,admissao,status,cadastro").eq("status","ativo");
-    setPessoas((u||[]).filter(x=>x.cadastro).sort((a,b)=>a.name.localeCompare(b.name)));
+    // Convidados do evento (ex.: terceirizada que participa por decisão da empresa) entram na mesma busca.
+    const{data:cv}=await sb.rpc("evento_convidados_listar",{p_slug:slug});
+    setPessoas([...(u||[]).filter(x=>x.cadastro),...(cv||[]).map(c=>({id:c.id,name:c.nome,convidado:true}))].sort((a,b)=>a.name.localeCompare(b.name)));
   })();},[slug]);
   const norm=s=>s.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
   // A lista só aparece depois de digitar 2 letras: não expõe todos os nomes de uma vez.
   const sugestoes=busca.trim().length>=2?pessoas.filter(p=>norm(p.name).includes(norm(busca.trim()))).slice(0,8):[];
   const escolher=async p=>{
     setPessoa(p);setBusca("");setErro("");setJaRespondeu(null);
-    const{data}=await getSB().rpc("status_resposta_evento",{p_slug:slug,p_usuario_id:p.id});
+    const{data}=p.convidado?await getSB().rpc("status_resposta_evento_convidado",{p_slug:slug,p_convidado_id:p.id})
+      :await getSB().rpc("status_resposta_evento",{p_slug:slug,p_usuario_id:p.id});
     const r=Array.isArray(data)?data[0]:data;if(r?.respondido_em)setJaRespondeu(r);
   };
   const f=faixas(acs);
@@ -5543,8 +5546,10 @@ function FormularioEvento({slug}){
       if(jaParticipou===null){setErro("Responda se você já participou de um evento da Kalenborn.");return;}
     }
     setEnviando(true);
-    const{data,error}=await getSB().rpc("responder_evento",{p_slug:slug,p_usuario_id:pessoa.id,p_vai:vai,p_email:email.trim()||null,
-      p_ja_participou:vai?jaParticipou:null,p_acompanhantes:vai&&levaAc?acs.map(a=>({nome:a.nome.trim(),idade:Number(a.idade),parentesco:a.parentesco})):[]});
+    const comum={p_slug:slug,p_vai:vai,p_email:email.trim()||null,
+      p_ja_participou:vai?jaParticipou:null,p_acompanhantes:vai&&levaAc?acs.map(a=>({nome:a.nome.trim(),idade:Number(a.idade),parentesco:a.parentesco})):[]};
+    const{data,error}=pessoa.convidado?await getSB().rpc("responder_evento_convidado",{...comum,p_convidado_id:pessoa.id})
+      :await getSB().rpc("responder_evento",{...comum,p_usuario_id:pessoa.id});
     setEnviando(false);
     if(error){setErro(error.message||"Não foi possível enviar. Tente novamente.");return;}
     setFeito({primeira:(Array.isArray(data)?data[0]:data)?.primeira_vez!==false});
@@ -5592,14 +5597,14 @@ function FormularioEvento({slug}){
           <div style={{fontSize:15,fontWeight:700,marginBottom:8}}>Quem é você?</div>
           <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Digite seu nome..." autoFocus style={{width:"100%",boxSizing:"border-box",padding:"12px 14px",borderRadius:10,border:"1px solid "+C.bdr,fontSize:15,background:C.s1,color:C.txt}}/>
           <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8}}>
-            {sugestoes.map(p=><button key={p.id} onClick={()=>escolher(p)} style={{textAlign:"left",padding:"10px 12px",borderRadius:9,border:"1px solid "+C.bdr,background:"transparent",color:C.txt,fontSize:14,cursor:"pointer"}}>{p.name}</button>)}
+            {sugestoes.map(p=><button key={(p.convidado?"c":"u")+p.id} onClick={()=>escolher(p)} style={{textAlign:"left",padding:"10px 12px",borderRadius:9,border:"1px solid "+C.bdr,background:"transparent",color:C.txt,fontSize:14,cursor:"pointer"}}>{p.name}</button>)}
             {busca.trim().length>=2&&!sugestoes.length&&<div style={{fontSize:13,color:C.txd}}>Nenhum colaborador com esse nome. Confira a grafia ou fale com o RH.</div>}
           </div>
         </div>
       ):(
         <>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
-            <div><div style={{fontWeight:800,fontSize:16}}>{pessoa.name}</div><div style={{fontSize:13,color:C.txm}}>{tempoEmpresa(pessoa.admissao)} de empresa</div></div>
+            <div><div style={{fontWeight:800,fontSize:16}}>{pessoa.name}</div><div style={{fontSize:13,color:C.txm}}>{pessoa.convidado?"Convidado(a) da Kalenborn":tempoEmpresa(pessoa.admissao)+" de empresa"}</div></div>
             <button onClick={()=>{setPessoa(null);setVai(null);setLevaAc(null);setAcs([]);setJaParticipou(null);setEmail("");setErro("");}} style={{background:"none",border:"none",color:C.accLt,fontSize:12,cursor:"pointer",textDecoration:"underline",whiteSpace:"nowrap"}}>Não sou eu</button>
           </div>
           {jaRespondeu&&<div style={{background:C.ambBg,border:"1px solid "+C.amb+"30",borderRadius:8,padding:"9px 12px",color:C.amb,fontSize:13}}>Você já respondeu em {new Date(jaRespondeu.atualizado_em).toLocaleDateString("pt-BR")}. Se enviar de novo, sua resposta anterior será substituída.</div>}
@@ -5643,6 +5648,11 @@ function GestaoEventos({user,users,showToast}){
     if(error){showToast?.("Não foi possível carregar os eventos.","error");setEventos([]);return;}
     setEventos(data||[]);setEvId(p=>p&&data.some(e=>e.id===p)?p:data?.[0]?.id||null);
   };
+  const[convidados,setConvidados]=useState([]);
+  const carregarConvidados=async slug=>{if(!slug){setConvidados([]);return;}const{data}=await getSB().rpc("evento_convidados_listar",{p_slug:slug});setConvidados(data||[]);};
+  const adicionarConvidado=async()=>{const nome=window.prompt("Nome completo do convidado (ex.: terceiro que participa da festa):");if(!nome||nome.trim().length<3)return;
+    const{error}=await getSB().rpc("evento_convidado_adicionar",{p_pedido_por:user.id,p_evento_id:ev.id,p_nome:nome.trim()});
+    if(error){showToast?.(error.message,"error");return;}showToast?.("Convidado incluído: já aparece no formulário do evento.","success");carregarConvidados(ev.slug);};
   const carregarRespostas=async id=>{
     if(!id){setResp([]);setCarregando(false);return;}
     setCarregando(true);
@@ -5652,11 +5662,13 @@ function GestaoEventos({user,users,showToast}){
   };
   useEffect(()=>{carregarEventos();},[]);
   useEffect(()=>{carregarRespostas(evId);},[evId]);
+  useEffect(()=>{const e=(eventos||[]).find(x=>x.id===evId);carregarConvidados(e?.slug);},[evId,eventos]);
   const ev=(eventos||[]).find(e=>e.id===evId);
   const link=ev?`${window.location.origin}${window.location.pathname}?evento=${ev.slug}`:"";
   // Quem deveria responder: colaboradores ativos com cadastro na folha.
-  const publico=users.filter(u=>u.status==="ativo"&&u.cadastro);
-  const porUser=new Map(resp.map(r=>[r.usuario_id,r]));
+  // + convidados do evento (terceiros), com chave "c<id>" para não colidir com o id do colaborador
+  const publico=[...users.filter(u=>u.status==="ativo"&&u.cadastro),...convidados.map(c=>({id:"c"+c.id,name:c.nome+" (convidado)",setor:"Convidados",status:"ativo",convidado:true}))];
+  const porUser=new Map(resp.map(r=>[r.convidado_id!=null?"c"+r.convidado_id:r.usuario_id,r]));
   const linhas=publico.map(u=>({u,r:porUser.get(u.id)||null})).sort((a,b)=>a.u.name.localeCompare(b.u.name));
   const vao=resp.filter(r=>r.vai_participar),naoVao=resp.filter(r=>!r.vai_participar);
   const soma=k=>vao.reduce((s,r)=>s+(r[k]||0),0);
@@ -5739,6 +5751,7 @@ function GestaoEventos({user,users,showToast}){
               <div style={{display:"flex",gap:8,alignItems:"center",marginTop:10,flexWrap:"wrap"}}>
                 <code style={{fontSize:12,background:C.s1,border:"1px solid "+C.bdr,borderRadius:8,padding:"6px 10px",wordBreak:"break-all"}}>{link}</code>
                 <Btn sz="sm" onClick={copiar}>Copiar link</Btn>
+                <Btn sz="sm" v="outline" onClick={adicionarConvidado} title="Incluir um terceiro (não colaborador) na lista do evento">+ Convidado</Btn>
               </div>
             </div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
