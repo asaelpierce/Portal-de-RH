@@ -4630,7 +4630,36 @@ function PesquisaClima({user,users,pulses,setPulses,nps,setNps,showToast}){
 // ── GESTÃO DE VAGAS ──────────────────────────────────────────────
 // Criar, editar, encerrar e reabrir vagas. Antes, vaga só nascia de movimentação de admissão aprovada
 // e nunca encerrava (o prazo era gravado e ignorado). O código da vaga é gerado pelo banco (100, 101, ...).
-function GestaoVagas({vagasTodas=[],setVagas,candidates=[],showToast}){
+// Requisição de pessoal que originou a vaga (pedido do Asael, 03/11/2026): as respostas da requisição aparecem no
+// cartão da vaga — antes ficavam só no pedido ("tudo oculto" para quem toca a vaga).
+function RequisicaoDaVaga({mov,usuarios}){
+  const[aberto,setAberto]=useState(false);
+  const nome=id=>usuarios.find(u=>u.id===id)?.name||"—";
+  const tc=mov.tipoContratacao==="outro"?(mov.tipoContratacaoOutro||"Outra"):(TIPO_CONTRATACAO[mov.tipoContratacao]||"Efetivo (CLT)");
+  const tv=mov.tipoVaga==="sigilosa"?"Sigilosa (não divulgar o nome da empresa)":mov.tipoVaga==="aberta"?"Aberta":mov.tipoVaga?(mov.tipoVagaOutro||"Outra"):null;
+  const motivo=(MOTIVO_REQ[mov.motivoRequisicao]||mov.motivoRequisicao||"—")+(mov.motivoRequisicaoOutro?": "+mov.motivoRequisicaoOutro:"")+(mov.substituidoId?" — "+nome(mov.substituidoId):"");
+  const L=(r,v)=>v?<div style={{display:"grid",gridTemplateColumns:"170px minmax(0,1fr)",gap:8,fontSize:12,padding:"3px 0",borderTop:"1px solid "+C.bdr}}><span style={{color:C.txd}}>{r}</span><span style={{whiteSpace:"pre-wrap"}}>{v}</span></div>:null;
+  return(<div style={{marginTop:10,background:C.s1,border:"1px solid "+C.bdr,borderRadius:9,padding:"8px 12px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+      <div style={{fontSize:12,color:C.txm}}>📋 <b>Requisição #{mov.id}</b> de {mov.solicitanteName||"—"} em {fd(mov.createdAt)}{mov.origem==="formulario"?" (formulário)":""}
+        {mov.superiorId?<> · superior imediato: <b>{nome(mov.superiorId)}</b></>:null} · <b>{mov.quantidade||1}</b> vaga{(mov.quantidade||1)>1?"s":""}
+        {mov.turno?<> · {mov.turno}</>:null} · {tc}{tv?<> · {tv.split(" (")[0]}</>:null}</div>
+      <button onClick={()=>setAberto(a=>!a)} aria-expanded={aberto} style={{background:"none",border:"none",color:C.acc,fontWeight:700,fontSize:12,cursor:"pointer"}}>{aberto?"Ocultar":"Ver requisição completa"}</button>
+    </div>
+    {aberto&&<div style={{marginTop:6}}>
+      {L("Setor requisitante",SL[mov.setor]||mov.setor)}{L("Cargo",mov.cargo)}{L("Salário",mov.salario)}{L("Horário de trabalho",mov.turno)}
+      {L("Número de vagas",String(mov.quantidade||1))}{L("Superior imediato",mov.superiorId?nome(mov.superiorId):null)}
+      {L("Tipo de contratação",tc)}{L("Tipo de vaga",tv)}{L("Prazo de contratação",mov.prazoEncerramento?fd(mov.prazoEncerramento):null)}
+      {L("Motivo da requisição",motivo)}{L("Centro de custo",mov.centroCusto)}
+      {L("Requisitos técnicos",mov.requisitos)}{L("Requisitos comportamentais",mov.requisitosComportamentais)}
+      {L("Idade e sexo (uso interno)",mov.perfilIdadeSexo)}{L("Observações",mov.observacoes)}
+      {L("Diretoria ciente",mov.diretoriaCiente==null?null:mov.diretoriaCiente?"Sim":"Não")}
+      {L("Justificativa",mov.motivo)}{L("Aprovação do RH",[mov.rhEm?fd(mov.rhEm):null,mov.rhObs].filter(Boolean).join(" — "))}
+    </div>}
+  </div>);
+}
+
+function GestaoVagas({vagasTodas=[],setVagas,candidates=[],showToast,movs=[],todosUsuarios=[]}){
   const VAZIO={title:"",area:"",local:"",tipo:"CLT",desc:"",salario:"",prazoEncerramento:""};
   const[modal,setModal]=useState(null);  // null | {modo:"nova"|"editar"|"reabrir", vaga}
   const[form,setForm]=useState(VAZIO);const[erro,setErro]=useState("");const[saving,setSaving]=useState(false);
@@ -4694,8 +4723,9 @@ function GestaoVagas({vagasTodas=[],setVagas,candidates=[],showToast}){
               <div style={{fontSize:12,color:C.txd,marginTop:6,display:"flex",gap:14,flexWrap:"wrap"}}>
                 <span>Prazo: {v.prazoEncerramento?fd(v.prazoEncerramento):"sem prazo"}</span>
                 <span>{n} candidato{n===1?"":"s"}</span>
-                {v.movimentacaoId&&<span>Criada por movimentação de admissão</span>}
+                {v.movimentacaoId&&!movs.some(m=>m.id===v.movimentacaoId)&&<span>Criada por requisição de pessoal</span>}
               </div>
+              {v.movimentacaoId&&movs.find(m=>m.id===v.movimentacaoId)&&<RequisicaoDaVaga mov={movs.find(m=>m.id===v.movimentacaoId)} usuarios={todosUsuarios}/>}
             </div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
               <Btn sz="sm" v="outline" onClick={()=>abrir("editar",v)}>Editar</Btn>
@@ -4755,7 +4785,7 @@ function Contratacao(props){
           {t.l}{typeof t.count==="number"&&<span style={{background:tab===t.id?"rgba(255,255,255,.25)":C.bdr,borderRadius:10,fontSize:10,padding:"1px 6px"}}>{t.count}</span>}
         </button>)}
       </div>
-      {tab==="vagas"&&<GestaoVagas vagasTodas={props.vagasTodas} setVagas={props.setVagas} candidates={props.candidates} showToast={props.showToast}/>}
+      {tab==="vagas"&&<GestaoVagas vagasTodas={props.vagasTodas} setVagas={props.setVagas} candidates={props.candidates} showToast={props.showToast} movs={props.movs||[]} todosUsuarios={props.todosUsuarios||props.users||[]}/>}
       {tab==="recrutamento"&&<Recrutamento {...props} onIniciarAdmissao={iniciarAdmissao}/>}
       {tab==="admissoes"&&<GestaoAdmissoes user={props.user} users={props.users||[]} showToast={props.showToast} destaque={destaqueAdm} inicial={admInicial} onCriada={id=>{setDestaqueAdm(id);setAdmInicial(null);}}/>}
       {tab==="talentos"&&<BancoTalentos {...props}/>}

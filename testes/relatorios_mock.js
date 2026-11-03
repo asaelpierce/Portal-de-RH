@@ -6,7 +6,7 @@
  const USERS=[{id:1,name:"Ana RH",role:"rh",setor:"rh",status:"ativo",centro_custo:"RECURSOS HUMANOS"},{id:2,name:"Bia Colab",role:"colaborador",setor:"producao",status:"ativo",centro_custo:"VULCANIZACAO - MÃO DE OBRA"},
    {id:3,name:"Maria Titular",role:"colaborador",setor:"producao",status:"ativo",centro_custo:"REVESTIMENTO - MÃO DE OBRA"},{id:4,name:"Pedro Saiu",role:"colaborador",setor:"producao",status:"desligado",centro_custo:null}];
  window.__VINC={"0000001":{uid:3},"0000002":{uid:4,cc:"CORTE CERAMICA MAO DE OBRA"}};window.__ODO={};
- const q=(tab)=>{const EV={id:1,nome:"Confraternização Teste",slug:"festa-teste",aberto:true,prazo:"2099-12-31"};const dados=tab==="usuarios"?USERS:tab==="ferias"?(window.__FERIAS||[]):tab==="eventos"?[EV]:[];const o={select:()=>o,eq:()=>o,neq:()=>o,in:()=>o,order:()=>o,limit:()=>o,gte:()=>o,lte:()=>o,is:()=>o,not:()=>o,or:()=>o,
+ const q=(tab)=>{const EV={id:1,nome:"Confraternização Teste",slug:"festa-teste",aberto:true,prazo:"2099-12-31"};const dados=tab==="usuarios"?USERS:tab==="ferias"?(window.__FERIAS||[]):tab==="eventos"?[EV]:tab==="vagas"?(window.__VAGAS||[]):[];const o={select:()=>o,eq:()=>o,neq:()=>o,in:()=>o,order:()=>o,limit:()=>o,gte:()=>o,lte:()=>o,is:()=>o,not:()=>o,or:()=>o,
    single:()=>ok(null),maybeSingle:()=>ok(tab==="eventos"?EV:null),insert:()=>o,update:()=>o,delete:()=>o,upsert:()=>o,then:(r,j)=>Promise.resolve({data:dados,error:null}).then(r,j)};return o;};
  const eu=()=>{const s=JSON.parse(sessionStorage.getItem("ses")||"null");return s?[RH,COLAB].find(u=>u.id===s):null;};
  const client={from:(t)=>q(t),channel:()=>({on(){return this;},subscribe(){return this;}}),removeChannel(){},
