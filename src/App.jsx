@@ -129,7 +129,7 @@ const mc=c=>({id:c.id,name:c.name,role:c.role,vaga:"#"+(c.vaga_id||""),email:c.e
   // Captura nova (15/10/2026): dados extraídos do currículo, arquivo original e SUGESTÃO da IA (o RH decide o status).
   cidade:c.cidade||"",linkedin:c.linkedin||"",experiencias:c.experiencias||[],idiomas:c.idiomas||[],cnh:c.cnh||"",
   arquivoNome:c.arquivo_nome||"",origem:c.origem||"",sugestaoIa:c.sugestao_ia||"",analiseIa:c.analise_ia||null});
-const mv=v=>({id:v.id,title:v.title,area:v.area,local:v.local,tipo:v.tipo,desc:v.descricao,salario:v.salario||"",requisitos:v.requisitos||"",prazoEncerramento:v.prazo_encerramento,ativa:v.ativa,movimentacaoId:v.movimentacao_id});
+const mv=v=>({id:v.id,title:v.title,area:v.area,local:v.local,tipo:v.tipo,desc:v.descricao,salario:v.salario||"",requisitos:v.requisitos||"",prazoEncerramento:v.prazo_encerramento,ativa:v.ativa,movimentacaoId:v.movimentacao_id,sigilosa:!!v.sigilosa});
 const mtal=t=>({id:t.id,cId:t.candidato_id,name:t.name,email:t.email||"",phone:t.phone||"",role:t.role||"",vagaId:t.vaga_id||"",score:t.score??null,habs:t.habilidades||[],resumo:t.resumo||"",motivo:t.motivo_arquivo||"",tags:t.tags||[],createdAt:t.created_at});
 const mcom=c=>({id:c.id,titulo:c.titulo,corpo:c.corpo,autorId:c.autor_id,autorName:c.autor_name,tipo:c.tipo,setores:c.setores||[],fixado:c.fixado,createdAt:c.created_at});
 const mex=e=>({id:e.id,userId:e.user_id,userName:e.user_name,tipo:e.tipo,data:e.data_agendada,local:e.local||"",status:e.status,obs:e.observacoes||"",createdAt:e.created_at});
@@ -4702,7 +4702,7 @@ function GestaoVagas({vagasTodas=[],setVagas,candidates=[],showToast,movs=[],tod
   const abrir=(modo,v)=>{
     setErro("");setModal({modo,vaga:v||null});
     setForm(v?{title:v.title||"",area:v.area||"",local:v.local||"",tipo:v.tipo||"",desc:v.desc||"",salario:v.salario||"",
-      prazoEncerramento:modo==="reabrir"?"":(v.prazoEncerramento?String(v.prazoEncerramento).slice(0,10):"")}:VAZIO);
+      prazoEncerramento:modo==="reabrir"?"":(v.prazoEncerramento?String(v.prazoEncerramento).slice(0,10):""),sigilosa:!!v.sigilosa}:{...VAZIO,sigilosa:false});
   };
   const salvar=async()=>{
     const f={title:form.title.trim(),area:form.area.trim(),local:form.local.trim(),tipo:form.tipo.trim(),desc:form.desc.trim(),salario:form.salario.trim(),prazo:form.prazoEncerramento||""};
@@ -4711,7 +4711,7 @@ function GestaoVagas({vagasTodas=[],setVagas,candidates=[],showToast,movs=[],tod
     if(f.prazo&&f.prazo<hoje){setErro("O prazo não pode ser anterior a hoje.");return;}
     // Reabrir vaga com prazo vencido exige prazo novo (senão ela continuaria encerrada).
     if(modal.modo==="reabrir"&&!f.prazo){setErro("Informe o novo prazo para reabrir esta vaga.");return;}
-    const row={title:f.title,area:f.area,local:f.local,tipo:f.tipo,descricao:f.desc||null,salario:f.salario||null,prazo_encerramento:f.prazo||null};
+    const row={title:f.title,area:f.area,local:f.local,tipo:f.tipo,descricao:f.desc||null,salario:f.salario||null,prazo_encerramento:f.prazo||null,sigilosa:!!form.sigilosa};
     if(modal.modo!=="editar")row.ativa=true;
     setSaving(true);setErro("");
     const sb=getSB();
@@ -4748,7 +4748,7 @@ function GestaoVagas({vagasTodas=[],setVagas,candidates=[],showToast,movs=[],tod
         <Card key={v.id} style={{borderLeft:"3px solid "+sit.c,padding:18}}>
           <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",alignItems:"flex-start"}}>
             <div style={{minWidth:0}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><span style={{fontWeight:700,fontSize:15}}>{v.title}</span><Chip label={sit.l} color={sit.c} dot/></div>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><span style={{fontWeight:700,fontSize:15}}>{v.title}</span><Chip label={sit.l} color={sit.c} dot/>{v.sigilosa&&<Chip label="🔒 Sigilosa — fora do site de vagas" color={C.pur}/>}</div>
               <div style={{fontSize:12,color:C.txm,marginTop:3}}>#{v.id} · {v.area} · {v.local} · {v.tipo}</div>
               <div style={{fontSize:12,color:C.txd,marginTop:6,display:"flex",gap:14,flexWrap:"wrap"}}>
                 <span>Prazo: {v.prazoEncerramento?fd(v.prazoEncerramento):"sem prazo"}</span>
@@ -4769,6 +4769,7 @@ function GestaoVagas({vagasTodas=[],setVagas,candidates=[],showToast,movs=[],tod
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
           {modal?.modo==="reabrir"&&<div style={{fontSize:13,color:C.txm}}>O prazo anterior ({fd(modal.vaga.prazoEncerramento)}) já venceu. Informe o novo prazo para a vaga voltar ao portal.</div>}
           <Inp label="Título da vaga *" value={form.title} onChange={e=>setForm({...form,title:e.target.value})} placeholder="Ex: Operador de Produção"/>
+          <label style={{display:"flex",gap:8,alignItems:"center",fontSize:13,cursor:"pointer"}}><input type="checkbox" checked={!!form.sigilosa} onChange={e=>setForm({...form,sigilosa:e.target.checked})}/>🔒 Vaga sigilosa — não aparece no site de vagas (o nome da empresa não é divulgado)</label>
           <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:12}}>
             <Inp label="Área *" value={form.area} onChange={e=>setForm({...form,area:e.target.value})} placeholder="Ex: Produção"/>
             <Inp label="Tipo de contrato *" value={form.tipo} onChange={e=>setForm({...form,tipo:e.target.value})} placeholder="Ex: CLT"/>
@@ -6487,7 +6488,7 @@ export default function App(){
   
   if(!sbReady)return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,flexDirection:"column",gap:16}}><style>{CSS}</style><Spin size={36}/><div style={{fontSize:14,color:C.txd}}>Conectando ao banco...</div></div>;
   // Vagas abertas = ativas e dentro do prazo. É o que o portal, o upload e as demais telas enxergam.
-  const vagasAbertas=vagas.filter(vagaAberta);
+  const vagasAbertas=vagas.filter(v=>vagaAberta(v)&&(!v.sigilosa||can(user?.role,"rh")));
   // Link público de evento (?evento=<slug>): formulário sem login, para quem não tem e-mail/senha no portal.
   const eventoPublico=new URLSearchParams(window.location.search).get("evento");
   // Link individual da ficha de admissão (?admissao=<token>): candidato aprovado preenche sem login.
