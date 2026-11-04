@@ -2079,22 +2079,28 @@ function Colaboradores({users,setUsers,currentUser,showToast}){
 
   const abrirMovimentacao=(u,e)=>{
     e.stopPropagation();
-    setFormMov({setor:u.setor,area:u.area||"geral"});
+    setFormMov({setor:u.setor,area:u.area||"geral",cc:u.centroCusto||"",liderId:u.liderId?String(u.liderId):"",gestorId:u.gestorId?String(u.gestorId):""});
     setModalMov(u);
   };
 
+  // Movimentar: setor/área e — para o RH — centro de custo (com registro da correção), líder e gestor, juntos.
+  // Antes só mudava setor/área: a pessoa ficava com o CC e o time antigos (ex.: Crisley "na Qualidade" e na vulcanização).
   const confirmarMovimentacao=async()=>{
     if(!modalMov)return;
     setSaving(true);
-    const sb=getSB();
+    const sb=getSB();const rh=can(currentUser.role,"rh");
     const payload={setor:formMov.setor,area:formMov.setor==="producao"?formMov.area:null};
-    // Por quê: pedir só as colunas usadas (ver comentário em Perfil.salvarEdicao).
-    const{data,error}=await sb.from("usuarios").update(payload).eq("id",modalMov.id).select("id,setor,area").single();
-    if(data){
-      setUsers(p=>p.map(u=>u.id===modalMov.id?{...u,setor:data.setor,area:data.area}:u));
-      setModalMov(null);
+    if(rh){payload.lider_id=formMov.liderId?parseInt(formMov.liderId):null;payload.gestor_id=formMov.gestorId?parseInt(formMov.gestorId):null;}
+    const{data,error}=await sb.from("usuarios").update(payload).eq("id",modalMov.id).select("id,setor,area,lider_id,gestor_id").single();
+    if(error||!data){setSaving(false);showToast?.("Não foi possível salvar: "+(error?.message||"sem permissão"),"error");return;}
+    let cc=modalMov.centroCusto;
+    if(rh&&formMov.cc&&formMov.cc!==modalMov.centroCusto){
+      const r=await sb.rpc("centro_custo_ajustar",{p_pedido_por:currentUser.id,p_usuario_id:modalMov.id,p_centro_custo:formMov.cc,p_origem:"movimentar (colaboradores)"});
+      if(r.error){setSaving(false);showToast?.("Setor salvo, mas o centro de custo não: "+r.error.message,"error");}else cc=formMov.cc;
     }
-    setSaving(false);
+    setUsers(p=>p.map(u=>u.id===modalMov.id?{...u,setor:data.setor,area:data.area,liderId:data.lider_id,gestorId:data.gestor_id,centroCusto:cc}:u));
+    showToast?.(modalMov.name.split(" ")[0]+" movimentado(a).","success");
+    setModalMov(null);setSaving(false);
   };
 
   return(
@@ -2173,7 +2179,7 @@ function Colaboradores({users,setUsers,currentUser,showToast}){
           {docs.ok&&<div style={{background:C.grnBg,border:"1px solid "+C.grn+"25",borderRadius:8,padding:"9px 14px",color:C.grn,fontSize:13}}>{docs.ok}</div>}
         </div>}
       </Modal>
-      <Modal open={!!modalMov} onClose={()=>setModalMov(null)} title={"Movimentar — "+(modalMov?.name||"")} width={440}>
+      <Modal open={!!modalMov} onClose={()=>setModalMov(null)} title={"Movimentar — "+(modalMov?.name||"")} width={480}>
         {modalMov&&(
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
             <div style={{background:C.s1,borderRadius:10,padding:"10px 14px",fontSize:12,color:C.txm}}>
@@ -2182,6 +2188,12 @@ function Colaboradores({users,setUsers,currentUser,showToast}){
             <Sel label="Novo setor" value={formMov.setor} onChange={e=>setFormMov({setor:e.target.value,area:e.target.value==="producao"?"geral":""})} options={Object.entries(SL).filter(([k])=>!["producao_b","producao_c","ti","vulcanizacao","corte"].includes(k)).filter(([k])=>can(currentUser.role,"gestor")||k===modalMov?.setor).map(([k,v])=>({value:k,label:v}))}/>
             {!can(currentUser.role,"gestor")&&<div style={{fontSize:11,color:C.txd}}>Como líder, você só pode ajustar a área dentro do setor atual. Mudança de setor requer gestor ou RH.</div>}
             {formMov.setor==="producao"&&<Sel label="Área dentro de Produção" value={formMov.area} onChange={e=>setFormMov({...formMov,area:e.target.value})} options={areasOpcoes}/>}
+            {can(currentUser.role,"rh")&&<>
+              <Sel label="Centro de custo (folha)" value={formMov.cc} onChange={e=>setFormMov({...formMov,cc:e.target.value})} options={[{value:"",label:"(sem centro de custo)"},...[...new Set(users.map(u=>u.centroCusto).filter(Boolean))].sort().map(c=>({value:c,label:c}))]}/>
+              <Sel label="Líder" value={formMov.liderId} onChange={e=>setFormMov({...formMov,liderId:e.target.value})} options={[{value:"",label:"(sem líder)"},...users.filter(u=>u.status!=="desligado"&&can(u.role,"lider")&&u.id!==modalMov.id).sort((a,b)=>a.name.localeCompare(b.name)).map(u=>({value:String(u.id),label:u.name}))]}/>
+              <Sel label="Gestor" value={formMov.gestorId} onChange={e=>setFormMov({...formMov,gestorId:e.target.value})} options={[{value:"",label:"(sem gestor)"},...users.filter(u=>u.status!=="desligado"&&can(u.role,"gestor")&&u.id!==modalMov.id).sort((a,b)=>a.name.localeCompare(b.name)).map(u=>({value:String(u.id),label:u.name}))]}/>
+              <div style={{fontSize:11,color:C.txd}}>Para mudança com vigência futura, salário ou cargo, use “Pedidos de pessoal › Movimentação”.</div>
+            </>}
             <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
               <Btn v="outline" onClick={()=>setModalMov(null)}>Cancelar</Btn>
               <Btn onClick={confirmarMovimentacao} disabled={!formMov.setor||saving}>{saving?<Spin size={14} color="#fff"/>:null} Confirmar</Btn>

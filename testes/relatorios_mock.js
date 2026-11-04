@@ -7,7 +7,7 @@
    {id:3,name:"Maria Titular",role:"colaborador",setor:"producao",status:"ativo",centro_custo:"REVESTIMENTO - MÃO DE OBRA"},{id:4,name:"Pedro Saiu",role:"colaborador",setor:"producao",status:"desligado",centro_custo:null}];
  window.__VINC={"0000001":{uid:3},"0000002":{uid:4,cc:"CORTE CERAMICA MAO DE OBRA"}};window.__ODO={};
  const q=(tab)=>{const EV={id:1,nome:"Confraternização Teste",slug:"festa-teste",aberto:true,prazo:"2099-12-31"};const dados=tab==="usuarios"?USERS:tab==="ferias"?(window.__FERIAS||[]):tab==="eventos"?[EV]:tab==="vagas"?(window.__VAGAS||[]):[];const o={select:()=>o,eq:()=>o,neq:()=>o,in:()=>o,order:()=>o,limit:()=>o,gte:()=>o,lte:()=>o,is:()=>o,not:()=>o,or:()=>o,
-   single:()=>ok(null),maybeSingle:()=>ok(tab==="eventos"?EV:null),insert:()=>o,update:()=>o,delete:()=>o,upsert:()=>o,then:(r,j)=>Promise.resolve({data:dados,error:null}).then(r,j)};return o;};
+   single:()=>ok(o.__upd?{id:o.__id||1,...o.__upd}:null),maybeSingle:()=>ok(tab==="eventos"?EV:null),insert:()=>o,update:(x)=>{o.__upd=x;window.__UPD={tab,...x};return o;},delete:()=>o,upsert:()=>o,then:(r,j)=>Promise.resolve({data:dados,error:null}).then(r,j)};return o;};
  const eu=()=>{const s=JSON.parse(sessionStorage.getItem("ses")||"null");return s?[RH,COLAB].find(u=>u.id===s):null;};
  const client={from:(t)=>q(t),channel:()=>({on(){return this;},subscribe(){return this;}}),removeChannel(){},
   auth:{signInWithPassword:async({email})=>{const u=[RH,COLAB].find(x=>x.email===email);if(!u)return{data:{},error:{message:"Invalid login credentials"}};sessionStorage.setItem("ses",u.id);return{data:{session:{access_token:"t"}},error:null};},
